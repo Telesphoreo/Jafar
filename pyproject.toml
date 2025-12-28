@@ -1,0 +1,14 @@
+[project]
+name = "twitter-sentiment-analysis"
+version = "1.0.0"
+description = "Dynamic discovery of economic sentiment on Twitter/X with LLM-powered analysis"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "twscrape",
+    "spacy",
+    "openai",
+    "google-generativeai",
+    "python-dotenv",
+    "aiohttp",
+]
