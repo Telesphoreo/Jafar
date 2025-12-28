@@ -196,6 +196,12 @@ class MemoryConfig:
     openai_embedding_model: str = field(
         default_factory=lambda: _get_yaml("memory", "openai_embedding_model", "text-embedding-3-large")
     )
+    # Override embedding dimensions (required for pgvector which has 2000 dim limit)
+    # Set to 1536 or 2000 when using text-embedding-3-large with pgvector
+    # None = use model's default dimensions
+    embedding_dimensions: int | None = field(
+        default_factory=lambda: _get_yaml("memory", "embedding_dimensions", None)
+    )
     chroma_path: str = field(
         default_factory=lambda: _get_yaml("memory", "chroma_path", "./memory_store")
     )

@@ -393,6 +393,7 @@ async def create_memory_manager(
     embedding_provider: Literal["openai", "local"] = "openai",
     openai_api_key: str = "",
     openai_embedding_model: str = "text-embedding-3-large",
+    embedding_dimensions: int | None = None,
     postgres_url: str = "",
     chroma_path: str = "./memory_store",
 ) -> MemoryManager:
@@ -404,6 +405,8 @@ async def create_memory_manager(
         embedding_provider: "openai" or "local"
         openai_api_key: Required for OpenAI embeddings
         openai_embedding_model: OpenAI embedding model (text-embedding-3-small or text-embedding-3-large)
+        embedding_dimensions: Override embedding dimensions. Required for pgvector (max 2000 dims).
+                              Set to 1536 or 2000 when using text-embedding-3-large with pgvector.
         postgres_url: Required for pgvector store
         chroma_path: Path for ChromaDB storage
 
@@ -415,6 +418,7 @@ async def create_memory_manager(
         provider=embedding_provider,
         api_key=openai_api_key,
         model=openai_embedding_model,
+        dimensions=embedding_dimensions,
     )
 
     # Create vector store

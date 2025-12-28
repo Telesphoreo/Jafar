@@ -305,6 +305,7 @@ async def run_pipeline() -> bool:
                 embedding_provider=config.memory.embedding_provider,
                 openai_api_key=config.openai.api_key,
                 openai_embedding_model=config.memory.openai_embedding_model,
+                embedding_dimensions=config.memory.embedding_dimensions,
                 postgres_url=config.memory.postgres_url,
                 chroma_path=config.memory.chroma_path,
             )

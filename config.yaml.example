@@ -147,6 +147,13 @@ memory:
   #   - text-embedding-3-large: 3072 dimensions, better quality
   openai_embedding_model: text-embedding-3-large
 
+  # Override embedding dimensions (optional)
+  # REQUIRED for pgvector which has a 2000 dimension limit!
+  # When using text-embedding-3-large with pgvector, set this to 1536 or 2000.
+  # The model supports native dimension reduction while retaining quality.
+  # Leave commented out for ChromaDB (no limit) or text-embedding-3-small.
+  # embedding_dimensions: 1536
+
   # ChromaDB storage path (for local chroma store)
   chroma_path: ./memory_store
 
