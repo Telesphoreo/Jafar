@@ -257,10 +257,12 @@ class TwitterScraper:
                     logger.debug(f"{worker_prefix}Rate limit delay: waiting {wait_time:.1f}s...")
                     await asyncio.sleep(wait_time)
 
-                # Add random jitter on top of the minimum delay (ensures 10+ seconds total)
-                jitter = random.uniform(2, 8)
-                logger.debug(f"{worker_prefix}Jitter: {jitter:.1f}s")
-                await asyncio.sleep(jitter)
+                # Add random jitter on top of the minimum delay
+                # Combined with _min_api_delay (10s), total wait is 10-15s
+                jitter = random.uniform(0, 5)
+                if jitter > 0.5:
+                    logger.debug(f"{worker_prefix}Jitter: {jitter:.1f}s")
+                    await asyncio.sleep(jitter)
 
                 logger.info(f"{worker_prefix}Starting search...")
                 self._last_api_call = time.time()
@@ -273,11 +275,11 @@ class TwitterScraper:
                         raw_tweets.append(tweet)
                         count += 1
 
-                        # Every ~10 tweets, take a human-like breath
-                        # This ensures we delay BEFORE each page boundary (pages are ~20 tweets)
-                        # so we never have back-to-back HTTP requests
-                        if count % 10 == 0:
-                            delay = random.uniform(10, 15)
+                        # Every ~15 tweets, take a human-like breath
+                        # Pages are ~20 tweets, so this ensures we delay BEFORE each page boundary
+                        # Target: 10-20 seconds between HTTP requests
+                        if count % 15 == 0:
+                            delay = random.uniform(8, 12)
                             logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Pacing delay {delay:.1f}s...")
                             await asyncio.sleep(delay)
                             # Update last API call time for inter-page requests
