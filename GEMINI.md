@@ -1,4 +1,4 @@
-# CLAUDE.md
+# GEMINI.md
 
 ## Project Overview
 
@@ -31,9 +31,6 @@ uv run twscrape accounts
 
 # Add account via cookies (preferred method)
 uv run add_account.py <username> cookies.json
-
-# Test email settings
-uv run test_email.py
 ```
 
 ## Architecture
@@ -64,8 +61,9 @@ src/
 ## Pipeline Steps
 
 1. **Broad Discovery** - Scrape 30+ financial topics to find what's trending
-2. **Statistical Analysis** - Extract entities via spaCy, score by engagement velocity
-3. **Deep Dive** - Targeted scraping for top discovered trends
+2. **Statistical Analysis** - Extract entities via spaCy, score by engagement velocity + cashtag co-occurrence
+2.5. **Quality Filter** - Three-stage filtering (statistical → quality threshold → LLM validation)
+3. **Deep Dive** - Targeted scraping for validated trends only
 3.5. **Fact Checker** - Fetch real market data from Yahoo Finance to verify claims
 4. **LLM Analysis** - Generate skeptical summary with signal strength rating, cross-referencing fact-check data
 5. **Email Report** - Send HTML digest with trend badges
@@ -114,7 +112,34 @@ POSTGRES_URL=postgresql://...  # For pgvector
 engagement = (likes * 1.0) + (retweets * 0.5) + (replies * 0.3)
 score = (mentions * 0.3) + (engagement_weighted * 0.7)
 # Bonus for author diversity (organic vs spam)
+# Bonus for cashtag co-occurrence (terms appearing alongside $TICKERS)
 ```
+
+### Trend Quality Filtering (Three-Stage)
+
+The system uses a funnel approach to avoid deep-diving on noise:
+
+```
+top_trends_count: 10  →  Quality Threshold  →  LLM Filter  →  Deep Dive
+     (cast wide)            (5-7 pass)         (2-4 best)     (focused)
+```
+
+**Stage 1: Statistical Filter**
+- Minimum mentions and unique authors
+- Financial context ratio (% of tweets with market terms)
+- Cashtag co-occurrence (% appearing alongside $TICKER symbols)
+
+**Stage 2: Quality Threshold** (`passes_quality_threshold()`)
+- Requires 10+ unique authors
+- Requires 85%+ financial context ratio
+- For non-cashtags: requires >10% cashtag co-occurrence
+
+**Stage 3: LLM Pre-Filter** (~500 tokens, fast)
+- Asks LLM: "Which of these are actionable market signals vs noise?"
+- Keeps: Silver, $NVDA, Uranium, Inventories
+- Rejects: Risk, Demand, Buyers, Gap, Books
+
+**Why `top_trends_count: 10` is optimal**: Cast wide statistically, let the LLM pick the 2-4 best. Setting it to 5 might miss something that ranked #7 statistically but is actually the most actionable signal.
 
 ### Signal Strength
 - **HIGH**: Genuinely unusual, potential market-moving (1-2x/month)

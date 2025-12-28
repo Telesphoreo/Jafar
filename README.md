@@ -94,12 +94,31 @@ uv run test_email.py   # Verify SMTP settings and send test email
 ## How It Works
 
 1. **Scout** - Scrapes 30+ financial topics from Twitter
-2. **Investigator** - Extracts trending entities via spaCy NLP
-3. **Deep Dive** - Targeted scraping for discovered trends
-4. **Fact Checker** - Fetches real prices from Yahoo Finance. Exposes the liars.
-5. **Analyst** - LLM generates skeptical summary with signal strength
-6. **Reporter** - Emails you a digest so you can pretend you're a Bloomberg terminal owner without paying $24k/year
-7. **Memory** - Stores everything for future historical parallel detection
+2. **Investigator** - Extracts trending entities via spaCy NLP, scores by engagement + cashtag co-occurrence
+3. **Quality Filter** - Three-stage funnel: statistical → quality threshold → LLM validation. Because "Risk" and "Demand"
+   are not actionable signals, they're just words that appear in financial tweets
+4. **Deep Dive** - Targeted scraping for *validated* trends only (typically 2-4, not 10)
+5. **Fact Checker** - Fetches real prices from Yahoo Finance. Exposes the liars.
+6. **Analyst** - LLM generates skeptical summary with signal strength
+7. **Reporter** - Emails you a digest so you can pretend you're a Bloomberg terminal owner without paying $24k/year
+8. **Memory** - Stores everything for future historical parallel detection
+
+### The Quality Filter (Why This Matters)
+
+Most sentiment tools would deep-dive on whatever has the highest engagement. That's how you end up analyzing "Christmas"
+and "Crowd" instead of actual market signals.
+
+```
+top_trends_count: 10  →  Quality Threshold  →  LLM Filter  →  Deep Dive
+     (cast wide)            (5-7 pass)         (2-4 best)     (focused)
+```
+
+- **Statistical**: Requires minimum authors, financial context ratio, cashtag co-occurrence
+- **Quality Threshold**: 10+ authors, 85%+ financial context, cashtag co-occurrence for n-grams
+- **LLM Pre-Filter**: ~500 tokens asking "which of these are actionable?" Keeps "Silver", rejects "Buyers"
+
+Set `top_trends_count: 10` to cast wide, let the LLM pick the best 2-4. Better to have options than miss something
+that ranked #7 statistically but is actually the signal
 
 ## Signal Strength
 
