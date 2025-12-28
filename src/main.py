@@ -272,7 +272,7 @@ async def llm_filter_trends(
     # Format candidates for the prompt
     candidates_str = "\n".join(f"- {c}" for c in candidates)
 
-    prompt = f"""Review these trend candidates extracted from financial Twitter. Which ones are likely ACTIONABLE market signals vs generic noise?
+    prompt = f"""Review these trend candidates extracted from financial Twitter. Filter out generic noise while keeping meaningful market signals AND sentiment indicators.
 
 CANDIDATES:
 {candidates_str}
@@ -282,13 +282,17 @@ KEEP terms that are:
 - Concrete market events (e.g., "Short Squeeze", "Margin Call", "Earnings Miss")
 - Economic indicators (e.g., "Inventories", "Payrolls", "CPI")
 - Specific companies or sectors experiencing notable activity
+- Market sentiment indicators that reveal crowd mood (e.g., "Risk", "Demand", "Buyers", "Selloff", "Panic", "Euphoria")
 
 REJECT terms that are:
-- Generic words that appear in financial tweets but aren't actionable (e.g., "Risk", "Demand", "Buyers")
-- Sentiment words without a specific target (e.g., "Bullish", "Worried", "Confident")
-- Common nouns that slipped through filters (e.g., "Gap", "Books", "Crowd")
+- Generic words with no financial meaning (e.g., "Things", "World", "Experience", "Crowd")
+- Seasonal/holiday terms (e.g., "Christmas", "Weekend", "Birthday")
+- Common nouns that slipped through filters (e.g., "Books", "Fiction", "Chat")
+- Ambiguous words that could mean anything (e.g., "Gap" unless clearly about $GPS)
 
-Respond with ONLY a JSON array of terms to KEEP, like: ["Silver", "$NVDA", "Uranium"]
+Remember: This is SENTIMENT analysis. Aggregate mood matters. If lots of people are discussing "Risk" or "Demand", that's valuable context even if you can't directly trade it.
+
+Respond with ONLY a JSON array of terms to KEEP, like: ["Silver", "$NVDA", "Risk", "Demand"]
 If none are worth keeping, respond with: []"""
 
     try:
