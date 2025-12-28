@@ -111,14 +111,13 @@ class PgVectorStore(VectorStore):
                 ON {self.table_name}(signal_strength)
             """)
 
-            # Create vector index for similarity search (IVFFlat for larger datasets)
-            # Note: For smaller datasets (< 10k), exact search is fine
-            # For larger datasets, consider changing to HNSW or IVFFlat
+            # Create vector index for similarity search using HNSW
+            # HNSW is faster, more accurate, and supports higher dimensions than ivfflat
             await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding
+                CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding_hnsw
                 ON {self.table_name}
-                USING ivfflat (embedding vector_cosine_ops)
-                WITH (lists = 100)
+                USING hnsw (embedding vector_cosine_ops)
+                WITH (m = 16, ef_construction = 64)
             """)
 
         count = await self.count()
