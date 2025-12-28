@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("twitter_sentiment.history")
+logger = logging.getLogger("jafar.history")
 
 
 @dataclass

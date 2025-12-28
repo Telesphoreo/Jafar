@@ -16,7 +16,7 @@ from typing import Optional
 
 from .base import MemoryRecord, SearchResult, VectorStore
 
-logger = logging.getLogger("twitter_sentiment.memory.chroma")
+logger = logging.getLogger("jafar.memory.chroma")
 
 
 class ChromaVectorStore(VectorStore):

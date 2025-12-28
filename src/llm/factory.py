@@ -11,7 +11,7 @@ from .base import LLMProvider
 from .openai_client import OpenAIProvider
 from .google_client import GoogleProvider
 
-logger = logging.getLogger("twitter_sentiment.llm.factory")
+logger = logging.getLogger("jafar.llm.factory")
 
 
 def create_llm_provider(

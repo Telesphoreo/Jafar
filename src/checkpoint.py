@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from .scraper import ScrapedTweet
 
-logger = logging.getLogger("twitter_sentiment.checkpoint")
+logger = logging.getLogger("jafar.checkpoint")
 
 CHECKPOINT_FILE = "pipeline_checkpoint.json"
 

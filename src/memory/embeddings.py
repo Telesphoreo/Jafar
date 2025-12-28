@@ -9,7 +9,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Literal
 
-logger = logging.getLogger("twitter_sentiment.memory.embeddings")
+logger = logging.getLogger("jafar.memory.embeddings")
 
 
 class EmbeddingService(ABC):

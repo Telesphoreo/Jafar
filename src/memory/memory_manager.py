@@ -18,7 +18,7 @@ from .base import MemoryRecord, SearchResult, VectorStore
 from .embeddings import EmbeddingService, create_embedding_service
 from .chroma_store import ChromaVectorStore
 
-logger = logging.getLogger("twitter_sentiment.memory.manager")
+logger = logging.getLogger("jafar.memory.manager")
 
 
 class MemoryManager:

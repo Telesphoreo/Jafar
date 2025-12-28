@@ -11,7 +11,7 @@ from openai import AsyncOpenAI
 
 from .base import LLMProvider, LLMResponse
 
-logger = logging.getLogger("twitter_sentiment.llm.openai")
+logger = logging.getLogger("jafar.llm.openai")
 
 
 class OpenAIProvider(LLMProvider):

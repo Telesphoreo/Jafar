@@ -23,7 +23,7 @@ from typing import Optional
 
 from .base import MemoryRecord, SearchResult, VectorStore
 
-logger = logging.getLogger("twitter_sentiment.memory.pgvector")
+logger = logging.getLogger("jafar.memory.pgvector")
 
 
 class PgVectorStore(VectorStore):

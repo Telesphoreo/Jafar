@@ -15,7 +15,7 @@ from typing import Any
 
 import yfinance as yf
 
-logger = logging.getLogger("twitter_sentiment.fact_checker")
+logger = logging.getLogger("jafar.fact_checker")
 
 
 # Symbol mappings for common terms

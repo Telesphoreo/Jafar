@@ -12,7 +12,7 @@ from google.genai import types
 
 from .base import LLMProvider, LLMResponse
 
-logger = logging.getLogger("twitter_sentiment.llm.google")
+logger = logging.getLogger("jafar.llm.google")
 
 
 class GoogleProvider(LLMProvider):

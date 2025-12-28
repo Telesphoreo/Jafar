@@ -27,7 +27,7 @@ from spacy.tokens import Doc
 
 from .scraper import ScrapedTweet
 
-logger = logging.getLogger("twitter_sentiment.analyzer")
+logger = logging.getLogger("jafar.analyzer")
 
 # =============================================================================
 # NOISE FILTER - Terms that are ALWAYS mentioned (no signal value)

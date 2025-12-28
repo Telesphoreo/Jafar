@@ -2,6 +2,8 @@
 
 ## Project Overview
 
+**Jafar** - The villain to BlackRock's Aladdin.
+
 Twitter/X sentiment analysis system for discovering emerging market trends before they hit mainstream news. Uses statistical NLP analysis, real-time market data fact-checking, vector memory for historical parallels, and LLM-powered summarization.
 
 **Key Philosophy**: Most days are boring. The system is calibrated to identify when something *actually* matters, not manufacture urgency.
@@ -166,7 +168,7 @@ Add more Twitter accounts. Pipeline checkpoints progress so you can resume.
 - Async/await throughout for Twitter scraping and market data fetching
 - Dataclasses for data structures (ScrapedTweet, PipelineState, MemoryRecord, MarketDataPoint)
 - Abstract base classes for swappable providers (LLMProvider, VectorStore, EmbeddingService)
-- Logging via `logging.getLogger("twitter_sentiment.*")`
+- Logging via `logging.getLogger("jafar.*")`
 - Type hints throughout
 
 ## Files to Ignore

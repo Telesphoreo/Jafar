@@ -33,7 +33,7 @@ from typing import AsyncIterator
 from twscrape import API, gather
 from twscrape.models import Tweet
 
-logger = logging.getLogger("twitter_sentiment.scraper")
+logger = logging.getLogger("jafar.scraper")
 
 
 @dataclass

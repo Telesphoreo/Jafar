@@ -1,4 +1,4 @@
-# Twitter/X Economic Sentiment Analysis
+# Jafar - The villain to BlackRock's Aladdin.
 
 BlackRock's Aladdin manages \$21 trillion dollars in assets while their CEO has [private phone calls with the Fed Chair](https://wallstreetonparade.com/2020/08/fed-chair-powell-had-4-private-phone-calls-with-blackrocks-ceo-since-march-as-blackrock-manages-upwards-of-25-million-of-powells-personal-money-and-lands-3-no-bid-deals-with-the-fed/) who conveniently has
 [$25 million of his personal wealth invested with BlackRock](https://wallstreetonparade.com/2020/05/fed-chair-powell-has-upwards-of-11-6-million-invested-with-blackrock-the-firm-that-will-manage-a-750-billion-corporate-bond-bailout-program-for-the-fed/).

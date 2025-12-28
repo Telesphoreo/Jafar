@@ -36,7 +36,7 @@ from .memory import create_memory_manager, MemoryManager
 from .checkpoint import CheckpointManager
 from .fact_checker import MarketFactChecker
 
-logger = logging.getLogger("twitter_sentiment.main")
+logger = logging.getLogger("jafar.main")
 
 # System prompt for the LLM analyst - CALIBRATED FOR SKEPTICISM + HISTORICAL AWARENESS
 ANALYST_SYSTEM_PROMPT = """You are a skeptical, experienced financial analyst with a long memory. Your job is to separate SIGNAL from NOISE, and to recognize when history rhymes.
