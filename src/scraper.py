@@ -186,22 +186,30 @@ class TwitterScraper:
 
         # Add language filter to query
         search_query = f"{query} lang:{lang}"
-        logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
-
-        # Check if any accounts are available BEFORE starting search
+        
+        # Check account availability and adjust timeout if rate limited
+        wait_time_needed = 0
         try:
             stats = await api.pool.stats()
             active = stats.get("active", 0)
-            if active == 0:
-                logger.warning(f"No active Twitter accounts available for query '{query}' - skipping")
-                return []
+            total = stats.get("total", 0)
+            
+            if total > 0 and active == 0:
+                # All accounts rate limited. Twscrape will wait automatically.
+                # We need to ensure our timeout is longer than the wait time.
+                # Since we can't easily get the exact reset time from stats here,
+                # we'll assume a standard 15-minute window + buffer if we detect this state.
+                wait_time_needed = 900  # 15 minutes
+                logger.warning(f"All {total} accounts are rate-limited. Increasing timeout to allow waiting...")
+                timeout = max(timeout, wait_time_needed + 60)
         except Exception as e:
             logger.debug(f"Could not check account availability: {e}")
+
+        logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
 
         try:
             # Use gather for async collection of tweets with timeout protection
             # This timeout is for genuine hangs (network issues, parsing deadlocks)
-            # NOT for rate limit waits (which should fail fast above)
             raw_tweets = await asyncio.wait_for(
                 gather(api.search(search_query, limit=limit)),
                 timeout=timeout
@@ -219,7 +227,12 @@ class TwitterScraper:
             return tweets
 
         except asyncio.TimeoutError:
-            logger.error(f"Genuine hang detected for '{query}' after {timeout}s - network or parsing issue")
+            logger.error(f"Search timed out for '{query}' after {timeout}s")
+            if wait_time_needed > 0:
+                logger.error("Note: This likely happened because all accounts were rate limited.")
+            else:
+                logger.error("Genuine hang detected - network or parsing issue.")
+            
             logger.error(f"Returning partial results ({len(tweets)} tweets)")
             return tweets
         except Exception as e:
