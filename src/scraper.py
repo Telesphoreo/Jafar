@@ -156,6 +156,18 @@ class TwitterScraper:
             logger.error(f"Failed to login accounts: {e}")
             raise
 
+    async def fix_locks(self) -> None:
+        """
+        Reset account locks in the database.
+        Useful when the scraper was interrupted and accounts remain locked.
+        """
+        try:
+            api = await self._get_api()
+            await api.pool.reset_locks()
+            logger.info("Account locks reset successfully")
+        except Exception as e:
+            logger.error(f"Failed to reset account locks: {e}")
+
     async def get_account_stats(self) -> dict:
         """Get statistics about the account pool."""
         api = await self._get_api()
@@ -222,11 +234,24 @@ class TwitterScraper:
         await asyncio.sleep(jitter)
 
         try:
-            # Removed aggressive asyncio.wait_for which was killing rate-limit waits
-            raw_tweets = await asyncio.wait_for(
-                gather(api.search(search_query, limit=limit)),
-                timeout=safety_timeout
-            )
+            raw_tweets = []
+            # Manual consumption of the generator to allow inter-page delays
+            # This makes the scraping "slow and steady" and much harder to detect
+            async def fetch_with_delays():
+                count = 0
+                async for tweet in api.search(search_query, limit=limit):
+                    raw_tweets.append(tweet)
+                    count += 1
+                    
+                    # Every ~20 tweets (approx one page request), take a human-like breath
+                    if count % 20 == 0:
+                        delay = random.uniform(3, 7)
+                        logger.debug(f"Search '{query}': {count} tweets retrieved. Humanizing delay {delay:.1f}s...")
+                        await asyncio.sleep(delay)
+                return raw_tweets
+
+            # Still use wait_for to prevent total hangs, but with the manual loop inside
+            await asyncio.wait_for(fetch_with_delays(), timeout=safety_timeout)
 
             for tweet in raw_tweets:
                 try:
@@ -295,9 +320,7 @@ class TwitterScraper:
         timeout: int = 300,
     ) -> list[ScrapedTweet]:
         """
-        Gather tweets incrementally, one topic at a time with progress callbacks.
-
-        This allows checkpointing and resumption after interruption.
+        Gather tweets incrementally using concurrent workers for load balancing.
 
         Args:
             topics: List of topics to search.
@@ -311,33 +334,55 @@ class TwitterScraper:
         """
         skip_topics = skip_topics or []
         all_tweets: list[ScrapedTweet] = []
-
         remaining = [t for t in topics if t not in skip_topics]
-        logger.info(f"Incremental scrape: {len(remaining)} topics remaining, {len(skip_topics)} already done")
 
-        for i, topic in enumerate(remaining):
-            # Add cooldown delay between topics (except the first one)
-            if i > 0:
-                delay = random.uniform(30, 60)
-                logger.info(f"Cooling down for {delay:.1f}s...")
-                await asyncio.sleep(delay)
+        if not remaining:
+            logger.info("No topics remaining to scrape.")
+            return []
 
-            logger.info(f"[{i+1}/{len(remaining)}] Scraping topic: {topic}")
+        # Determine concurrency based on active accounts
+        stats = await self.get_account_stats()
+        active_count = stats.get("active", 1)
+        # Cap concurrency to avoid overwhelming the system or hitting global limits
+        concurrency = min(active_count, 5)
+        # Ensure at least 1 worker
+        concurrency = max(1, concurrency)
 
-            try:
-                tweets = await self.search_tweets(topic, limit=limit_per_topic, timeout=timeout)
-                all_tweets.extend(tweets)
+        logger.info(f"Incremental scrape: {len(remaining)} topics remaining. Using {concurrency} concurrent workers.")
 
-                if on_topic_complete:
-                    on_topic_complete(topic, tweets)
+        queue = asyncio.Queue()
+        for topic in remaining:
+            queue.put_nowait(topic)
 
-                logger.info(f"Topic '{topic}': {len(tweets)} tweets")
+        async def worker(worker_id: int):
+            while not queue.empty():
+                try:
+                    topic = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
 
-            except Exception as e:
-                logger.error(f"Failed to scrape topic '{topic}': {e}")
-                # Continue to next topic instead of failing completely
-                if on_topic_complete:
-                    on_topic_complete(topic, [])
+                logger.info(f"[Worker {worker_id}] Scraping topic: {topic}")
+                
+                try:
+                    tweets = await self.search_tweets(topic, limit=limit_per_topic, timeout=timeout)
+                    all_tweets.extend(tweets)
+
+                    if on_topic_complete:
+                        on_topic_complete(topic, tweets)
+
+                    logger.info(f"[Worker {worker_id}] Topic '{topic}': {len(tweets)} tweets")
+
+                except Exception as e:
+                    logger.error(f"[Worker {worker_id}] Failed to scrape topic '{topic}': {e}")
+                    if on_topic_complete:
+                        on_topic_complete(topic, [])
+                finally:
+                    queue.task_done()
+                    # Small cooldown between tasks for this worker
+                    await asyncio.sleep(random.uniform(5, 10))
+
+        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
+        await asyncio.gather(*workers)
 
         logger.info(f"Incremental scrape complete: {len(all_tweets)} tweets from {len(remaining)} topics")
         return all_tweets
@@ -392,7 +437,7 @@ class TwitterScraper:
         timeout: int = 300,
     ) -> dict[str, list[ScrapedTweet]]:
         """
-        Deep dive incrementally with progress callbacks.
+        Deep dive incrementally using concurrent workers for load balancing.
 
         Args:
             trends: List of trends to search.
@@ -406,31 +451,52 @@ class TwitterScraper:
         """
         skip_trends = skip_trends or []
         trend_tweets: dict[str, list[ScrapedTweet]] = {}
-
         remaining = [t for t in trends if t not in skip_trends]
-        logger.info(f"Incremental deep dive: {len(remaining)} trends remaining")
 
-        for i, trend in enumerate(remaining):
-            # Add cooldown delay between trends (except the first one)
-            if i > 0:
-                delay = random.uniform(30, 60)
-                logger.info(f"Cooling down for {delay:.1f}s...")
-                await asyncio.sleep(delay)
+        if not remaining:
+            logger.info("No trends remaining to scrape.")
+            return {}
 
-            logger.info(f"[{i+1}/{len(remaining)}] Scraping trend: {trend}")
+        # Determine concurrency based on active accounts
+        stats = await self.get_account_stats()
+        active_count = stats.get("active", 1)
+        concurrency = min(active_count, 5)
+        concurrency = max(1, concurrency)
 
-            try:
-                tweets = await self.search_tweets(trend, limit=limit_per_trend, timeout=timeout)
-                trend_tweets[trend] = tweets
+        logger.info(f"Incremental deep dive: {len(remaining)} trends remaining. Using {concurrency} concurrent workers.")
 
-                if on_trend_complete:
-                    on_trend_complete(trend, tweets)
+        queue = asyncio.Queue()
+        for trend in remaining:
+            queue.put_nowait(trend)
 
-            except Exception as e:
-                logger.error(f"Failed to scrape trend '{trend}': {e}")
-                trend_tweets[trend] = []
-                if on_trend_complete:
-                    on_trend_complete(trend, [])
+        async def worker(worker_id: int):
+            while not queue.empty():
+                try:
+                    trend = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+
+                logger.info(f"[Worker {worker_id}] Scraping trend: {trend}")
+
+                try:
+                    tweets = await self.search_tweets(trend, limit=limit_per_trend, timeout=timeout)
+                    trend_tweets[trend] = tweets
+
+                    if on_trend_complete:
+                        on_trend_complete(trend, tweets)
+
+                except Exception as e:
+                    logger.error(f"[Worker {worker_id}] Failed to scrape trend '{trend}': {e}")
+                    trend_tweets[trend] = []
+                    if on_trend_complete:
+                        on_trend_complete(trend, [])
+                finally:
+                    queue.task_done()
+                    # Small cooldown between tasks for this worker
+                    await asyncio.sleep(random.uniform(5, 10))
+
+        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
+        await asyncio.gather(*workers)
 
         total = sum(len(t) for t in trend_tweets.values())
         logger.info(f"Incremental deep dive complete: {total} tweets from {len(remaining)} trends")

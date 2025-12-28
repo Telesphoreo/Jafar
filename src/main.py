@@ -292,6 +292,9 @@ async def run_pipeline() -> bool:
 
     # Initialize components
     scraper = TwitterScraper(db_path=config.twitter.db_path)
+    # Automatically reset locks to prevent "stuck" accounts from previous interrupted runs
+    await scraper.fix_locks()
+
     analyzer = TrendAnalyzer(model_name=config.app.spacy_model)
     history = DigestHistory()
 
