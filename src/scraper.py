@@ -207,13 +207,19 @@ class TwitterScraper:
             logger.debug(f"Could not check account availability: {e}")
 
         logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
+        
+        if limit > 100:
+            logger.warning(f"High tweet limit ({limit}) detected. This may trigger rate limits quickly.")
+            logger.warning("Consider reducing 'broad_tweet_limit' in config.yaml to < 100 for safer scraping.")
 
         # Use a long safety timeout (20 min) to allow twscrape to wait for rate limits (15 min window)
         # We rely on twscrape's internal logic to handle 429s and waits.
         safety_timeout = 1200  
         
         # Add random jitter to avoid robotic timing patterns
-        await asyncio.sleep(random.uniform(2, 5))
+        jitter = random.uniform(10, 20)
+        logger.info(f"Jitter: waiting {jitter:.1f}s before search...")
+        await asyncio.sleep(jitter)
 
         try:
             # Removed aggressive asyncio.wait_for which was killing rate-limit waits
@@ -312,7 +318,7 @@ class TwitterScraper:
         for i, topic in enumerate(remaining):
             # Add cooldown delay between topics (except the first one)
             if i > 0:
-                delay = random.uniform(5, 15)
+                delay = random.uniform(30, 60)
                 logger.info(f"Cooling down for {delay:.1f}s...")
                 await asyncio.sleep(delay)
 
@@ -407,7 +413,7 @@ class TwitterScraper:
         for i, trend in enumerate(remaining):
             # Add cooldown delay between trends (except the first one)
             if i > 0:
-                delay = random.uniform(5, 15)
+                delay = random.uniform(30, 60)
                 logger.info(f"Cooling down for {delay:.1f}s...")
                 await asyncio.sleep(delay)
 
