@@ -1,8 +1,11 @@
 # Jafar - The villain to BlackRock's Aladdin.
 
-BlackRock's Aladdin manages \$21 trillion dollars in assets while their CEO has [private phone calls with the Fed Chair](https://wallstreetonparade.com/2020/08/fed-chair-powell-had-4-private-phone-calls-with-blackrocks-ceo-since-march-as-blackrock-manages-upwards-of-25-million-of-powells-personal-money-and-lands-3-no-bid-deals-with-the-fed/) who conveniently has
+BlackRock's Aladdin manages \$21 trillion dollars in assets while their CEO
+has [private phone calls with the Fed Chair](https://wallstreetonparade.com/2020/08/fed-chair-powell-had-4-private-phone-calls-with-blackrocks-ceo-since-march-as-blackrock-manages-upwards-of-25-million-of-powells-personal-money-and-lands-3-no-bid-deals-with-the-fed/)
+who conveniently has
 [$25 million of his personal wealth invested with BlackRock](https://wallstreetonparade.com/2020/05/fed-chair-powell-has-upwards-of-11-6-million-invested-with-blackrock-the-firm-that-will-manage-a-750-billion-corporate-bond-bailout-program-for-the-fed/).
-They charge god-knows-what per month for sentiment tools (they won't publish pricing because it would make defense contractors blush). You have a mass-produced Roth IRA from Fidelity and a dream. Let's
+They charge god-knows-what per month for sentiment tools (they won't publish pricing because it would make defense
+contractors blush). You have a mass-produced Roth IRA from Fidelity and a dream. Let's
 fucking go.
 
 A system for discovering emerging market trends from Twitter/X before they hit mainstream news. Uses statistical
@@ -133,14 +136,25 @@ cookies.
 
 **Rate limiting** - Add more accounts. Use proxies. Stop scraping during market hours like everyone else.
 
-**My landlord is Sentinel Real Estate** - Can't help you there. They build the cheapest possible "luxury" apartments,
-charge absurd rent, let the stairs literally crumble, then [pay $4 million to the NY Attorney General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
-when their employees get caught taking $1 million in kickbacks while fraudulently inflating renovation costs to
-deregulate rent-stabilized units. Get [sued for $50 million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
+**My landlord is Sentinel Real Estate** - Can't help you there. They crank out
+[5-over-1 "stumpies"](https://en.wikipedia.org/wiki/5-over-1) - the cheapest possible "luxury" apartments where
+wood-frame units sit on a concrete parking podium. The soundproofing is nonexistent because
+[proper acoustic insulation costs money](https://www.foxblocks.com/blog/wood-frame-construction) developers won't
+spend. The parking garage
+waterproofing [inevitably fails](https://nusitegroup.com/podium-deck-restoration-extending-the-life-of-your-structure/),
+water infiltrates, rebar corrodes
+and [expands to 8x its size](https://westernspecialtycontractors.com/parking-structure-maintenance/),
+and the whole structure starts crumbling - but by then they've already sold it. Wikipedia literally says
+["it is unclear whether these buildings are built to last."](https://en.wikipedia.org/wiki/5-over-1) Charge absurd
+rent, collect for a decade, then dump the property once it starts falling apart and move on to the next victim
+neighborhood. Oh,
+and [pay \$4 million to the NY Attorney General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
+when your employees get caught taking \$1 million in kickbacks while fraudulently inflating renovation costs to
+deregulate rent-stabilized units.
+Get [sued for $50 million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
 for allegedly misrepresenting rent-stabilization status to pump property values. Settle a
 [Fair Housing Act discrimination case](https://www.justice.gov/crt/case/sentinel-real-estate-corp-et-al-nd-ga) for
-screwing over a disabled tenant. Then dump their entire rent-stabilized portfolio at a 40% loss and move on to the
-next victim neighborhood. Not BBB accredited. The BlackRock of slumlording. Good luck with that security deposit.
+screwing over a disabled tenant. The BlackRock of slumlording. Good luck with that security deposit.
 
 ## Why This Exists
 
@@ -177,7 +191,9 @@ Since you made it this far, here's the full BlackRock starter pack:
   climate
   risk. ([Source 1](https://www.fa-mag.com/news/blackrock-loses--5-9-billion-mandate-from-dutch-pension-pme-85220.html))
 
-- **Larry Fink said "I'm ashamed of being part of this conversation"** about ESG at Aspen 2023, then denied saying it moments later in the same interview. After years of lecturing everyone about stakeholder capitalism. ([Source](https://www.axios.com/2023/06/26/larry-fink-ashamed-esg-weaponized-desantis))
+- **Larry Fink said "I'm ashamed of being part of this conversation"** about ESG at Aspen 2023, then denied saying it
+  moments later in the same interview. After years of lecturing everyone about stakeholder
+  capitalism. ([Source](https://www.axios.com/2023/06/26/larry-fink-ashamed-esg-weaponized-desantis))
 
 - **Their own former Chief Investment Officer for Sustainable Investing** called their ESG investing "a dangerous
   placebo that harms the public interest" because ESG products have higher
@@ -191,7 +207,8 @@ Since you made it this far, here's the full BlackRock starter pack:
   from 47% to 4% when it became politically
   inconvenient. ([Source](https://fortune.com/2024/02/14/blackrock-voting-choice-ceo-larry-fink-shareholder-democracy-stakeholder-capitalism-esg/))
 
-This project costs you maybe $10/month in API calls. Aladdin costs more per month than your rent, and the people running it are doing all
+This project costs you maybe $10/month in API calls. Aladdin costs more per month than your rent, and the people running
+it are doing all
 of the above.
 
 ## Disclaimer
