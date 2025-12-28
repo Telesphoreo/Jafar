@@ -2,7 +2,7 @@
 
 BlackRock's Aladdin manages \$21 trillion dollars in assets while their CEO has [private phone calls with the Fed Chair](https://wallstreetonparade.com/2020/08/fed-chair-powell-had-4-private-phone-calls-with-blackrocks-ceo-since-march-as-blackrock-manages-upwards-of-25-million-of-powells-personal-money-and-lands-3-no-bid-deals-with-the-fed/) who conveniently has
 [$25 million of his personal wealth invested with BlackRock](https://wallstreetonparade.com/2020/05/fed-chair-powell-has-upwards-of-11-6-million-invested-with-blackrock-the-firm-that-will-manage-a-750-billion-corporate-bond-bailout-program-for-the-fed/).
-They charge \$25,000/month for sentiment tools. You have a mass-produced Roth IRA from Fidelity and a dream. Let's
+They charge god-knows-what per month for sentiment tools (they won't publish pricing because it would make defense contractors blush). You have a mass-produced Roth IRA from Fidelity and a dream. Let's
 fucking go.
 
 A system for discovering emerging market trends from Twitter/X before they hit mainstream news. Uses statistical
@@ -182,7 +182,7 @@ Since you made it this far, here's the full BlackRock starter pack:
   from 47% to 4% when it became politically
   inconvenient. ([Source](https://fortune.com/2024/02/14/blackrock-voting-choice-ceo-larry-fink-shareholder-democracy-stakeholder-capitalism-esg/))
 
-This project costs you maybe $10/month in API calls. Aladdin costs $25,000/month and the people running it are doing all
+This project costs you maybe $10/month in API calls. Aladdin costs more per month than your rent, and the people running it are doing all
 of the above.
 
 ## Disclaimer
@@ -190,18 +190,7 @@ of the above.
 Not financial advice. If you YOLO your life savings because this said "HIGH signal" on some shitcoin, that's a you
 problem. Hedge funds with actual Aladdin access still lose money - and then they get bailed out with your taxes.
 
-## Contributing
-
-PRs welcome. Especially for:
-
-- More shade in the README (with receipts)
-- Better fact-checker symbol mappings
-- Making the LLM even more skeptical
-- Telling us we're wrong (we can take it)
-
-## Acknowledgments
-
-- **twscrape** - For making Twitter scraping possible post-API-apocalypse
-- **spaCy** - NLP that works
-- **yfinance** - Yahoo's one contribution to society
-- **BlackRock** - For the motivation. See you at the next ~~Fed meeting~~ private phone call with Jerome.
+Also, completely unrelated, but fuck Sentinel Real Estate. Build the cheapest possible apartment complex, charge
+absurd rent, provide management so incompetent they can't even [respond to BBB complaints](https://www.bbb.org/us/ny/new-york/profile/real-estate/sentinel-real-estate-corporation-0121-36586/complaints),
+then dump the property once the drywall starts crumbling and move on to the next victim neighborhood. The BlackRock
+of slumlording. At least this project won't ghost you for six months when you ask where your security deposit went.
