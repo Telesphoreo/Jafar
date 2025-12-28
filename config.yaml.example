@@ -52,15 +52,22 @@ email:
 
 # Scraping Limits
 scraping:
-  # Tweets per broad topic (higher = better discovery but slower)
-  # With 1 account: 100-200 is reasonable
-  # With 5+ accounts: 500-1000 for comprehensive coverage
-  broad_tweet_limit: 200
+  # Tweets per broad topic during discovery phase
+  # Each worker paces at ~10-15s per page (15 tweets), so:
+  #   50 tweets  ≈ 30-45s per topic
+  #   100 tweets ≈ 60-90s per topic
+  #   200 tweets ≈ 2-3 min per topic
+  # More accounts = more parallel workers (faster overall), NOT higher limits
+  # Recommended: 50-100 for balanced speed/coverage
+  broad_tweet_limit: 75
 
-  # Tweets per discovered trend
-  specific_tweet_limit: 100
+  # Tweets per discovered trend (deep dive phase)
+  # Usually fewer needed since you're drilling into specific entities
+  # Recommended: 30-75
+  specific_tweet_limit: 50
 
   # Number of top trends to analyze in depth
+  # More trends = longer deep dive phase
   top_trends_count: 10
 
   # Minimum thresholds for trend detection
@@ -70,7 +77,6 @@ scraping:
 
   # Timeout for each search query (seconds)
   # Prevents hanging if Twitter API becomes unresponsive
-  # Recommended: 120-300 seconds
   search_timeout: 120
 
 # Broad Search Topics
