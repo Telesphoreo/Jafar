@@ -277,42 +277,61 @@ Disclaimer: Not financial advice. If you lose money, that's on you.
         msg.attach(part2)
 
         logger.info(f"Sending email to {len(self.config.email_to)} recipient(s)")
+        logger.info(f"SMTP Server: {self.config.host}:{self.config.port} (TLS: {self.config.use_tls})")
+        logger.info(f"From: {self.config.email_from}")
+        logger.info(f"To: {', '.join(self.config.email_to)}")
+        logger.info(f"Subject: {subject}")
 
         try:
             # Connect to SMTP server with timeout protection
             timeout = 30  # 30 seconds for all SMTP operations
 
+            logger.info("Step 1: Connecting to SMTP server...")
             if self.config.use_tls:
                 server = smtplib.SMTP(self.config.host, self.config.port, timeout=timeout)
+                server.set_debuglevel(1)  # Enable SMTP protocol debugging
+                logger.info("Step 2: Starting TLS...")
                 server.starttls()
+                logger.info("TLS started successfully")
             else:
                 server = smtplib.SMTP_SSL(self.config.host, self.config.port, timeout=timeout)
+                server.set_debuglevel(1)  # Enable SMTP protocol debugging
+                logger.info("SSL connection established")
 
-            # Login and send
+            logger.info(f"Step 3: Logging in as {self.config.username}...")
             server.login(self.config.username, self.config.password)
+            logger.info("Login successful")
+
+            logger.info("Step 4: Sending email...")
             server.sendmail(
                 self.config.email_from,
                 self.config.email_to,
                 msg.as_string(),
             )
-            server.quit()
+            logger.info("Email sent, closing connection...")
 
-            logger.info("Email sent successfully")
+            server.quit()
+            logger.info("✓ Email sent successfully")
             return True
 
         except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"SMTP authentication failed: {e}")
-            logger.error("Check SMTP_USERNAME and SMTP_PASSWORD in .env")
+            logger.error(f"✗ SMTP authentication failed: {e}")
+            logger.error(f"  Username: {self.config.username}")
+            logger.error("  Check SMTP_USERNAME and SMTP_PASSWORD in .env")
             return False
         except smtplib.SMTPException as e:
-            logger.error(f"SMTP error: {e}")
+            logger.error(f"✗ SMTP error: {e}")
+            logger.error(f"  Error type: {type(e).__name__}")
             return False
         except TimeoutError as e:
-            logger.error(f"SMTP connection timeout after 30s: {e}")
-            logger.error(f"Check if {self.config.host}:{self.config.port} is reachable")
+            logger.error(f"✗ SMTP connection timeout after 30s: {e}")
+            logger.error(f"  Check if {self.config.host}:{self.config.port} is reachable")
             return False
         except Exception as e:
-            logger.error(f"Failed to send email: {e}")
+            logger.error(f"✗ Failed to send email: {e}")
+            logger.error(f"  Error type: {type(e).__name__}")
+            import traceback
+            logger.error(f"  Traceback: {traceback.format_exc()}")
             return False
 
 
