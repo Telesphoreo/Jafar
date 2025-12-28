@@ -175,11 +175,17 @@ class DiscoveredTrend:
     first_seen: datetime | None = None
     last_seen: datetime | None = None
     financial_context_count: int = 0  # How many mentions had financial context
+    cashtag_cooccurrence_count: int = 0  # How many mentions appeared WITH a cashtag
 
     @property
     def financial_context_ratio(self) -> float:
         """Ratio of mentions that appeared in financial context."""
         return self.financial_context_count / max(self.mention_count, 1)
+
+    @property
+    def cashtag_cooccurrence_ratio(self) -> float:
+        """Ratio of mentions that appeared alongside a cashtag."""
+        return self.cashtag_cooccurrence_count / max(self.mention_count, 1)
 
     @property
     def velocity_score(self) -> float:
@@ -223,14 +229,49 @@ class DiscoveredTrend:
         else:
             context_multiplier = 0.8 + (self.financial_context_ratio * 0.7)
 
-        return base_score * context_multiplier
+        # Cashtag co-occurrence bonus: 1.0x to 1.5x
+        # Terms that appear alongside tickers are more likely to be financially relevant
+        cooccurrence_bonus = 1.0 + (self.cashtag_cooccurrence_ratio * 0.5)
+
+        return base_score * context_multiplier * cooccurrence_bonus
+
+    def passes_quality_threshold(self, min_authors: int = 10, min_context: float = 0.85) -> bool:
+        """
+        Check if this trend passes minimum quality requirements for deep dive.
+
+        Requirements:
+        - At least min_authors unique authors (default 10)
+        - At least min_context financial context ratio (default 85%)
+        - For non-cashtags: should have SOME cashtag co-occurrence (proves financial relevance)
+        """
+        # Basic thresholds
+        if self.unique_authors < min_authors:
+            return False
+        if self.financial_context_ratio < min_context:
+            return False
+
+        # Cashtags always pass (they ARE the financial signal)
+        if self.term_type == "cashtag":
+            return True
+
+        # For n-grams and hashtags: require some cashtag co-occurrence
+        # This proves the term is actually discussed in financial contexts
+        # Exception: if it has very high engagement and perfect financial context
+        if self.cashtag_cooccurrence_ratio < 0.1:
+            # Allow if it has overwhelming signal (100% financial, high engagement)
+            if self.financial_context_ratio >= 0.95 and self.total_engagement > 20000:
+                return True
+            return False
+
+        return True
 
     def __str__(self) -> str:
         return (
             f"{self.term} ({self.term_type}): "
             f"{self.mention_count} mentions by {self.unique_authors} authors, "
             f"engagement={self.total_engagement:.0f}, "
-            f"fin_ctx={self.financial_context_ratio:.0%}"
+            f"fin_ctx={self.financial_context_ratio:.0%}, "
+            f"cashtag_co={self.cashtag_cooccurrence_ratio:.0%}"
         )
 
 
@@ -304,6 +345,10 @@ class StatisticalTrendAnalyzer:
         # Contains financial terms
         return any(term in text_lower for term in FINANCIAL_CONTEXT_TERMS)
 
+    def _has_cashtag(self, tweet: ScrapedTweet) -> bool:
+        """Check if tweet contains any cashtag ($TICKER)."""
+        return bool(CASHTAG_PATTERN.search(tweet.text))
+
     def _clean_text(self, text: str) -> str:
         """Remove URLs, mentions, and clean up text for n-gram extraction."""
         text = URL_PATTERN.sub('', text)
@@ -374,6 +419,7 @@ class StatisticalTrendAnalyzer:
 
             engagement = self._calculate_engagement(tweet)
             has_financial_context = self._has_financial_context(tweet)
+            has_cashtag = self._has_cashtag(tweet)
 
             for hashtag in tweet.hashtags:
                 tag = hashtag.lower().strip('#')
@@ -401,6 +447,8 @@ class StatisticalTrendAnalyzer:
                 trends[tag].last_seen = tweet.created_at
                 if has_financial_context:
                     trends[tag].financial_context_count += 1
+                if has_cashtag:
+                    trends[tag].cashtag_cooccurrence_count += 1
 
                 if len(trends[tag].sample_tweets) < 3:
                     trends[tag].sample_tweets.append(tweet.text[:200])
@@ -438,6 +486,7 @@ class StatisticalTrendAnalyzer:
         for doc, tweet in zip(nlp.pipe(texts, batch_size=100), tweet_data):
             engagement = self._calculate_engagement(tweet)
             has_financial_context = self._has_financial_context(tweet)
+            has_cashtag = self._has_cashtag(tweet)
 
             # Extract noun phrases and named entities - these are the meaningful terms
             meaningful_terms = set()
@@ -490,6 +539,8 @@ class StatisticalTrendAnalyzer:
                 trends[term].last_seen = tweet.created_at
                 if has_financial_context:
                     trends[term].financial_context_count += 1
+                if has_cashtag:
+                    trends[term].cashtag_cooccurrence_count += 1
 
                 if len(trends[term].sample_tweets) < 3:
                     trends[term].sample_tweets.append(tweet.text[:200])
@@ -500,24 +551,28 @@ class StatisticalTrendAnalyzer:
 
         return trends
 
-    def extract_trends(
+    def extract_trends_with_details(
         self,
         tweets: list[ScrapedTweet],
         top_n: int = 10,
         min_mentions: int = 3,
         min_authors: int = 2,
-    ) -> list[str]:
+        apply_quality_filter: bool = True,
+    ) -> tuple[list[DiscoveredTrend], list[DiscoveredTrend]]:
         """
-        Extract top trending topics using statistical analysis.
+        Extract trending topics with full details and quality filtering.
 
         Args:
             tweets: List of scraped tweets to analyze
-            top_n: Number of top trends to return
+            top_n: Maximum number of trends to consider
             min_mentions: Minimum mention count to be considered
             min_authors: Minimum unique authors (filters spam)
+            apply_quality_filter: If True, filter by quality threshold
 
         Returns:
-            List of top trending terms
+            Tuple of (qualified_trends, all_candidates)
+            - qualified_trends: Trends that pass quality threshold (for deep dive)
+            - all_candidates: Top N trends before quality filter (for logging/debugging)
         """
         logger.info(f"Analyzing {len(tweets)} tweets for emerging trends...")
 
@@ -557,17 +612,59 @@ class StatisticalTrendAnalyzer:
                 seen_terms.add(normalized)
                 unique_trends.append(trend)
 
-        # Get top N
-        top_trends = unique_trends[:top_n]
+        # Get top N candidates
+        candidates = unique_trends[:top_n]
 
-        # Log results
+        # Log all candidates
         logger.info("=" * 60)
         logger.info("TOP EMERGING TRENDS (by engagement velocity):")
-        for i, trend in enumerate(top_trends, 1):
+        for i, trend in enumerate(candidates, 1):
             logger.info(f"  {i}. {trend}")
         logger.info("=" * 60)
 
-        return [t.term for t in top_trends]
+        # Apply quality filter
+        if apply_quality_filter:
+            qualified = [t for t in candidates if t.passes_quality_threshold()]
+            logger.info(f"Quality filter: {len(qualified)}/{len(candidates)} trends pass threshold")
+
+            if qualified:
+                logger.info("QUALIFIED FOR DEEP DIVE:")
+                for i, trend in enumerate(qualified, 1):
+                    logger.info(f"  {i}. {trend.term}")
+            else:
+                logger.warning("No trends passed quality threshold - quiet day or noisy data")
+        else:
+            qualified = candidates
+
+        return qualified, candidates
+
+    def extract_trends(
+        self,
+        tweets: list[ScrapedTweet],
+        top_n: int = 10,
+        min_mentions: int = 3,
+        min_authors: int = 2,
+    ) -> list[str]:
+        """
+        Extract top trending topics using statistical analysis.
+
+        Args:
+            tweets: List of scraped tweets to analyze
+            top_n: Number of top trends to return
+            min_mentions: Minimum mention count to be considered
+            min_authors: Minimum unique authors (filters spam)
+
+        Returns:
+            List of top trending terms (only those passing quality threshold)
+        """
+        qualified, _ = self.extract_trends_with_details(
+            tweets=tweets,
+            top_n=top_n,
+            min_mentions=min_mentions,
+            min_authors=min_authors,
+            apply_quality_filter=True,
+        )
+        return [t.term for t in qualified]
 
     def get_detailed_analysis(self, tweets: list[ScrapedTweet], top_n: int = 15) -> str:
         """Get detailed breakdown of all discovered signals."""

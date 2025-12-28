@@ -249,6 +249,80 @@ Remember: Your job is to FILTER, not to HYPE. A good analyst knows when to say "
         raise
 
 
+async def llm_filter_trends(
+    llm: LLMProvider,
+    candidates: list[str],
+) -> list[str]:
+    """
+    Use LLM to filter trend candidates, keeping only actionable financial signals.
+
+    This is a quick, cheap call (~500 tokens) that leverages LLM judgment to
+    distinguish real market signals from noise that slipped through statistical filters.
+
+    Args:
+        llm: The LLM provider to use
+        candidates: List of trend term strings to evaluate
+
+    Returns:
+        Filtered list of trends worth deep-diving
+    """
+    if not candidates:
+        return []
+
+    # Format candidates for the prompt
+    candidates_str = "\n".join(f"- {c}" for c in candidates)
+
+    prompt = f"""Review these trend candidates extracted from financial Twitter. Which ones are likely ACTIONABLE market signals vs generic noise?
+
+CANDIDATES:
+{candidates_str}
+
+KEEP terms that are:
+- Specific assets, tickers, or commodities (e.g., "Silver", "$NVDA", "Uranium")
+- Concrete market events (e.g., "Short Squeeze", "Margin Call", "Earnings Miss")
+- Economic indicators (e.g., "Inventories", "Payrolls", "CPI")
+- Specific companies or sectors experiencing notable activity
+
+REJECT terms that are:
+- Generic words that appear in financial tweets but aren't actionable (e.g., "Risk", "Demand", "Buyers")
+- Sentiment words without a specific target (e.g., "Bullish", "Worried", "Confident")
+- Common nouns that slipped through filters (e.g., "Gap", "Books", "Crowd")
+
+Respond with ONLY a JSON array of terms to KEEP, like: ["Silver", "$NVDA", "Uranium"]
+If none are worth keeping, respond with: []"""
+
+    try:
+        response = await llm.generate(
+            prompt=prompt,
+            system_prompt="You are a financial signal filter. Be ruthless - only keep terms that a trader could actually act on. Respond with ONLY a JSON array, no explanation.",
+            temperature=0.3,  # Low temp for consistency
+            max_tokens=200,
+        )
+
+        # Parse JSON response
+        import json
+        content = response.content.strip()
+
+        # Handle potential markdown code blocks
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1] if "\n" in content else content
+            content = content.rsplit("```", 1)[0] if "```" in content else content
+            content = content.strip()
+
+        filtered = json.loads(content)
+
+        if not isinstance(filtered, list):
+            logger.warning(f"LLM filter returned non-list: {content}")
+            return candidates  # Fall back to original
+
+        logger.info(f"LLM filter: {len(filtered)}/{len(candidates)} trends passed")
+        return filtered
+
+    except Exception as e:
+        logger.warning(f"LLM filter failed, using all candidates: {e}")
+        return candidates  # Fall back to original on error
+
+
 async def run_pipeline() -> bool:
     """
     Run the full sentiment analysis pipeline with checkpointing.
@@ -420,7 +494,26 @@ async def run_pipeline() -> bool:
             logger.info("\n[STEP 2] Skipping (already complete)")
             trends = state.trends
 
-        logger.info(f"Trends: {trends}")
+        logger.info(f"Trends (pre-filter): {trends}")
+
+        # ============================================================
+        # STEP 2.5: LLM QUALITY FILTER - Validate candidates before deep dive
+        # ============================================================
+        # Only run LLM filter if we haven't started deep dive yet (trends might change)
+        if trends and len(trends) > 0 and not state.step3_complete:
+            logger.info("\n[STEP 2.5] LLM FILTER: Validating trend candidates...")
+            filtered_trends = await llm_filter_trends(llm, trends)
+
+            if filtered_trends != trends:
+                # Save filtered trends to checkpoint
+                trends = filtered_trends
+                checkpoint.save_trends(trends)
+                state = checkpoint.get_state()
+
+            if not trends:
+                logger.info("LLM filter rejected all candidates - quiet day")
+
+        logger.info(f"Trends (post-filter): {trends}")
 
         # ============================================================
         # STEP 3: THE DEEP DIVE - Targeted Scraping
