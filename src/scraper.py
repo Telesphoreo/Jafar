@@ -26,6 +26,7 @@ This populates the accounts.db SQLite database that twscrape uses for authentica
 
 import asyncio
 import logging
+import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import AsyncIterator
@@ -211,6 +212,9 @@ class TwitterScraper:
         # We rely on twscrape's internal logic to handle 429s and waits.
         safety_timeout = 1200  
         
+        # Add random jitter to avoid robotic timing patterns
+        await asyncio.sleep(random.uniform(2, 5))
+
         try:
             # Removed aggressive asyncio.wait_for which was killing rate-limit waits
             raw_tweets = await asyncio.wait_for(
@@ -306,6 +310,12 @@ class TwitterScraper:
         logger.info(f"Incremental scrape: {len(remaining)} topics remaining, {len(skip_topics)} already done")
 
         for i, topic in enumerate(remaining):
+            # Add cooldown delay between topics (except the first one)
+            if i > 0:
+                delay = random.uniform(5, 15)
+                logger.info(f"Cooling down for {delay:.1f}s...")
+                await asyncio.sleep(delay)
+
             logger.info(f"[{i+1}/{len(remaining)}] Scraping topic: {topic}")
 
             try:
@@ -395,6 +405,12 @@ class TwitterScraper:
         logger.info(f"Incremental deep dive: {len(remaining)} trends remaining")
 
         for i, trend in enumerate(remaining):
+            # Add cooldown delay between trends (except the first one)
+            if i > 0:
+                delay = random.uniform(5, 15)
+                logger.info(f"Cooling down for {delay:.1f}s...")
+                await asyncio.sleep(delay)
+
             logger.info(f"[{i+1}/{len(remaining)}] Scraping trend: {trend}")
 
             try:
