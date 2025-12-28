@@ -68,7 +68,7 @@ scraping:
 
   # Number of top trends to analyze in depth
   # More trends = longer deep dive phase
-  top_trends_count: 10
+  top_trends_count: 15
 
   # Minimum thresholds for trend detection
   # Lower = more trends (including noise), Higher = only strong signals
