@@ -270,7 +270,7 @@ async def run_pipeline() -> bool:
         state = checkpoint.get_state()
 
     # Initialize components
-    scraper = TwitterScraper(db_path=config.twitter.db_path, proxies=config.twitter.proxies)
+    scraper = TwitterScraper(db_path=config.twitter.db_path)
     analyzer = TrendAnalyzer()
     history = DigestHistory()
 

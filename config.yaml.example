@@ -11,17 +11,13 @@ twitter:
   # Path to twscrape SQLite database
   db_path: accounts.db
 
-  # SOCKS5 proxies bound to accounts (optional)
-  # Each account gets assigned a proxy in round-robin fashion.
-  # This keeps each account on a consistent IP to avoid detection.
-  # Credentials should be in .env as TWITTER_PROXIES if they contain passwords.
-  proxies: []
-  # Example with multiple proxies:
-  # proxies:
-  #   - socks5://host1:port
-  #   - socks5://host2:port
-  # With 3 accounts and 2 proxies:
-  #   account1 -> proxy1, account2 -> proxy2, account3 -> proxy1
+  # SOCKS5 proxies (optional)
+  # These proxies are assigned to accounts when using add_account.py
+  # Each account gets a proxy in round-robin order for consistent IPs.
+  # Leave empty here after accounts are added - proxies are stored in accounts.db
+  proxies:
+    # - socks5://user:pass@host1:port
+    # - socks5://user:pass@host2:port
 
 # -----------------------------------------------------------------------------
 # LLM Provider Settings

@@ -91,41 +91,17 @@ class TwitterScraper:
     The scraper handles account pools automatically for rate limit management.
     """
 
-    def __init__(self, db_path: str = "accounts.db", proxies: list[str] | None = None):
+    def __init__(self, db_path: str = "accounts.db"):
         """
         Initialize the Twitter scraper.
 
         Args:
             db_path: Path to the twscrape SQLite database containing accounts.
-            proxies: Optional list of SOCKS5 proxy URLs to bind to accounts.
+                     Proxies are configured per-account in the database.
         """
         self.db_path = db_path
-        self.proxies = proxies or []
         self._api: API | None = None
-        self._proxies_bound = False
         logger.info(f"TwitterScraper initialized with database: {db_path}")
-        if self.proxies:
-            logger.info(f"Configured {len(self.proxies)} proxies for account binding")
-
-    async def _bind_proxies_to_accounts(self) -> None:
-        """Bind proxies to accounts in round-robin fashion (one proxy per account)."""
-        if not self.proxies or self._proxies_bound:
-            return
-
-        api = await self._get_api()
-        accounts = await api.pool.accounts_info()
-
-        if not accounts:
-            logger.warning("No accounts found to bind proxies to")
-            return
-
-        for i, account in enumerate(accounts):
-            proxy = self.proxies[i % len(self.proxies)]
-            await api.pool.set_proxy(account.username, proxy)
-            logger.info(f"Bound proxy {i % len(self.proxies) + 1}/{len(self.proxies)} to @{account.username}")
-
-        self._proxies_bound = True
-        logger.info(f"Bound {len(self.proxies)} proxies to {len(accounts)} accounts")
 
     async def _get_api(self) -> API:
         """Get or create the twscrape API instance."""
@@ -204,7 +180,6 @@ class TwitterScraper:
             List of ScrapedTweet objects.
         """
         api = await self._get_api()
-        await self._bind_proxies_to_accounts()
         tweets: list[ScrapedTweet] = []
 
         # Add language filter to query
