@@ -279,12 +279,14 @@ Disclaimer: Not financial advice. If you lose money, that's on you.
         logger.info(f"Sending email to {len(self.config.email_to)} recipient(s)")
 
         try:
-            # Connect to SMTP server
+            # Connect to SMTP server with timeout protection
+            timeout = 30  # 30 seconds for all SMTP operations
+
             if self.config.use_tls:
-                server = smtplib.SMTP(self.config.host, self.config.port)
+                server = smtplib.SMTP(self.config.host, self.config.port, timeout=timeout)
                 server.starttls()
             else:
-                server = smtplib.SMTP_SSL(self.config.host, self.config.port)
+                server = smtplib.SMTP_SSL(self.config.host, self.config.port, timeout=timeout)
 
             # Login and send
             server.login(self.config.username, self.config.password)
@@ -300,9 +302,14 @@ Disclaimer: Not financial advice. If you lose money, that's on you.
 
         except smtplib.SMTPAuthenticationError as e:
             logger.error(f"SMTP authentication failed: {e}")
+            logger.error("Check SMTP_USERNAME and SMTP_PASSWORD in .env")
             return False
         except smtplib.SMTPException as e:
             logger.error(f"SMTP error: {e}")
+            return False
+        except TimeoutError as e:
+            logger.error(f"SMTP connection timeout after 30s: {e}")
+            logger.error(f"Check if {self.config.host}:{self.config.port} is reachable")
             return False
         except Exception as e:
             logger.error(f"Failed to send email: {e}")
