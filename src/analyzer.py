@@ -106,6 +106,17 @@ HASHTAG_PATTERN = re.compile(r'#(\w+)')
 URL_PATTERN = re.compile(r'https?://\S+')
 MENTION_PATTERN = re.compile(r'@\w+')
 
+# Financial context indicators - if a tweet contains these, its terms are more relevant
+FINANCIAL_CONTEXT_TERMS = {
+    "market", "trading", "stock", "price", "buy", "sell", "long", "short",
+    "bullish", "bearish", "rally", "crash", "earnings", "revenue", "profit",
+    "loss", "dividend", "yield", "bond", "treasury", "fed", "inflation",
+    "recession", "gdp", "commodity", "futures", "options", "puts", "calls",
+    "breakout", "support", "resistance", "volume", "volatility", "etf",
+    "portfolio", "hedge", "risk", "sector", "index", "dow", "nasdaq", "s&p",
+    "gold", "silver", "oil", "copper", "wheat", "corn", "lumber",
+}
+
 
 @dataclass
 class DiscoveredTrend:
@@ -119,6 +130,12 @@ class DiscoveredTrend:
     sample_tweets: list[str] = field(default_factory=list)
     first_seen: datetime | None = None
     last_seen: datetime | None = None
+    financial_context_count: int = 0  # How many mentions had financial context
+
+    @property
+    def financial_context_ratio(self) -> float:
+        """Ratio of mentions that appeared in financial context."""
+        return self.financial_context_count / max(self.mention_count, 1)
 
     @property
     def velocity_score(self) -> float:
@@ -141,18 +158,33 @@ class DiscoveredTrend:
     def composite_score(self) -> float:
         """
         Final ranking score combining all factors.
+        Financial context is heavily weighted - trends without financial context
+        are heavily penalized to filter entertainment/noise.
         """
         # Frequency matters but engagement matters more
         freq_component = self.mention_count * 0.2
         engagement_component = self.velocity_score * 0.8
 
-        return freq_component + engagement_component
+        base_score = freq_component + engagement_component
+
+        # Financial context multiplier: 0.1x to 1.5x
+        # < 20% financial context = heavily penalized (0.1x - 0.4x)
+        # > 50% financial context = boosted (1.0x - 1.5x)
+        if self.financial_context_ratio < 0.2:
+            context_multiplier = 0.1 + (self.financial_context_ratio * 1.5)
+        elif self.financial_context_ratio < 0.5:
+            context_multiplier = 0.4 + (self.financial_context_ratio * 1.2)
+        else:
+            context_multiplier = 1.0 + (self.financial_context_ratio * 0.5)
+
+        return base_score * context_multiplier
 
     def __str__(self) -> str:
         return (
             f"{self.term} ({self.term_type}): "
             f"{self.mention_count} mentions by {self.unique_authors} authors, "
-            f"engagement={self.total_engagement:.0f}"
+            f"engagement={self.total_engagement:.0f}, "
+            f"fin_ctx={self.financial_context_ratio:.0%}"
         )
 
 
@@ -217,6 +249,15 @@ class StatisticalTrendAnalyzer:
         """Calculate engagement score for a tweet."""
         return (tweet.likes * 1.0) + (tweet.retweets * 0.5) + (tweet.replies * 0.3)
 
+    def _has_financial_context(self, tweet: ScrapedTweet) -> bool:
+        """Check if tweet contains financial context indicators."""
+        text_lower = tweet.text.lower()
+        # Has cashtag = definitely financial
+        if CASHTAG_PATTERN.search(tweet.text):
+            return True
+        # Contains financial terms
+        return any(term in text_lower for term in FINANCIAL_CONTEXT_TERMS)
+
     def _clean_text(self, text: str) -> str:
         """Remove URLs, mentions, and clean up text for n-gram extraction."""
         text = URL_PATTERN.sub('', text)
@@ -263,6 +304,8 @@ class StatisticalTrendAnalyzer:
                 trends[key].mention_count += 1
                 trends[key].total_engagement += engagement
                 trends[key].last_seen = tweet.created_at
+                # Cashtags are inherently financial context
+                trends[key].financial_context_count += 1
 
                 if len(trends[key].sample_tweets) < 3:
                     trends[key].sample_tweets.append(tweet.text[:200])
@@ -284,6 +327,7 @@ class StatisticalTrendAnalyzer:
                 continue
 
             engagement = self._calculate_engagement(tweet)
+            has_financial_context = self._has_financial_context(tweet)
 
             for hashtag in tweet.hashtags:
                 tag = hashtag.lower().strip('#')
@@ -309,6 +353,8 @@ class StatisticalTrendAnalyzer:
                 trends[tag].mention_count += 1
                 trends[tag].total_engagement += engagement
                 trends[tag].last_seen = tweet.created_at
+                if has_financial_context:
+                    trends[tag].financial_context_count += 1
 
                 if len(trends[tag].sample_tweets) < 3:
                     trends[tag].sample_tweets.append(tweet.text[:200])
@@ -345,13 +391,15 @@ class StatisticalTrendAnalyzer:
         # Process with spaCy
         for doc, tweet in zip(nlp.pipe(texts, batch_size=100), tweet_data):
             engagement = self._calculate_engagement(tweet)
+            has_financial_context = self._has_financial_context(tweet)
 
             # Extract noun phrases and named entities - these are the meaningful terms
             meaningful_terms = set()
 
-            # Named entities (ORG, PRODUCT, EVENT, WORK_OF_ART, etc.)
+            # Named entities (ORG, PRODUCT, EVENT, etc.)
+            # Note: WORK_OF_ART excluded - catches entertainment (movies, anime, songs)
             for ent in doc.ents:
-                if ent.label_ in {"ORG", "PRODUCT", "EVENT", "WORK_OF_ART", "FAC", "GPE", "LOC"}:
+                if ent.label_ in {"ORG", "PRODUCT", "EVENT", "FAC", "GPE", "LOC"}:
                     term = ent.text.strip()
                     if len(term) >= 2 and not self._is_noise(term):
                         meaningful_terms.add(term.lower())
@@ -394,6 +442,8 @@ class StatisticalTrendAnalyzer:
                 trends[term].mention_count += 1
                 trends[term].total_engagement += engagement
                 trends[term].last_seen = tweet.created_at
+                if has_financial_context:
+                    trends[term].financial_context_count += 1
 
                 if len(trends[term].sample_tweets) < 3:
                     trends[term].sample_tweets.append(tweet.text[:200])
