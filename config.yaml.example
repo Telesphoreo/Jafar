@@ -145,6 +145,12 @@ memory:
   # Embedding provider: "openai" or "local" (free, requires sentence-transformers)
   embedding_provider: openai
 
+  # OpenAI embedding model (only used when embedding_provider is "openai")
+  # Options:
+  #   - text-embedding-3-small: 1536 dimensions, faster, cheaper
+  #   - text-embedding-3-large: 3072 dimensions, better quality
+  openai_embedding_model: text-embedding-3-large
+
   # ChromaDB storage path (for local chroma store)
   chroma_path: ./memory_store
 

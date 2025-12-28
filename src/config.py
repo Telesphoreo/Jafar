@@ -192,6 +192,10 @@ class MemoryConfig:
     embedding_provider: Literal["openai", "local"] = field(
         default_factory=lambda: _get_yaml("memory", "embedding_provider", "openai")
     )
+    # OpenAI embedding model: "text-embedding-3-small" (1536d) or "text-embedding-3-large" (3072d)
+    openai_embedding_model: str = field(
+        default_factory=lambda: _get_yaml("memory", "openai_embedding_model", "text-embedding-3-large")
+    )
     chroma_path: str = field(
         default_factory=lambda: _get_yaml("memory", "chroma_path", "./memory_store")
     )
