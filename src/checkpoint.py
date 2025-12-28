@@ -57,6 +57,7 @@ class PipelineState:
     # Metadata
     last_updated: str = ""
     error: str = ""
+    retry_counts: dict[str, int] = field(default_factory=dict)  # Track retries for empty results
 
 
 class CheckpointManager:
@@ -172,8 +173,23 @@ class CheckpointManager:
 
     # Step 1: Broad scraping
     def mark_topic_complete(self, topic: str, tweets: list[ScrapedTweet]) -> None:
-        """Mark a topic as scraped and save its tweets."""
+        """
+        Mark a topic as scraped and save its tweets.
+        Retries up to 3 times if 0 tweets are returned.
+        """
         state = self.get_state()
+        MAX_RETRIES = 3
+
+        if not tweets:
+            # Increment retry count
+            current_retries = state.retry_counts.get(topic, 0)
+            if current_retries < MAX_RETRIES:
+                state.retry_counts[topic] = current_retries + 1
+                self.save()
+                logger.warning(f"Topic '{topic}' returned 0 tweets. Retry {current_retries + 1}/{MAX_RETRIES} scheduled.")
+                return
+            else:
+                logger.error(f"Topic '{topic}' failed {MAX_RETRIES} times. Marking as complete (empty).")
 
         if topic in state.topics_remaining:
             state.topics_remaining.remove(topic)
@@ -210,8 +226,25 @@ class CheckpointManager:
 
     # Step 3: Deep dive
     def mark_trend_scraped(self, trend: str, tweets: list[ScrapedTweet]) -> None:
-        """Save tweets for a specific trend."""
+        """
+        Save tweets for a specific trend.
+        Retries up to 3 times if 0 tweets are returned.
+        """
         state = self.get_state()
+        MAX_RETRIES = 3
+        
+        if not tweets:
+            # Increment retry count
+            current_retries = state.retry_counts.get(trend, 0)
+            if current_retries < MAX_RETRIES:
+                state.retry_counts[trend] = current_retries + 1
+                self.save()
+                logger.warning(f"Trend '{trend}' returned 0 tweets. Retry {current_retries + 1}/{MAX_RETRIES} scheduled.")
+                # Do NOT add to trend_tweets, so scraper will retry it
+                return
+            else:
+                logger.error(f"Trend '{trend}' failed {MAX_RETRIES} times. Marking as complete (empty).")
+
         state.trend_tweets[trend] = [self._serialize_tweet(t) for t in tweets]
         self.save()
         logger.info(f"Trend scraped: {trend} ({len(tweets)} tweets)")
