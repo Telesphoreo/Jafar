@@ -30,6 +30,8 @@ wheels/
 accounts.db
 *.json
 
+config.yaml
+
 # Digest history database (local data)
 digest_history.db
 

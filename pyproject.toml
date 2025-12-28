@@ -10,8 +10,10 @@ dependencies = [
     "openai",
     "google-genai",
     "python-dotenv",
+    "pyyaml",
     "aiohttp",
     "chromadb",
+    "socksio",
 ]
 
 [project.optional-dependencies]

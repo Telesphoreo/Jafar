@@ -33,6 +33,7 @@ from .llm import create_llm_provider, LLMProvider
 from .reporter import create_reporter_from_config
 from .history import DigestHistory, calculate_signal_strength
 from .memory import create_memory_manager, MemoryManager
+from .checkpoint import CheckpointManager
 
 logger = logging.getLogger("twitter_sentiment.main")
 
@@ -229,7 +230,9 @@ Remember: Your job is to FILTER, not to HYPE. A good analyst knows when to say "
 
 async def run_pipeline() -> bool:
     """
-    Run the full sentiment analysis pipeline.
+    Run the full sentiment analysis pipeline with checkpointing.
+
+    Supports resumption after interruption - progress is saved after each step.
 
     Returns:
         True if the pipeline completed successfully.
@@ -247,12 +250,31 @@ async def run_pipeline() -> bool:
             logger.error(f"Configuration error: {error}")
         return False
 
-    # Initialize components
-    scraper = TwitterScraper(db_path=config.twitter.db_path)
-    analyzer = TrendAnalyzer()
-    history = DigestHistory()  # Stores past digests for comparison (simple SQLite)
+    # Initialize checkpoint manager
+    checkpoint = CheckpointManager()
 
-    # Initialize vector memory system (semantic search for parallels)
+    # Check for existing checkpoint to resume
+    resuming = checkpoint.should_resume()
+    if resuming:
+        state = checkpoint.get_state()
+        logger.info(f"Resuming from checkpoint: {state.run_id}")
+        logger.info(f"  - Step 1 (broad scraping): {'DONE' if state.step1_complete else f'{len(state.topics_completed)}/{len(state.topics_completed) + len(state.topics_remaining)} topics'}")
+        logger.info(f"  - Step 2 (trends): {'DONE' if state.step2_complete else 'PENDING'}")
+        logger.info(f"  - Step 3 (deep dive): {'DONE' if state.step3_complete else 'PENDING'}")
+        logger.info(f"  - Step 4 (analysis): {'DONE' if state.step4_complete else 'PENDING'}")
+        logger.info(f"  - Step 5 (email): {'DONE' if state.step5_complete else 'PENDING'}")
+        logger.info(f"  - Step 6 (history): {'DONE' if state.step6_complete else 'PENDING'}")
+    else:
+        logger.info("Starting fresh pipeline run")
+        checkpoint.start_new_run(topics=config.app.broad_topics)
+        state = checkpoint.get_state()
+
+    # Initialize components
+    scraper = TwitterScraper(db_path=config.twitter.db_path, proxies=config.twitter.proxies)
+    analyzer = TrendAnalyzer()
+    history = DigestHistory()
+
+    # Initialize vector memory system
     memory: MemoryManager | None = None
     if config.memory.enabled:
         try:
@@ -268,7 +290,6 @@ async def run_pipeline() -> bool:
             logger.info(f"Vector memory initialized with {memory_count} stored memories")
         except Exception as e:
             logger.warning(f"Failed to initialize vector memory: {e}")
-            logger.warning("Continuing without semantic search for parallels")
             memory = None
 
     try:
@@ -295,178 +316,228 @@ async def run_pipeline() -> bool:
 
     try:
         # ============================================================
-        # STEP 1: THE SCOUT - Broad Twitter Search
+        # STEP 1: THE SCOUT - Broad Twitter Search (with checkpointing)
         # ============================================================
-        logger.info("\n[STEP 1] THE SCOUT: Gathering broad economic tweets...")
+        if not state.step1_complete:
+            logger.info("\n[STEP 1] THE SCOUT: Gathering broad economic tweets...")
+            logger.info(f"Topics: {len(state.topics_remaining)} remaining, {len(state.topics_completed)} completed")
 
-        broad_tweets = await scraper.get_broad_tweets(
-            topics=config.app.broad_topics,
-            limit_per_topic=config.app.broad_tweet_limit,
-        )
+            # Callback to save progress after each topic
+            def on_topic_done(topic: str, tweets: list[ScrapedTweet]) -> None:
+                checkpoint.mark_topic_complete(topic, tweets)
+
+            # Get any already-collected tweets from checkpoint
+            existing_tweets = checkpoint.get_broad_tweets() if state.topics_completed else []
+
+            # Scrape remaining topics incrementally
+            new_tweets = await scraper.get_broad_tweets_incremental(
+                topics=config.app.broad_topics,
+                limit_per_topic=config.app.broad_tweet_limit,
+                on_topic_complete=on_topic_done,
+                skip_topics=state.topics_completed,
+            )
+
+            broad_tweets = existing_tweets + new_tweets
+            checkpoint.complete_step1()
+            state = checkpoint.get_state()
+        else:
+            logger.info("\n[STEP 1] Skipping (already complete)")
+            broad_tweets = checkpoint.get_broad_tweets()
 
         if not broad_tweets:
-            logger.error("No tweets retrieved from broad search. Check twscrape setup.")
-            logger.error("Make sure you've run: twscrape add_accounts <file> <format> && twscrape login_accounts")
+            logger.error("No tweets retrieved. Check twscrape setup.")
             return False
 
-        logger.info(f"Collected {len(broad_tweets)} tweets from broad search")
+        logger.info(f"Total broad tweets: {len(broad_tweets)}")
 
         # ============================================================
         # STEP 2: THE INVESTIGATOR - NER Analysis
         # ============================================================
-        logger.info("\n[STEP 2] THE INVESTIGATOR: Extracting trending entities...")
+        if not state.step2_complete:
+            logger.info("\n[STEP 2] THE INVESTIGATOR: Extracting trending entities...")
 
-        trends = analyzer.extract_trends(
-            tweets=broad_tweets,
-            top_n=config.app.top_trends_count,
-            min_mentions=config.app.min_trend_mentions,
-            min_authors=config.app.min_trend_authors,
-        )
+            trends = analyzer.extract_trends(
+                tweets=broad_tweets,
+                top_n=config.app.top_trends_count,
+                min_mentions=config.app.min_trend_mentions,
+                min_authors=config.app.min_trend_authors,
+            )
 
-        if not trends:
-            logger.warning("No trends extracted. Using fallback topics.")
-            trends = ["Federal Reserve", "Stock Market", "Inflation"]
+            if not trends:
+                logger.warning("No trends extracted. Using fallback topics.")
+                trends = ["Federal Reserve", "Stock Market", "Inflation"]
 
-        logger.info(f"Top trends identified: {trends}")
+            checkpoint.save_trends(trends)
+            state = checkpoint.get_state()
+        else:
+            logger.info("\n[STEP 2] Skipping (already complete)")
+            trends = state.trends
+
+        logger.info(f"Trends: {trends}")
 
         # ============================================================
         # STEP 3: THE DEEP DIVE - Targeted Scraping
         # ============================================================
-        logger.info("\n[STEP 3] THE DEEP DIVE: Gathering sentiment for each trend...")
+        if not state.step3_complete:
+            logger.info("\n[STEP 3] THE DEEP DIVE: Gathering sentiment for each trend...")
 
-        trend_tweets = await scraper.get_specific_sentiment(
-            trends=trends,
-            limit_per_trend=config.app.specific_tweet_limit,
-        )
+            # Callback to save progress after each trend
+            def on_trend_done(trend: str, tweets: list[ScrapedTweet]) -> None:
+                checkpoint.mark_trend_scraped(trend, tweets)
+
+            already_scraped = list(state.trend_tweets.keys())
+
+            new_trend_tweets = await scraper.get_specific_sentiment_incremental(
+                trends=trends,
+                limit_per_trend=config.app.specific_tweet_limit,
+                on_trend_complete=on_trend_done,
+                skip_trends=already_scraped,
+            )
+
+            # Merge with already-scraped trends
+            trend_tweets = checkpoint.get_trend_tweets()
+            trend_tweets.update(new_trend_tweets)
+
+            checkpoint.complete_step3()
+            state = checkpoint.get_state()
+        else:
+            logger.info("\n[STEP 3] Skipping (already complete)")
+            trend_tweets = checkpoint.get_trend_tweets()
 
         total_tweets = sum(len(t) for t in trend_tweets.values())
-        logger.info(f"Collected {total_tweets} tweets for sentiment analysis")
+        logger.info(f"Total trend tweets: {total_tweets}")
 
         # ============================================================
-        # STEP 4: THE ANALYST - LLM Summary (with historical context)
+        # STEP 4: THE ANALYST - LLM Summary
         # ============================================================
-        logger.info("\n[STEP 4] THE ANALYST: Generating calibrated analysis...")
+        if not state.step4_complete:
+            logger.info("\n[STEP 4] THE ANALYST: Generating calibrated analysis...")
 
-        # Get historical context for comparison (simple SQLite-based)
-        historical_context = history.format_context_for_llm(days=7)
-        baseline = history.get_baseline_stats(days=30)
+            historical_context = history.format_context_for_llm(days=7)
+            baseline = history.get_baseline_stats(days=30)
 
-        # Calculate top engagement from today's trends
-        top_engagement = 0.0
-        for tweets_list in trend_tweets.values():
-            for tweet in tweets_list:
-                eng = (tweet.likes * 1.0) + (tweet.retweets * 0.5) + (tweet.replies * 0.3)
-                top_engagement = max(top_engagement, eng)
+            top_engagement = 0.0
+            for tweets_list in trend_tweets.values():
+                for tweet in tweets_list:
+                    eng = (tweet.likes * 1.0) + (tweet.retweets * 0.5) + (tweet.replies * 0.3)
+                    top_engagement = max(top_engagement, eng)
 
-        logger.info(f"Top engagement today: {top_engagement:.0f}")
-        logger.info(f"Historical avg: {baseline.get('avg_top_engagement', 0):.0f}")
+            logger.info(f"Top engagement: {top_engagement:.0f} (avg: {baseline.get('avg_top_engagement', 0):.0f})")
 
-        # Search for historical parallels using vector memory
-        parallel_context = ""
-        if memory:
-            logger.info("Searching for historical parallels...")
-            try:
-                # Extract themes for parallel search
-                # (We'll use trends as a proxy until analysis is done)
-                parallels = await memory.find_parallels(
-                    trends=trends,
-                    themes=trends,  # Use trends as themes proxy
-                    sentiment="unknown",  # Will be determined after analysis
-                    signal_strength="unknown",
-                    limit=5,
-                    min_similarity=config.memory.min_similarity,
-                )
-                if parallels:
-                    logger.info(f"Found {len(parallels)} potential historical parallels")
-                    parallel_context = await memory.format_parallels_for_llm(parallels)
-                else:
-                    logger.info("No strong historical parallels found")
-            except Exception as e:
-                logger.warning(f"Error searching for parallels: {e}")
+            # Search for historical parallels
+            parallel_context = ""
+            if memory:
+                try:
+                    parallels = await memory.find_parallels(
+                        trends=trends,
+                        themes=trends,
+                        sentiment="unknown",
+                        signal_strength="unknown",
+                        limit=5,
+                        min_similarity=config.memory.min_similarity,
+                    )
+                    if parallels:
+                        logger.info(f"Found {len(parallels)} historical parallels")
+                        parallel_context = await memory.format_parallels_for_llm(parallels)
+                except Exception as e:
+                    logger.warning(f"Error searching parallels: {e}")
 
-        analysis, signal_strength, is_notable = await analyze_with_llm(
-            llm,
-            trend_tweets,
-            historical_context=historical_context,
-            parallel_context=parallel_context,
-            top_engagement=top_engagement,
-        )
+            analysis, signal_strength, is_notable = await analyze_with_llm(
+                llm,
+                trend_tweets,
+                historical_context=historical_context,
+                parallel_context=parallel_context,
+                top_engagement=top_engagement,
+            )
 
-        if not analysis:
-            logger.error("LLM analysis returned empty result")
-            return False
+            if not analysis:
+                logger.error("LLM analysis returned empty result")
+                return False
 
-        logger.info(f"Analysis generated - Signal: {signal_strength.upper()}, Notable: {is_notable}")
-        logger.debug(f"Analysis preview: {analysis[:200]}...")
+            checkpoint.save_analysis(analysis, signal_strength, is_notable, top_engagement)
+            state = checkpoint.get_state()
+        else:
+            logger.info("\n[STEP 4] Skipping (already complete)")
+            analysis = state.analysis
+            signal_strength = state.signal_strength
+            is_notable = state.is_notable
+            top_engagement = state.top_engagement
+
+        logger.info(f"Signal: {signal_strength.upper()}, Notable: {is_notable}")
 
         # ============================================================
         # STEP 5: THE REPORTER - Email Digest
         # ============================================================
-        logger.info("\n[STEP 5] THE REPORTER: Sending email digest...")
+        if not state.step5_complete:
+            logger.info("\n[STEP 5] THE REPORTER: Sending email digest...")
 
-        provider_info = f"{llm.provider_name} {llm.model_name}"
-        success = reporter.send_email(
-            report_content=analysis,
-            trends=trends,
-            tweet_count=total_tweets,
-            provider_info=provider_info,
-            signal_strength=signal_strength,
-        )
+            provider_info = f"{llm.provider_name} {llm.model_name}"
+            success = reporter.send_email(
+                report_content=analysis,
+                trends=trends,
+                tweet_count=total_tweets,
+                provider_info=provider_info,
+                signal_strength=signal_strength,
+            )
 
-        if success:
-            logger.info("Email digest sent successfully!")
+            if success:
+                logger.info("Email sent successfully!")
+            else:
+                logger.warning("Failed to send email")
+
+            checkpoint.complete_step5()
+            state = checkpoint.get_state()
         else:
-            logger.error("Failed to send email digest")
-            # Don't return False here - the analysis was still generated
-            # User might want to see it even if email failed
+            logger.info("\n[STEP 5] Skipping (already complete)")
 
         # ============================================================
-        # STEP 6: STORE HISTORY - For future comparison
+        # STEP 6: STORE HISTORY
         # ============================================================
-        logger.info("\n[STEP 6] Storing digest in history databases...")
+        if not state.step6_complete:
+            logger.info("\n[STEP 6] Storing digest in history...")
 
-        # Store in simple SQLite history (quick lookups)
-        history.store_digest(
-            trends=trends,
-            tweet_count=total_tweets,
-            digest_text=analysis,
-            signal_strength=signal_strength,
-            top_engagement=top_engagement,
-            notable=is_notable,
-        )
-        logger.info("Digest stored in SQLite history")
+            history.store_digest(
+                trends=trends,
+                tweet_count=total_tweets,
+                digest_text=analysis,
+                signal_strength=signal_strength,
+                top_engagement=top_engagement,
+                notable=is_notable,
+            )
 
-        # Store in vector memory (semantic search for parallels)
-        if memory:
-            try:
-                memory_record = await memory.create_memory(
-                    trends=trends,
-                    analysis=analysis,
-                    signal_strength=signal_strength,
-                    top_engagement=top_engagement,
-                    tweet_count=total_tweets,
-                    notable=is_notable,
-                )
-                await memory.store_memory(memory_record)
-                logger.info(f"Memory stored in vector database: {memory_record.id}")
-            except Exception as e:
-                logger.warning(f"Failed to store in vector memory: {e}")
+            if memory:
+                try:
+                    memory_record = await memory.create_memory(
+                        trends=trends,
+                        analysis=analysis,
+                        signal_strength=signal_strength,
+                        top_engagement=top_engagement,
+                        tweet_count=total_tweets,
+                        notable=is_notable,
+                    )
+                    await memory.store_memory(memory_record)
+                    logger.info(f"Memory stored: {memory_record.id}")
+                except Exception as e:
+                    logger.warning(f"Failed to store memory: {e}")
+
+            checkpoint.complete_step6()
+        else:
+            logger.info("\n[STEP 6] Skipping (already complete)")
 
         # ============================================================
-        # COMPLETE
+        # COMPLETE - Clear checkpoint
         # ============================================================
+        checkpoint.clear()
+
         logger.info("\n" + "=" * 60)
         logger.info("Pipeline completed successfully!")
         logger.info("=" * 60)
 
-        # Print the analysis to console as well
-        # Sanitize for Windows console (strip non-ASCII chars like emoji)
+        # Print results
         def safe_print(text: str) -> None:
-            """Print text safely on Windows by removing non-ASCII characters."""
             try:
                 print(text)
             except UnicodeEncodeError:
-                # Fall back to ASCII-safe version
                 print(text.encode('ascii', 'ignore').decode('ascii'))
 
         print("\n" + "=" * 60)
@@ -484,8 +555,15 @@ async def run_pipeline() -> bool:
 
         return True
 
+    except KeyboardInterrupt:
+        logger.info("\nInterrupted by user - progress saved to checkpoint")
+        logger.info("Run again to resume from where you left off")
+        raise
+
     except Exception as e:
-        logger.exception(f"Pipeline failed with error: {e}")
+        checkpoint.set_error(str(e))
+        logger.exception(f"Pipeline failed: {e}")
+        logger.info("Progress saved - run again to resume")
         return False
 
     finally:

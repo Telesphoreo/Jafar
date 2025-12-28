@@ -91,16 +91,41 @@ class TwitterScraper:
     The scraper handles account pools automatically for rate limit management.
     """
 
-    def __init__(self, db_path: str = "accounts.db"):
+    def __init__(self, db_path: str = "accounts.db", proxies: list[str] | None = None):
         """
         Initialize the Twitter scraper.
 
         Args:
             db_path: Path to the twscrape SQLite database containing accounts.
+            proxies: Optional list of SOCKS5 proxy URLs to bind to accounts.
         """
         self.db_path = db_path
+        self.proxies = proxies or []
         self._api: API | None = None
+        self._proxies_bound = False
         logger.info(f"TwitterScraper initialized with database: {db_path}")
+        if self.proxies:
+            logger.info(f"Configured {len(self.proxies)} proxies for account binding")
+
+    async def _bind_proxies_to_accounts(self) -> None:
+        """Bind proxies to accounts in round-robin fashion (one proxy per account)."""
+        if not self.proxies or self._proxies_bound:
+            return
+
+        api = await self._get_api()
+        accounts = await api.pool.accounts_info()
+
+        if not accounts:
+            logger.warning("No accounts found to bind proxies to")
+            return
+
+        for i, account in enumerate(accounts):
+            proxy = self.proxies[i % len(self.proxies)]
+            await api.pool.set_proxy(account.username, proxy)
+            logger.info(f"Bound proxy {i % len(self.proxies) + 1}/{len(self.proxies)} to @{account.username}")
+
+        self._proxies_bound = True
+        logger.info(f"Bound {len(self.proxies)} proxies to {len(accounts)} accounts")
 
     async def _get_api(self) -> API:
         """Get or create the twscrape API instance."""
@@ -179,6 +204,7 @@ class TwitterScraper:
             List of ScrapedTweet objects.
         """
         api = await self._get_api()
+        await self._bind_proxies_to_accounts()
         tweets: list[ScrapedTweet] = []
 
         # Add language filter to query
@@ -243,6 +269,54 @@ class TwitterScraper:
         logger.info(f"Broad search complete: {len(all_tweets)} total tweets")
         return all_tweets
 
+    async def get_broad_tweets_incremental(
+        self,
+        topics: list[str],
+        limit_per_topic: int = 50,
+        on_topic_complete: callable = None,
+        skip_topics: list[str] = None,
+    ) -> list[ScrapedTweet]:
+        """
+        Gather tweets incrementally, one topic at a time with progress callbacks.
+
+        This allows checkpointing and resumption after interruption.
+
+        Args:
+            topics: List of topics to search.
+            limit_per_topic: Number of tweets per topic.
+            on_topic_complete: Callback(topic, tweets) called after each topic.
+            skip_topics: Topics to skip (already completed).
+
+        Returns:
+            Combined list of tweets from all topics.
+        """
+        skip_topics = skip_topics or []
+        all_tweets: list[ScrapedTweet] = []
+
+        remaining = [t for t in topics if t not in skip_topics]
+        logger.info(f"Incremental scrape: {len(remaining)} topics remaining, {len(skip_topics)} already done")
+
+        for i, topic in enumerate(remaining):
+            logger.info(f"[{i+1}/{len(remaining)}] Scraping topic: {topic}")
+
+            try:
+                tweets = await self.search_tweets(topic, limit=limit_per_topic)
+                all_tweets.extend(tweets)
+
+                if on_topic_complete:
+                    on_topic_complete(topic, tweets)
+
+                logger.info(f"Topic '{topic}': {len(tweets)} tweets")
+
+            except Exception as e:
+                logger.error(f"Failed to scrape topic '{topic}': {e}")
+                # Continue to next topic instead of failing completely
+                if on_topic_complete:
+                    on_topic_complete(topic, [])
+
+        logger.info(f"Incremental scrape complete: {len(all_tweets)} tweets from {len(remaining)} topics")
+        return all_tweets
+
     async def get_specific_sentiment(
         self,
         trends: list[str],
@@ -282,6 +356,51 @@ class TwitterScraper:
         total_tweets = sum(len(t) for t in trend_tweets.values())
         logger.info(f"Deep dive complete: {total_tweets} total tweets")
 
+        return trend_tweets
+
+    async def get_specific_sentiment_incremental(
+        self,
+        trends: list[str],
+        limit_per_trend: int = 20,
+        on_trend_complete: callable = None,
+        skip_trends: list[str] = None,
+    ) -> dict[str, list[ScrapedTweet]]:
+        """
+        Deep dive incrementally with progress callbacks.
+
+        Args:
+            trends: List of trends to search.
+            limit_per_trend: Number of tweets per trend.
+            on_trend_complete: Callback(trend, tweets) called after each trend.
+            skip_trends: Trends to skip (already completed).
+
+        Returns:
+            Dictionary mapping trend names to their tweets.
+        """
+        skip_trends = skip_trends or []
+        trend_tweets: dict[str, list[ScrapedTweet]] = {}
+
+        remaining = [t for t in trends if t not in skip_trends]
+        logger.info(f"Incremental deep dive: {len(remaining)} trends remaining")
+
+        for i, trend in enumerate(remaining):
+            logger.info(f"[{i+1}/{len(remaining)}] Scraping trend: {trend}")
+
+            try:
+                tweets = await self.search_tweets(trend, limit=limit_per_trend)
+                trend_tweets[trend] = tweets
+
+                if on_trend_complete:
+                    on_trend_complete(trend, tweets)
+
+            except Exception as e:
+                logger.error(f"Failed to scrape trend '{trend}': {e}")
+                trend_tweets[trend] = []
+                if on_trend_complete:
+                    on_trend_complete(trend, [])
+
+        total = sum(len(t) for t in trend_tweets.values())
+        logger.info(f"Incremental deep dive complete: {total} tweets from {len(remaining)} trends")
         return trend_tweets
 
     async def close(self) -> None:
