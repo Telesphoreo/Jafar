@@ -149,6 +149,20 @@ Cashtags ($AAPL) are looked up directly.
 
 ## Common Issues
 
+### Script hanging during scraping
+If the pipeline hangs during Twitter scraping (no log output for 5+ minutes), the search query may have timed out. The script now has timeout protection (default: 120 seconds per query).
+
+To adjust the timeout:
+```yaml
+scraping:
+  search_timeout: 180  # Increase to 180 seconds if needed
+```
+
+If hangs persist:
+- Check proxy connectivity (if using proxies)
+- Verify Twitter accounts are still active: `uv run twscrape accounts`
+- Reduce `broad_tweet_limit` to fetch fewer tweets per topic
+
 ### "column cannot have more than 2000 dimensions"
 Using pgvector with text-embedding-3-large. Add to config.yaml:
 ```yaml

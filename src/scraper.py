@@ -167,6 +167,7 @@ class TwitterScraper:
         query: str,
         limit: int = 50,
         lang: str = "en",
+        timeout: int = 300,
     ) -> list[ScrapedTweet]:
         """
         Search for tweets matching a query.
@@ -175,6 +176,7 @@ class TwitterScraper:
             query: Search query (hashtag, keyword, or phrase).
             limit: Maximum number of tweets to retrieve.
             lang: Language filter (default: English).
+            timeout: Maximum time in seconds to wait for results (default: 300s/5min).
 
         Returns:
             List of ScrapedTweet objects.
@@ -184,11 +186,14 @@ class TwitterScraper:
 
         # Add language filter to query
         search_query = f"{query} lang:{lang}"
-        logger.info(f"Searching for: '{search_query}' (limit: {limit})")
+        logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
 
         try:
-            # Use gather for async collection of tweets
-            raw_tweets = await gather(api.search(search_query, limit=limit))
+            # Use gather for async collection of tweets with timeout protection
+            raw_tweets = await asyncio.wait_for(
+                gather(api.search(search_query, limit=limit)),
+                timeout=timeout
+            )
 
             for tweet in raw_tweets:
                 try:
@@ -201,6 +206,9 @@ class TwitterScraper:
             logger.info(f"Retrieved {len(tweets)} tweets for query: {query}")
             return tweets
 
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout searching for '{query}' after {timeout}s - returning partial results ({len(tweets)} tweets)")
+            return tweets
         except Exception as e:
             logger.error(f"Error searching for '{query}': {e}")
             # Return empty list instead of crashing
@@ -250,6 +258,7 @@ class TwitterScraper:
         limit_per_topic: int = 50,
         on_topic_complete: callable = None,
         skip_topics: list[str] = None,
+        timeout: int = 300,
     ) -> list[ScrapedTweet]:
         """
         Gather tweets incrementally, one topic at a time with progress callbacks.
@@ -261,6 +270,7 @@ class TwitterScraper:
             limit_per_topic: Number of tweets per topic.
             on_topic_complete: Callback(topic, tweets) called after each topic.
             skip_topics: Topics to skip (already completed).
+            timeout: Maximum time in seconds to wait per topic (default: 300s/5min).
 
         Returns:
             Combined list of tweets from all topics.
@@ -275,7 +285,7 @@ class TwitterScraper:
             logger.info(f"[{i+1}/{len(remaining)}] Scraping topic: {topic}")
 
             try:
-                tweets = await self.search_tweets(topic, limit=limit_per_topic)
+                tweets = await self.search_tweets(topic, limit=limit_per_topic, timeout=timeout)
                 all_tweets.extend(tweets)
 
                 if on_topic_complete:
@@ -339,6 +349,7 @@ class TwitterScraper:
         limit_per_trend: int = 20,
         on_trend_complete: callable = None,
         skip_trends: list[str] = None,
+        timeout: int = 300,
     ) -> dict[str, list[ScrapedTweet]]:
         """
         Deep dive incrementally with progress callbacks.
@@ -348,6 +359,7 @@ class TwitterScraper:
             limit_per_trend: Number of tweets per trend.
             on_trend_complete: Callback(trend, tweets) called after each trend.
             skip_trends: Trends to skip (already completed).
+            timeout: Maximum time in seconds to wait per trend (default: 300s/5min).
 
         Returns:
             Dictionary mapping trend names to their tweets.
@@ -362,7 +374,7 @@ class TwitterScraper:
             logger.info(f"[{i+1}/{len(remaining)}] Scraping trend: {trend}")
 
             try:
-                tweets = await self.search_tweets(trend, limit=limit_per_trend)
+                tweets = await self.search_tweets(trend, limit=limit_per_trend, timeout=timeout)
                 trend_tweets[trend] = tweets
 
                 if on_trend_complete:

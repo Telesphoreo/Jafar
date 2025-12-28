@@ -358,6 +358,7 @@ async def run_pipeline() -> bool:
                 limit_per_topic=config.app.broad_tweet_limit,
                 on_topic_complete=on_topic_done,
                 skip_topics=state.topics_completed,
+                timeout=config.app.search_timeout,
             )
 
             broad_tweets = existing_tweets + new_tweets
@@ -415,6 +416,7 @@ async def run_pipeline() -> bool:
                 limit_per_trend=config.app.specific_tweet_limit,
                 on_trend_complete=on_trend_done,
                 skip_trends=already_scraped,
+                timeout=config.app.search_timeout,
             )
 
             # Merge with already-scraped trends

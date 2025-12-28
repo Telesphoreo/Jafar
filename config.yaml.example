@@ -68,6 +68,11 @@ scraping:
   min_trend_mentions: 3
   min_trend_authors: 2
 
+  # Timeout for each search query (seconds)
+  # Prevents hanging if Twitter API becomes unresponsive
+  # Recommended: 120-300 seconds
+  search_timeout: 120
+
 # -----------------------------------------------------------------------------
 # Broad Search Topics
 # -----------------------------------------------------------------------------

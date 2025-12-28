@@ -120,6 +120,9 @@ class AppConfig:
     min_trend_authors: int = field(
         default_factory=lambda: _get_yaml("scraping", "min_trend_authors", 2)
     )
+    search_timeout: int = field(
+        default_factory=lambda: _get_yaml("scraping", "search_timeout", 120)
+    )
 
     # LLM provider
     llm_provider: Literal["openai", "google"] = field(
