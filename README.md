@@ -96,6 +96,31 @@ uv run python main.py
 Unlike Aladdin, we don't pretend every day is Lehman Brothers. We also
 don't [hold $11 billion in coal investments while lecturing everyone about climate](https://en.wikipedia.org/wiki/BlackRock#Investments_in_contributors_to_climate_change).
 
+Speaking of housing crises, fuck Sentinel Real Estate. They speedrun
+[5-over-1 "stumpies"](https://en.wikipedia.org/wiki/5-over-1) - the cheapest possible "luxury" apartments where
+cardboard-thin wood-frame units sit on a concrete parking podium that's already plotting its own collapse. Enjoy
+hearing your neighbor sneeze, shit, and have disappointing sex through walls with soundproofing so bad it violates
+the Geneva Convention - because [proper acoustic insulation costs money](https://www.foxblocks.com/blog/wood-frame-construction)
+and Sentinel needs that third yacht. The parking garage waterproofing
+[inevitably fails](https://nusitegroup.com/podium-deck-restoration-extending-the-life-of-your-structure/) because
+cutting corners is their love language - water infiltrates, rebar corrodes and
+[expands to 8x its size](https://westernspecialtycontractors.com/parking-structure-maintenance/), and the whole
+structure starts crumbling like their moral foundation. But don't worry, by then they've already flipped it to the
+next sucker and moved on. Wikipedia literally says
+["it is unclear whether these buildings are built to last"](https://en.wikipedia.org/wiki/5-over-1) - which is
+generous, because everyone who's lived in one knows the answer is "absolutely fucking not." Their business model
+is simple: slap up the architectural equivalent of a McMansion made of paper plates, charge $2,400/month for 600
+square feet of mold potential, ignore every maintenance request until the city gets involved, then dump the
+deteriorating husk at a loss and gentrify the next victim neighborhood. Oh, and
+[pay $4 million to the NY Attorney General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
+when your employees get caught taking $1 million in kickbacks while fraudulently inflating renovation costs to
+deregulate rent-stabilized units - because why commit just one type of fraud when you can commit several? Get
+[sued for $50 million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
+for allegedly misrepresenting rent-stabilization status to pump property values. Settle a
+[Fair Housing Act discrimination case](https://www.justice.gov/crt/case/sentinel-real-estate-corp-et-al-nd-ga) for
+screwing over a disabled tenant who just wanted a service animal. The BlackRock of slumlording. Your security deposit
+is gone and you will never see it again.
+
 ## Fact Check Classifications
 
 | Tag              | Meaning                                     |
@@ -136,80 +161,70 @@ cookies.
 
 **Rate limiting** - Add more accounts. Use proxies. Stop scraping during market hours like everyone else.
 
-**My landlord is Sentinel Real Estate** - Can't help you there. They crank out
-[5-over-1 "stumpies"](https://en.wikipedia.org/wiki/5-over-1) - the cheapest possible "luxury" apartments where
-wood-frame units sit on a concrete parking podium. The soundproofing is nonexistent because
-[proper acoustic insulation costs money](https://www.foxblocks.com/blog/wood-frame-construction) developers won't
-spend. The parking garage
-waterproofing [inevitably fails](https://nusitegroup.com/podium-deck-restoration-extending-the-life-of-your-structure/),
-water infiltrates, rebar corrodes
-and [expands to 8x its size](https://westernspecialtycontractors.com/parking-structure-maintenance/),
-and the whole structure starts crumbling - but by then they've already sold it. Wikipedia literally says
-["it is unclear whether these buildings are built to last."](https://en.wikipedia.org/wiki/5-over-1) Charge absurd
-rent, collect for a decade, then dump the property once it starts falling apart and move on to the next victim
-neighborhood. Oh,
-and [pay \$4 million to the NY Attorney General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
-when your employees get caught taking \$1 million in kickbacks while fraudulently inflating renovation costs to
-deregulate rent-stabilized units.
-Get [sued for $50 million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
-for allegedly misrepresenting rent-stabilization status to pump property values. Settle a
-[Fair Housing Act discrimination case](https://www.justice.gov/crt/case/sentinel-real-estate-corp-et-al-nd-ga) for
-screwing over a disabled tenant. The BlackRock of slumlording. Good luck with that security deposit.
-
 ## Why This Exists
 
-| Feature                                                          | This Project         | Aladdin                                                                                                                                                                                                     | Bloomberg    |
-|------------------------------------------------------------------|----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
-| Cost                                                             | ~$10/mo in API calls | $25,000/month                                                                                                                                                                                               | $24,000/year |
-| Twitter Sentiment                                                | Yes                  | Probably                                                                                                                                                                                                    | Kinda        |
-| Will tell you "nothing matters today"                            | **Yes**              | Never. Gotta justify that invoice.                                                                                                                                                                          | Lol          |
-| Open Source                                                      | Yes                  | Absolutely not                                                                                                                                                                                              | Cute         |
-| Actually makes you a quant                                       | No                   | Also no                                                                                                                                                                                                     | Still no     |
-| Got no-bid Fed contracts to buy its own ETFs with taxpayer money | No                   | [Yes](https://wallstreetonparade.com/2020/06/blackrock-is-bailing-out-its-etfs-with-fed-money-and-taxpayers-eating-losses-its-also-the-sole-manager-for-335-billion-of-federal-employees-retirement-funds/) | No           |
-| Lost $5B+ in pension mandates because of ESG failures            | No                   | [Yes](https://www.fa-mag.com/news/blackrock-loses--5-9-billion-mandate-from-dutch-pension-pme-85220.html)                                                                                                   | No           |
+| Feature                                                          | This Project         | Aladdin                                                                                                                                                                                                     | Bloomberg               |
+|------------------------------------------------------------------|----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------|
+| Cost                                                             | ~$10/mo in API calls | More than your rent (they won't say how much because shame is a foreign concept)                                                                                                                            | $24,000/year            |
+| Twitter Sentiment                                                | Yes                  | Probably, buried under 47 layers of enterprise middleware                                                                                                                                                   | Kinda, if you squint    |
+| Will tell you "nothing matters today"                            | **Yes**              | Absolutely not. Gotta manufacture urgency to justify the invoice.                                                                                                                                           | Have you met Jim Cramer |
+| Open Source                                                      | Yes                  | Lmao                                                                                                                                                                                                        | That's adorable         |
+| Actually makes you a quant                                       | No                   | Also no, but it costs more so you can pretend                                                                                                                                                               | Still no                |
+| Got no-bid Fed contracts to buy its own ETFs with taxpayer money | No                   | [Yes](https://wallstreetonparade.com/2020/06/blackrock-is-bailing-out-its-etfs-with-fed-money-and-taxpayers-eating-losses-its-also-the-sole-manager-for-335-billion-of-federal-employees-retirement-funds/) | No                      |
+| Lost $5B+ in pension mandates for being full of shit             | No                   | [Yes](https://www.fa-mag.com/news/blackrock-loses--5-9-billion-mandate-from-dutch-pension-pme-85220.html)                                                                                                   | No                      |
+| CEO has called the Fed Chair while managing his personal money   | No                   | [Yes, "extremely carefully"](https://www.investing.com/news/economy/blackrock-conflicts-managed-extremely-carefully-feds-powell-says-2245953)                                                               | Probably not            |
 
-*At least when we're wrong, it's free. When they're wrong, they get a bailout.*
+*At least when we're wrong, it's free. When they're wrong, they get a bailout and a CNBC interview to explain why it was
+actually your fault.*
 
 ## The Corruption Receipts
 
-Since you made it this far, here's the full BlackRock starter pack:
+Since you made it this far, here's the full BlackRock starter pack. Print it out and tape it to your wall for when
+someone tells you the system isn't rigged:
 
-- **Fed Chair Powell has $25M personally invested with BlackRock** while giving them no-bid
-  contracts. ["Extremely carefully managed"](https://www.investing.com/news/economy/blackrock-conflicts-managed-extremely-carefully-feds-powell-says-2245953)
-  he says. Sure
-  bro. ([Source](https://wallstreetonparade.com/2020/05/fed-chair-powell-has-upwards-of-11-6-million-invested-with-blackrock-the-firm-that-will-manage-a-750-billion-corporate-bond-bailout-program-for-the-fed/))
+- **Fed Chair Powell has $25M personally invested with BlackRock** while giving them no-bid contracts to manage
+  $750 billion in bailout
+  money. ["Extremely carefully managed"](https://www.investing.com/news/economy/blackrock-conflicts-managed-extremely-carefully-feds-powell-says-2245953)
+  he says, presumably with a straight face. Nothing to see here, just the guy who controls interest rates having his
+  wealth managed by the company he's handing emergency contracts to. Totally
+  normal. ([Source](https://wallstreetonparade.com/2020/05/fed-chair-powell-has-upwards-of-11-6-million-invested-with-blackrock-the-firm-that-will-manage-a-750-billion-corporate-bond-bailout-program-for-the-fed/))
 
-- **BlackRock wrote the bailout plan before the crisis happened**, then got hired to implement it. They literally
-  authored a paper called "Going Direct" in August 2019 proposing central banks inject money directly into the economy.
-  Six months later, COVID happens, and they get the
-  contract. ([Source](https://wallstreetonparade.com/2020/06/blackrock-authored-the-bailout-plan-before-there-was-a-crisis-now-its-been-hired-by-three-central-banks-to-implement-the-plan/))
+- **BlackRock wrote the bailout plan before the crisis happened**, then got hired to implement it. In August 2019, they
+  published a paper called "Going Direct" proposing central banks inject money directly into the economy. Six months
+  later - oh wow what a coincidence - COVID happens and three central banks hire BlackRock to execute the exact plan
+  they wrote. The universe works in mysterious ways if you're worth $10
+  trillion. ([Source](https://wallstreetonparade.com/2020/06/blackrock-authored-the-bailout-plan-before-there-was-a-crisis-now-its-been-hired-by-three-central-banks-to-implement-the-plan/))
 
-- **55.8% of their funds underperform** their sector peers, with some pension funds returning -50.91% over 3 years while
-  the sector average was positive. ([Source](https://www.yodelar.com/insights/blackrock-review))
+- **55.8% of their funds underperform** their benchmarks, according to Yodelar analysis. Some pension funds they manage
+  returned -50.91% over 3 years while the sector average was positive. But hey, at least the fees are
+  high. ([Source](https://www.yodelar.com/insights/blackrock-review))
 
-- **Dutch pension funds pulled $5B+** from BlackRock because they're not acting in beneficiaries' best interests on
-  climate
-  risk. ([Source 1](https://www.fa-mag.com/news/blackrock-loses--5-9-billion-mandate-from-dutch-pension-pme-85220.html))
+- **Dutch pension funds pulled $5B+** from BlackRock because even the Netherlands - a country that will rent you a
+  bicycle for literally anything - decided BlackRock wasn't acting in their beneficiaries' best interests on climate
+  risk. When the Dutch think you're too greedy, you've achieved something
+  special. ([Source](https://www.fa-mag.com/news/blackrock-loses--5-9-billion-mandate-from-dutch-pension-pme-85220.html))
 
 - **Larry Fink said "I'm ashamed of being part of this conversation"** about ESG at Aspen 2023, then denied saying it
-  moments later in the same interview. After years of lecturing everyone about stakeholder
-  capitalism. ([Source](https://www.axios.com/2023/06/26/larry-fink-ashamed-esg-weaponized-desantis))
+  moments later in the same interview. On video. That journalists were recording. After years of building his entire
+  brand around stakeholder capitalism. The man contains
+  multitudes. ([Source](https://www.axios.com/2023/06/26/larry-fink-ashamed-esg-weaponized-desantis))
 
-- **Their own former Chief Investment Officer for Sustainable Investing** called their ESG investing "a dangerous
-  placebo that harms the public interest" because ESG products have higher
-  fees. ([Source](https://www.cnbc.com/2022/12/07/activist-investor-calls-for-blackrock-ceo-fink-to-step-down-over-esg-hypocrisy.html))
+- **Their own former Chief Investment Officer for Sustainable Investing** - the guy they literally hired to run ESG -
+  quit and called the whole thing "a dangerous placebo that harms the public interest." Turns out ESG products just
+  have higher fees. Who could have possibly
+  predicted. ([Source](https://www.cnbc.com/2021/08/24/blackrocks-former-sustainable-investing-chief-says-esg-is-a-dangerous-placebo.html))
 
 - **$11 billion in coal investments** while being the world's largest investor in coal-fired power stations, as of 2018.
-  The Sierra Club literally started a campaign called "BlackRock's Big
-  Problem." ([Source](https://en.wikipedia.org/wiki/BlackRock#Investments_in_contributors_to_climate_change)
+  Meanwhile Larry's out here writing annual letters about climate responsibility. The Sierra Club literally started a
+  campaign called "BlackRock's Big Problem" because sometimes you have to spell it out for
+  people. ([Source](https://en.wikipedia.org/wiki/BlackRock#Investments_in_contributors_to_climate_change))
 
 - **They voted against management 1,500+ times for "insufficient diversity"** while simultaneously dropping ESG support
-  from 47% to 4% when it became politically
-  inconvenient. ([Source](https://fortune.com/2024/02/14/blackrock-voting-choice-ceo-larry-fink-shareholder-democracy-stakeholder-capitalism-esg/))
+  from 47% to 4% the moment Ron DeSantis made it politically inconvenient. Principles are for people who can't afford
+  lobbyists. ([Source](https://fortune.com/2024/02/14/blackrock-voting-choice-ceo-larry-fink-shareholder-democracy-stakeholder-capitalism-esg/))
 
 This project costs you maybe $10/month in API calls. Aladdin costs more per month than your rent, and the people running
-it are doing all
-of the above.
+it are doing all of the above.
 
 ## Disclaimer
 
