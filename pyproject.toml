@@ -15,6 +15,7 @@ dependencies = [
     "chromadb",
     "socksio",
     "asyncpg",
+    "yfinance",
 ]
 
 [project.optional-dependencies]

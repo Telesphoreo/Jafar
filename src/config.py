@@ -207,6 +207,22 @@ class MemoryConfig:
 
 
 @dataclass
+class FactCheckerConfig:
+    """Market data fact-checking configuration."""
+    enabled: bool = field(
+        default_factory=lambda: _get_yaml("fact_checker", "enabled", True)
+    )
+    # Cache market data for N minutes to avoid excessive API calls
+    cache_ttl_minutes: int = field(
+        default_factory=lambda: _get_yaml("fact_checker", "cache_ttl_minutes", 5)
+    )
+    # Allowed variance for "price at X" claims
+    price_tolerance_pct: float = field(
+        default_factory=lambda: _get_yaml("fact_checker", "price_tolerance_pct", 2.0)
+    )
+
+
+@dataclass
 class Config:
     """Main configuration container."""
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
@@ -215,6 +231,7 @@ class Config:
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
     app: AppConfig = field(default_factory=AppConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    fact_checker: FactCheckerConfig = field(default_factory=FactCheckerConfig)
 
     def setup_logging(self) -> logging.Logger:
         """Configure and return the application logger."""

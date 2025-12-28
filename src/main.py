@@ -34,6 +34,7 @@ from .reporter import create_reporter_from_config
 from .history import DigestHistory, calculate_signal_strength
 from .memory import create_memory_manager, MemoryManager
 from .checkpoint import CheckpointManager
+from .fact_checker import MarketFactChecker
 
 logger = logging.getLogger("twitter_sentiment.main")
 
@@ -59,6 +60,22 @@ WHAT DOESN'T MATTER (common):
 - Crypto pumps and meme stock chatter (unless specifically asked)
 - Recycled narratives from last week/month
 - Promotional content or coordinated campaigns
+
+FACT-CHECKING PROTOCOL:
+When verified market data is provided, you MUST use it to validate claims:
+1. Compare tweet claims against the actual price/volume data
+2. Flag claims that contradict the verified numbers (e.g., "silver crashing" when data shows +3%)
+3. Note when sentiment ALIGNS with real price action - this strengthens the signal
+4. "Massive volume" claims should show >2x average in the data; otherwise it's exaggeration
+5. "All-time high" or "52-week high" claims should match the Notes column
+6. In your assessment, classify claims as:
+   - VERIFIED: Claims that match the market data
+   - EXAGGERATED: Directionally correct but overstated
+   - FALSE: Claims that directly contradict the data
+   - UNVERIFIABLE: Claims about assets not in the provided data
+
+This is CRITICAL: Do NOT let unverified hype drive your signal strength rating.
+If tweets scream "SILVER MOONING!!!" but the data shows +0.5%, that's LOW signal, not HIGH.
 
 HISTORICAL PARALLELS - USE WITH EXTREME CARE:
 "History doesn't repeat itself, but it often rhymes." - Mark Twain
@@ -144,6 +161,7 @@ async def analyze_with_llm(
     trend_tweets: dict[str, list[ScrapedTweet]],
     historical_context: str = "",
     parallel_context: str = "",
+    fact_check_context: str = "",
     top_engagement: float = 0,
 ) -> tuple[str, str, bool]:
     """
@@ -154,6 +172,7 @@ async def analyze_with_llm(
         trend_tweets: Dictionary mapping trends to their tweets.
         historical_context: Formatted string of recent digest history.
         parallel_context: Historical parallels from vector search.
+        fact_check_context: Real market data for fact-checking claims.
         top_engagement: Highest engagement score from today's trends.
 
     Returns:
@@ -169,6 +188,8 @@ async def analyze_with_llm(
 {historical_context}
 
 {parallel_context}
+
+{fact_check_context}
 
 ## Today's Data
 Top engagement score: {top_engagement:.0f}
@@ -409,6 +430,32 @@ async def run_pipeline() -> bool:
         logger.info(f"Total trend tweets: {total_tweets}")
 
         # ============================================================
+        # STEP 3.5: THE FACT CHECKER - Market Data Verification
+        # ============================================================
+        fact_check_context = ""
+        if config.fact_checker.enabled:
+            logger.info("\n[STEP 3.5] THE FACT CHECKER: Verifying market claims...")
+            try:
+                fact_checker = MarketFactChecker(
+                    cache_ttl_minutes=config.fact_checker.cache_ttl_minutes,
+                    price_tolerance_pct=config.fact_checker.price_tolerance_pct,
+                )
+
+                # Extract symbols from discovered trends
+                symbols = fact_checker.extract_symbols_from_trends(trends)
+                logger.info(f"Extracted {len(symbols)} market symbols from trends")
+
+                # Fetch real market data
+                market_data = await fact_checker.fetch_market_data(symbols)
+                logger.info(f"Fetched market data for {len(market_data)} symbols")
+
+                # Format for LLM context
+                fact_check_context = fact_checker.format_for_llm(market_data, trends)
+
+            except Exception as e:
+                logger.warning(f"Fact checking failed (continuing without): {e}")
+
+        # ============================================================
         # STEP 4: THE ANALYST - LLM Summary
         # ============================================================
         if not state.step4_complete:
@@ -448,6 +495,7 @@ async def run_pipeline() -> bool:
                 trend_tweets,
                 historical_context=historical_context,
                 parallel_context=parallel_context,
+                fact_check_context=fact_check_context,
                 top_engagement=top_engagement,
             )
 
