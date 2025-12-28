@@ -6,6 +6,7 @@ Loads application settings from config.yaml and secrets from environment variabl
 
 import logging
 import os
+import contextvars
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -15,6 +16,21 @@ from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Context variable for worker ID logging
+worker_context = contextvars.ContextVar("worker_id", default=None)
+
+
+class WorkerLogFilter(logging.Filter):
+    """Filter to inject worker ID into log records."""
+    def filter(self, record):
+        worker_id = worker_context.get()
+        if worker_id is not None:
+            record.worker_info = f" [Worker {worker_id}]"
+        else:
+            record.worker_info = ""
+        return True
+
 
 # Default config file path
 CONFIG_FILE = Path(__file__).parent.parent / "config.yaml"
@@ -249,11 +265,22 @@ class Config:
 
     def setup_logging(self) -> logging.Logger:
         """Configure and return the application logger."""
+        # Reset existing handlers to ensure clean configuration
+        root = logging.getLogger()
+        if root.handlers:
+            for handler in root.handlers:
+                root.removeHandler(handler)
+
         logging.basicConfig(
             level=getattr(logging, self.app.log_level.upper()),
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            format="%(asctime)s - %(name)s - %(levelname)s%(worker_info)s - %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
+
+        # Add filter to the handler created by basicConfig
+        for handler in logging.getLogger().handlers:
+            handler.addFilter(WorkerLogFilter())
+
         return logging.getLogger("jafar")
 
     def validate(self) -> list[str]:

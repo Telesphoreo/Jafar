@@ -33,6 +33,8 @@ from datetime import datetime
 from twscrape import API
 from twscrape.models import Tweet
 
+from .config import worker_context
+
 logger = logging.getLogger("jafar.scraper")
 
 
@@ -195,6 +197,10 @@ class TwitterScraper:
         Returns:
             List of ScrapedTweet objects.
         """
+        # Set worker context for logging
+        if worker_id is not None:
+            worker_context.set(worker_id)
+
         api = await self._get_api()
         tweets: list[ScrapedTweet] = []
         worker_prefix = f"[Worker {worker_id}] " if worker_id is not None else ""
