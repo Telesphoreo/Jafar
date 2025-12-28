@@ -27,6 +27,7 @@ This populates the accounts.db SQLite database that twscrape uses for authentica
 import asyncio
 import logging
 import random
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -103,6 +104,11 @@ class TwitterScraper:
         """
         self.db_path = db_path
         self._api: API | None = None
+        # Global rate limiter: only 1 concurrent API call at a time
+        self._api_semaphore = asyncio.Semaphore(1)
+        # Minimum delay between API calls (seconds)
+        self._min_api_delay = 5.0
+        self._last_api_call: float = 0.0
         logger.info(f"TwitterScraper initialized with database: {db_path}")
 
     async def _get_api(self) -> API:
@@ -227,39 +233,60 @@ class TwitterScraper:
             logger.debug(f"{worker_prefix}Could not check account availability: {e}")
 
         logger.info(f"{worker_prefix}Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
-        
+
         if limit > 100:
             logger.warning(f"{worker_prefix}High tweet limit ({limit}) detected. This may trigger rate limits quickly.")
             logger.warning(f"{worker_prefix}Consider reducing 'broad_tweet_limit' in config.yaml to < 100 for safer scraping.")
 
         # Use a long safety timeout (20 min) to allow twscrape to wait for rate limits (15 min window)
         # We rely on twscrape's internal logic to handle 429s and waits.
-        safety_timeout = 1200  
-        
-        # Add random jitter to avoid robotic timing patterns
-        jitter = random.uniform(10, 20)
-        logger.info(f"{worker_prefix}Jitter: waiting {jitter:.1f}s before search...")
-        await asyncio.sleep(jitter)
+        safety_timeout = 1200
 
         try:
             raw_tweets = []
-            # Manual consumption of the generator to allow inter-page delays
-            # This makes the scraping "slow and steady" and much harder to detect
-            async def fetch_with_delays():
-                count = 0
-                async for tweet in api.search(search_query, limit=limit):
-                    raw_tweets.append(tweet)
-                    count += 1
-                    
-                    # Every ~20 tweets (approx one page request), take a human-like breath
-                    if count % 20 == 0:
-                        delay = random.uniform(10, 15)
-                        logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Humanizing delay {delay:.1f}s...")
-                        await asyncio.sleep(delay)
-                return raw_tweets
 
-            # Still use wait_for to prevent total hangs, but with the manual loop inside
-            await asyncio.wait_for(fetch_with_delays(), timeout=safety_timeout)
+            # Acquire global semaphore to ensure only one search runs at a time
+            # This prevents multiple workers from hammering the API simultaneously
+            logger.debug(f"{worker_prefix}Waiting for API access...")
+            async with self._api_semaphore:
+                # Enforce minimum delay since last API call
+                now = time.time()
+                time_since_last = now - self._last_api_call
+                if time_since_last < self._min_api_delay:
+                    wait_time = self._min_api_delay - time_since_last
+                    logger.debug(f"{worker_prefix}Rate limit delay: waiting {wait_time:.1f}s...")
+                    await asyncio.sleep(wait_time)
+
+                # Add random jitter on top of the minimum delay
+                jitter = random.uniform(2, 5)
+                logger.debug(f"{worker_prefix}Jitter: {jitter:.1f}s")
+                await asyncio.sleep(jitter)
+
+                logger.info(f"{worker_prefix}Starting search...")
+                self._last_api_call = time.time()
+
+                # Manual consumption of the generator to allow inter-page delays
+                # This makes the scraping "slow and steady" and much harder to detect
+                async def fetch_with_delays():
+                    count = 0
+                    async for tweet in api.search(search_query, limit=limit):
+                        raw_tweets.append(tweet)
+                        count += 1
+
+                        # Every ~20 tweets (approx one page request), take a human-like breath
+                        if count % 20 == 0:
+                            delay = random.uniform(10, 15)
+                            logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Humanizing delay {delay:.1f}s...")
+                            await asyncio.sleep(delay)
+                            # Update last API call time for inter-page requests
+                            self._last_api_call = time.time()
+                    return raw_tweets
+
+                # Still use wait_for to prevent total hangs, but with the manual loop inside
+                await asyncio.wait_for(fetch_with_delays(), timeout=safety_timeout)
+
+                # Update last API call time after completion
+                self._last_api_call = time.time()
 
             for tweet in raw_tweets:
                 try:
@@ -358,7 +385,12 @@ class TwitterScraper:
         for topic in remaining:
             queue.put_nowait(topic)
 
-        async def worker(worker_id: int):
+        async def worker(worker_id: int, startup_delay: float):
+            # Stagger worker startup to prevent thundering herd
+            if startup_delay > 0:
+                logger.debug(f"[Worker {worker_id}] Startup delay: {startup_delay:.1f}s")
+                await asyncio.sleep(startup_delay)
+
             while not queue.empty():
                 try:
                     topic = queue.get_nowait()
@@ -366,7 +398,7 @@ class TwitterScraper:
                     break
 
                 logger.info(f"[Worker {worker_id}] Scraping topic: {topic}")
-                
+
                 try:
                     tweets = await self.search_tweets(topic, limit=limit_per_topic, timeout=timeout, worker_id=worker_id)
                     all_tweets.extend(tweets)
@@ -382,10 +414,9 @@ class TwitterScraper:
                         on_topic_complete(topic, [])
                 finally:
                     queue.task_done()
-                    # Small cooldown between tasks for this worker
-                    await asyncio.sleep(random.uniform(5, 10))
 
-        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
+        # Stagger worker startups by 2 seconds each to reduce initial contention
+        workers = [asyncio.create_task(worker(i, i * 2.0)) for i in range(concurrency)]
         await asyncio.gather(*workers)
 
         logger.info(f"Incremental scrape complete: {len(all_tweets)} tweets from {len(remaining)} topics")
@@ -474,7 +505,12 @@ class TwitterScraper:
         for trend in remaining:
             queue.put_nowait(trend)
 
-        async def worker(worker_id: int):
+        async def worker(worker_id: int, startup_delay: float):
+            # Stagger worker startup to prevent thundering herd
+            if startup_delay > 0:
+                logger.debug(f"[Worker {worker_id}] Startup delay: {startup_delay:.1f}s")
+                await asyncio.sleep(startup_delay)
+
             while not queue.empty():
                 try:
                     trend = queue.get_nowait()
@@ -497,10 +533,9 @@ class TwitterScraper:
                         on_trend_complete(trend, [])
                 finally:
                     queue.task_done()
-                    # Small cooldown between tasks for this worker
-                    await asyncio.sleep(random.uniform(5, 10))
 
-        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
+        # Stagger worker startups by 2 seconds each to reduce initial contention
+        workers = [asyncio.create_task(worker(i, i * 2.0)) for i in range(concurrency)]
         await asyncio.gather(*workers)
 
         total = sum(len(t) for t in trend_tweets.values())
