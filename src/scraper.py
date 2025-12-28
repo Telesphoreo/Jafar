@@ -328,7 +328,10 @@ class TwitterScraper:
         timeout: int = 300,
     ) -> list[ScrapedTweet]:
         """
-        Gather tweets incrementally using concurrent workers for load balancing.
+        Gather tweets incrementally using rotating worker batches for load balancing.
+
+        Uses a round-robin approach where worker pairs rotate through available
+        account slots, allowing previously used accounts to cool down.
 
         Args:
             topics: List of topics to search.
@@ -348,49 +351,79 @@ class TwitterScraper:
             logger.info("No topics remaining to scrape.")
             return []
 
-        # Determine concurrency based on active accounts
-        # Cap at 2 workers to avoid combined rate limit issues
-        # Even with separate proxies, Twitter may track by account or ASN
+        # Get account count for rotation
         stats = await self.get_account_stats()
         active_count = stats.get("active", 1)
-        concurrency = min(active_count, 2)
-        logger.info(f"Incremental scrape: {len(remaining)} topics remaining. Using {concurrency} concurrent workers.")
 
-        queue = asyncio.Queue()
-        for topic in remaining:
-            queue.put_nowait(topic)
+        # Use 2 concurrent workers per batch, but rotate through all available account slots
+        # This allows accounts to cool down between batches
+        workers_per_batch = min(active_count, 2)
+        total_slots = active_count  # Total account slots to rotate through
 
-        async def worker(wid: int):
-            # Set worker context for logging - all log messages will include [Worker X]
-            worker_context.set(wid)
+        logger.info(
+            f"Incremental scrape: {len(remaining)} topics remaining. "
+            f"Using {workers_per_batch} concurrent workers, rotating through {total_slots} account slots."
+        )
 
-            while not queue.empty():
-                try:
-                    topic = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
+        topic_index = 0
+        batch_number = 0
 
+        while topic_index < len(remaining):
+            # Calculate which worker slots to use this batch (round-robin through all slots)
+            # Example with 5 accounts, 2 workers per batch:
+            # Batch 0: workers 0, 1
+            # Batch 1: workers 2, 3
+            # Batch 2: workers 4, 0 (wraps around)
+            # Batch 3: workers 1, 2
+            base_slot = (batch_number * workers_per_batch) % total_slots
+            worker_slots = [(base_slot + i) % total_slots for i in range(workers_per_batch)]
+
+            # Get topics for this batch
+            batch_topics = remaining[topic_index:topic_index + workers_per_batch]
+            if not batch_topics:
+                break
+
+            logger.info(f"Batch {batch_number}: Using worker slots {worker_slots} for {len(batch_topics)} topics")
+
+            # Create tasks for this batch
+            async def process_topic(wid: int, topic: str):
+                worker_context.set(wid)
                 logger.info(f"Scraping topic: {topic}")
 
                 try:
-                    tweets = await self.search_tweets(topic, limit=limit_per_topic, timeout=timeout, worker_id=wid)
+                    tweets = await self.search_tweets(
+                        topic, limit=limit_per_topic, timeout=timeout, worker_id=wid
+                    )
                     all_tweets.extend(tweets)
 
                     if on_topic_complete:
                         on_topic_complete(topic, tweets)
 
                     logger.info(f"Topic '{topic}': {len(tweets)} tweets")
+                    return tweets
 
                 except Exception as e:
                     logger.error(f"Failed to scrape topic '{topic}': {e}")
                     if on_topic_complete:
                         on_topic_complete(topic, [])
-                finally:
-                    queue.task_done()
+                    return []
 
-        # Workers run in parallel - each has its own proxy/IP and paces itself
-        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
-        await asyncio.gather(*workers)
+            # Run batch concurrently
+            tasks = [
+                process_topic(worker_slots[i], topic)
+                for i, topic in enumerate(batch_topics)
+            ]
+            await asyncio.gather(*tasks)
+
+            topic_index += len(batch_topics)
+            batch_number += 1
+
+            # Add cooldown between batches to let accounts rest
+            # Only if there are more topics to process
+            if topic_index < len(remaining):
+                cooldown = 5  # seconds between batches
+                logger.debug(f"Batch cooldown: {cooldown}s before next batch")
+                await asyncio.sleep(cooldown)
 
         logger.info(f"Incremental scrape complete: {len(all_tweets)} tweets from {len(remaining)} topics")
         return all_tweets
@@ -445,7 +478,10 @@ class TwitterScraper:
         timeout: int = 300,
     ) -> dict[str, list[ScrapedTweet]]:
         """
-        Deep dive incrementally using concurrent workers for load balancing.
+        Deep dive incrementally using rotating worker batches for load balancing.
+
+        Uses a round-robin approach where worker pairs rotate through available
+        account slots, allowing previously used accounts to cool down.
 
         Args:
             trends: List of trends to search.
@@ -465,48 +501,72 @@ class TwitterScraper:
             logger.info("No trends remaining to scrape.")
             return {}
 
-        # Determine concurrency based on active accounts
-        # Cap at 2 workers to avoid combined rate limit issues
+        # Get account count for rotation
         stats = await self.get_account_stats()
         active_count = stats.get("active", 1)
-        concurrency = min(active_count, 2)
 
-        logger.info(f"Incremental deep dive: {len(remaining)} trends remaining. Using {concurrency} concurrent workers.")
+        # Use 2 concurrent workers per batch, but rotate through all available account slots
+        workers_per_batch = min(active_count, 2)
+        total_slots = active_count
 
-        queue = asyncio.Queue()
-        for trend in remaining:
-            queue.put_nowait(trend)
+        logger.info(
+            f"Incremental deep dive: {len(remaining)} trends remaining. "
+            f"Using {workers_per_batch} concurrent workers, rotating through {total_slots} account slots."
+        )
 
-        async def worker(wid: int):
-            # Set worker context for logging - all log messages will include [Worker X]
-            worker_context.set(wid)
+        trend_index = 0
+        batch_number = 0
 
-            while not queue.empty():
-                try:
-                    trend = queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
+        while trend_index < len(remaining):
+            # Calculate which worker slots to use this batch (round-robin)
+            base_slot = (batch_number * workers_per_batch) % total_slots
+            worker_slots = [(base_slot + i) % total_slots for i in range(workers_per_batch)]
 
+            # Get trends for this batch
+            batch_trends = remaining[trend_index:trend_index + workers_per_batch]
+            if not batch_trends:
+                break
+
+            logger.info(f"Batch {batch_number}: Using worker slots {worker_slots} for {len(batch_trends)} trends")
+
+            # Create tasks for this batch
+            async def process_trend(wid: int, trend: str):
+                worker_context.set(wid)
                 logger.info(f"Scraping trend: {trend}")
 
                 try:
-                    tweets = await self.search_tweets(trend, limit=limit_per_trend, timeout=timeout, worker_id=wid)
+                    tweets = await self.search_tweets(
+                        trend, limit=limit_per_trend, timeout=timeout, worker_id=wid
+                    )
                     trend_tweets[trend] = tweets
 
                     if on_trend_complete:
                         on_trend_complete(trend, tweets)
+
+                    return tweets
 
                 except Exception as e:
                     logger.error(f"Failed to scrape trend '{trend}': {e}")
                     trend_tweets[trend] = []
                     if on_trend_complete:
                         on_trend_complete(trend, [])
-                finally:
-                    queue.task_done()
+                    return []
 
-        # Workers run in parallel - each has its own proxy/IP and paces itself
-        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
-        await asyncio.gather(*workers)
+            # Run batch concurrently
+            tasks = [
+                process_trend(worker_slots[i], trend)
+                for i, trend in enumerate(batch_trends)
+            ]
+            await asyncio.gather(*tasks)
+
+            trend_index += len(batch_trends)
+            batch_number += 1
+
+            # Add cooldown between batches
+            if trend_index < len(remaining):
+                cooldown = 5
+                logger.debug(f"Batch cooldown: {cooldown}s before next batch")
+                await asyncio.sleep(cooldown)
 
         total = sum(len(t) for t in trend_tweets.values())
         logger.info(f"Incremental deep dive complete: {total} tweets from {len(remaining)} trends")
