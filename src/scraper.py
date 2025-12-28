@@ -245,7 +245,7 @@ class TwitterScraper:
                     
                     # Every ~20 tweets (approx one page request), take a human-like breath
                     if count % 20 == 0:
-                        delay = random.uniform(3, 7)
+                        delay = random.uniform(10, 15)
                         logger.debug(f"Search '{query}': {count} tweets retrieved. Humanizing delay {delay:.1f}s...")
                         await asyncio.sleep(delay)
                 return raw_tweets
@@ -460,7 +460,9 @@ class TwitterScraper:
         # Determine concurrency based on active accounts
         stats = await self.get_account_stats()
         active_count = stats.get("active", 1)
-        concurrency = min(active_count, 5)
+        # FORCE SERIAL EXECUTION to prevent 429s until stability is proven
+        concurrency = 1
+        # concurrency = min(active_count, 5)
         concurrency = max(1, concurrency)
 
         logger.info(f"Incremental deep dive: {len(remaining)} trends remaining. Using {concurrency} concurrent workers.")

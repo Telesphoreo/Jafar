@@ -23,3 +23,8 @@ dependencies = [
 postgres = ["asyncpg"]
 # For local embeddings (free, no API needed)
 local-embeddings = ["sentence-transformers"]
+
+[dependency-groups]
+dev = [
+    "pylint>=4.0.4",
+]

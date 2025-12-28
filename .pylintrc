@@ -1,0 +1,21 @@
+[MASTER]
+ignore=CVS,.git,.venv,__pycache__
+ignore-patterns=.*_pb2.py,.*_pb2_grpc.py
+jobs=0
+
+[MESSAGES CONTROL]
+# C0111: Missing docstring
+# C0103: Invalid name (often triggered by standard variables like 'df', 'id', etc. if not tuned)
+# R0903: Too few public methods (common for data classes)
+disable=C0111, R0903, C0103, W1203
+
+[FORMAT]
+max-line-length=120
+
+[BASIC]
+# Allow shorter names like 'x', 'y', 'df', 'db'
+good-names=i,j,k,ex,Run,_,fp,id,db,df,f
+
+[DESIGN]
+max-args=8
+max-attributes=15
