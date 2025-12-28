@@ -72,6 +72,9 @@ uv run python main.py
 ./run.sh logs     # watch progress
 ./run.sh status   # check if running
 ./run.sh stop     # stop it
+
+# Utilities
+uv run test_email.py   # Verify SMTP settings and send test email
 ```
 
 ## How It Works

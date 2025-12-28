@@ -31,6 +31,9 @@ uv run twscrape accounts
 
 # Add account via cookies (preferred method)
 uv run add_account.py <username> cookies.json
+
+# Test email settings
+uv run test_email.py
 ```
 
 ## Architecture
