@@ -340,14 +340,9 @@ class TwitterScraper:
             return []
 
         # Determine concurrency based on active accounts
-        await self.get_account_stats()
-        # Cap concurrency to avoid overwhelming the system or hitting global limits
-        # FORCE SERIAL EXECUTION to prevent 429s until stability is proven
-        concurrency = 1 
-        # concurrency = min(active_count, 5)
-        # Ensure at least 1 worker
-        concurrency = max(1, concurrency)
-
+        stats = await self.get_account_stats()
+        active_count = stats.get("active", 1)
+        concurrency = min(active_count, 5)
         logger.info(f"Incremental scrape: {len(remaining)} topics remaining. Using {concurrency} concurrent workers.")
 
         queue = asyncio.Queue()
