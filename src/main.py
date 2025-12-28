@@ -292,7 +292,7 @@ async def run_pipeline() -> bool:
 
     # Initialize components
     scraper = TwitterScraper(db_path=config.twitter.db_path)
-    analyzer = TrendAnalyzer()
+    analyzer = TrendAnalyzer(model_name=config.app.spacy_model)
     history = DigestHistory()
 
     # Check if Twitter accounts are available before starting

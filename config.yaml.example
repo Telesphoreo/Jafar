@@ -1,12 +1,18 @@
-# =============================================================================
 # Twitter Sentiment Analysis - Application Configuration
-# =============================================================================
 # Copy this file to config.yaml and customize as needed.
 # Secrets (API keys, passwords) should go in .env file, not here.
 
-# -----------------------------------------------------------------------------
+# Application Settings
+app:
+  # spaCy NLP model for entity extraction
+  # Options:
+  #   - en_core_web_sm: Small, fast, less accurate (default)
+  #   - en_core_web_lg: Large, more accurate
+  #   - en_core_web_trf: Transformer-based, most accurate (slowest, requires GPU recommended)
+  # IMPORTANT: You must download the model first: python -m spacy download <model_name>
+  spacy_model: en_core_web_sm
+
 # Twitter/twscrape Settings
-# -----------------------------------------------------------------------------
 twitter:
   # Path to twscrape SQLite database
   db_path: accounts.db
@@ -19,9 +25,7 @@ twitter:
     # - socks5://user:pass@host1:port
     # - socks5://user:pass@host2:port
 
-# -----------------------------------------------------------------------------
 # LLM Provider Settings
-# -----------------------------------------------------------------------------
 llm:
   # Provider: "openai" or "google"
   provider: openai
@@ -30,9 +34,7 @@ llm:
   openai_model: gpt-4o
   google_model: gemini-2.0-flash
 
-# -----------------------------------------------------------------------------
 # Email/SMTP Settings
-# -----------------------------------------------------------------------------
 smtp:
   host: smtp.gmail.com
   port: 587
@@ -48,9 +50,7 @@ email:
   #   - recipient1@example.com
   #   - recipient2@example.com
 
-# -----------------------------------------------------------------------------
 # Scraping Limits
-# -----------------------------------------------------------------------------
 scraping:
   # Tweets per broad topic (higher = better discovery but slower)
   # With 1 account: 100-200 is reasonable
@@ -73,9 +73,7 @@ scraping:
   # Recommended: 120-300 seconds
   search_timeout: 120
 
-# -----------------------------------------------------------------------------
 # Broad Search Topics
-# -----------------------------------------------------------------------------
 # These topics cast a wide net to discover trending financial content.
 # The analyzer then extracts specific entities from the results.
 broad_topics:
@@ -133,9 +131,7 @@ broad_topics:
   - shipping rates
   - freight
 
-# -----------------------------------------------------------------------------
 # Vector Memory Settings (for historical parallels)
-# -----------------------------------------------------------------------------
 memory:
   # Enable/disable semantic memory system
   enabled: true
@@ -153,11 +149,11 @@ memory:
   openai_embedding_model: text-embedding-3-large
 
   # Override embedding dimensions (optional)
-  # REQUIRED for pgvector which has a 2000 dimension limit!
-  # When using text-embedding-3-large with pgvector, set this to 1536 or 2000.
+  # REQUIRED for pgvector which has a 2000 dimension limit (ivfflat index)!
+  # When using text-embedding-3-large with pgvector, set this to 2000 for max quality.
   # The model supports native dimension reduction while retaining quality.
   # Leave commented out for ChromaDB (no limit) or text-embedding-3-small.
-  # embedding_dimensions: 1536
+  # embedding_dimensions: 2000
 
   # ChromaDB storage path (for local chroma store)
   chroma_path: ./memory_store
@@ -166,9 +162,7 @@ memory:
   # Higher = stricter matching, fewer but more relevant parallels
   min_similarity: 0.6
 
-# -----------------------------------------------------------------------------
 # Fact Checker Settings (market data verification)
-# -----------------------------------------------------------------------------
 fact_checker:
   # Enable/disable real-time market data fact-checking
   enabled: true
@@ -179,9 +173,7 @@ fact_checker:
   # Allowed variance for "price at X" claims (percentage)
   price_tolerance_pct: 2.0
 
-# -----------------------------------------------------------------------------
 # Logging
-# -----------------------------------------------------------------------------
 logging:
   # Level: DEBUG, INFO, WARNING, ERROR, CRITICAL
   level: INFO

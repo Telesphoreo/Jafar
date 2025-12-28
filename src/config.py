@@ -134,6 +134,11 @@ class AppConfig:
         default_factory=lambda: _get_yaml("logging", "level", "INFO")
     )
 
+    # NLP Model
+    spacy_model: str = field(
+        default_factory=lambda: _get_yaml("app", "spacy_model", "en_core_web_sm")
+    )
+
     # Broad search topics
     broad_topics: list[str] = field(default_factory=lambda: _get_broad_topics())
 
