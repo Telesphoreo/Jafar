@@ -97,7 +97,7 @@ uv run test_email.py   # Verify SMTP settings and send test email
 2. **Investigator** - Extracts trending entities via spaCy NLP, scores by engagement + cashtag co-occurrence
 3. **Quality Filter** - Three-stage funnel: statistical → quality threshold → LLM validation. Because "Risk" and "Demand"
    are not actionable signals, they're just words that appear in financial tweets
-4. **Deep Dive** - Targeted scraping for *validated* trends only (typically 2-4, not 10)
+4. **Deep Dive** - Targeted scraping for *validated* trends only (typically 2-4, not 15)
 5. **Fact Checker** - Fetches real prices from Yahoo Finance. Exposes the liars.
 6. **Analyst** - LLM generates skeptical summary with signal strength
 7. **Reporter** - Emails you a digest so you can pretend you're a Bloomberg terminal owner without paying $24k/year
@@ -109,16 +109,20 @@ Most sentiment tools would deep-dive on whatever has the highest engagement. Tha
 and "Crowd" instead of actual market signals.
 
 ```
-top_trends_count: 10  →  Quality Threshold  →  LLM Filter  →  Deep Dive
+top_trends_count: 15  →  Quality Threshold  →  LLM Filter  →  Deep Dive
      (cast wide)            (5-7 pass)         (2-4 best)     (focused)
 ```
 
 - **Statistical**: Requires minimum authors, financial context ratio, cashtag co-occurrence
 - **Quality Threshold**: 10+ authors, 85%+ financial context, cashtag co-occurrence for n-grams
-- **LLM Pre-Filter**: ~500 tokens asking "which of these are actionable?" Keeps "Silver", rejects "Buyers"
+- **LLM Pre-Filter**: ~500 tokens asking "actionable signals OR sentiment indicators?"
+  - Keeps: Silver, Risk, Demand, Bearish (sentiment matters!)
+  - Rejects: Christmas, Books, Fiction, Crowd (actual noise)
 
-Set `top_trends_count: 10` to cast wide, let the LLM pick the best 2-4. Better to have options than miss something
-that ranked #7 statistically but is actually the signal
+**Philosophy**: This is *sentiment* analysis. If everyone's suddenly bearish, that matters even if you can't trade
+"bearish" directly. The truth is often between Twitter doom and actual reality.
+
+Set `top_trends_count: 15` to cast wide, let the LLM pick the best 2-4
 
 ## Signal Strength
 

@@ -135,9 +135,11 @@ top_trends_count: 10  →  Quality Threshold  →  LLM Filter  →  Deep Dive
 - For non-cashtags: requires >10% cashtag co-occurrence
 
 **Stage 3: LLM Pre-Filter** (~500 tokens, fast)
-- Asks LLM: "Which of these are actionable market signals vs noise?"
-- Keeps: Silver, $NVDA, Uranium, Inventories
-- Rejects: Risk, Demand, Buyers, Gap, Books
+- Asks LLM: "Which are actionable signals OR meaningful sentiment indicators?"
+- Keeps: Silver, $NVDA, Uranium, Inventories, Risk, Demand, Bearish
+- Rejects: Christmas, Books, Fiction, Crowd, Chat
+
+**Philosophy**: This is *sentiment* analysis. Aggregate mood matters. If "Risk" or "Bearish" is spiking, that's signal even if you can't trade it directly. The truth is often between Twitter doom and actual market reality.
 
 **Why `top_trends_count: 10` is optimal**: Cast wide statistically, let the LLM pick the 2-4 best. Setting it to 5 might miss something that ranked #7 statistically but is actually the most actionable signal.
 

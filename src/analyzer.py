@@ -48,15 +48,16 @@ NOISE_TERMS = {
     "canada", "canadian", "mexico", "mexican", "japan", "japanese",
     "germany", "german", "france", "french", "india", "indian",
 
-    # Generic market terms (always discussed)
+    # Generic market structure terms (always discussed, no signal value)
     "wall street", "main street", "stock market", "market", "markets",
     "stocks", "stock", "shares", "share", "equity", "equities",
-    "economy", "economic", "recession", "inflation", "deflation",
-    "interest rate", "interest rates", "rate hike", "rate cut",
-    "bull", "bear", "bullish", "bearish", "rally", "crash", "correction",
-    "volatility", "volatile", "momentum", "trend", "trending",
-    "buy", "sell", "hold", "long", "short", "trade", "trading", "trader",
+    "trade", "trading", "trader", "traders",
     "investor", "investors", "investing", "investment",
+    "portfolio", "position", "positions",
+
+    # NOTE: Sentiment terms like "bullish", "bearish", "rally", "crash", "recession",
+    # "inflation" are intentionally NOT filtered - spikes in these indicate market mood.
+    # We want to catch when bearish sentiment is unusually high, etc.
 
     # Time words
     "today", "yesterday", "tomorrow", "week", "month", "year", "daily",
