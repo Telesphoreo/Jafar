@@ -349,9 +349,11 @@ class TwitterScraper:
             return []
 
         # Determine concurrency based on active accounts
+        # Cap at 2 workers to avoid combined rate limit issues
+        # Even with separate proxies, Twitter may track by account or ASN
         stats = await self.get_account_stats()
         active_count = stats.get("active", 1)
-        concurrency = min(active_count, 5)
+        concurrency = min(active_count, 2)
         logger.info(f"Incremental scrape: {len(remaining)} topics remaining. Using {concurrency} concurrent workers.")
 
         queue = asyncio.Queue()
@@ -464,11 +466,10 @@ class TwitterScraper:
             return {}
 
         # Determine concurrency based on active accounts
-        await self.get_account_stats()
-        # FORCE SERIAL EXECUTION to prevent 429s until stability is proven
-        concurrency = 1
-        # concurrency = min(active_count, 5)
-        concurrency = max(1, concurrency)
+        # Cap at 2 workers to avoid combined rate limit issues
+        stats = await self.get_account_stats()
+        active_count = stats.get("active", 1)
+        concurrency = min(active_count, 2)
 
         logger.info(f"Incremental deep dive: {len(remaining)} trends remaining. Using {concurrency} concurrent workers.")
 
