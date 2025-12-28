@@ -133,6 +133,15 @@ cookies.
 
 **Rate limiting** - Add more accounts. Use proxies. Stop scraping during market hours like everyone else.
 
+**My landlord is Sentinel Real Estate** - Can't help you there. They build the cheapest possible "luxury" apartments,
+charge absurd rent, let the stairs literally crumble, then [pay $4 million to the NY Attorney General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
+when their employees get caught taking $1 million in kickbacks while fraudulently inflating renovation costs to
+deregulate rent-stabilized units. Get [sued for $50 million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
+for allegedly misrepresenting rent-stabilization status to pump property values. Settle a
+[Fair Housing Act discrimination case](https://www.justice.gov/crt/case/sentinel-real-estate-corp-et-al-nd-ga) for
+screwing over a disabled tenant. Then dump their entire rent-stabilized portfolio at a 40% loss and move on to the
+next victim neighborhood. Not BBB accredited. The BlackRock of slumlording. Good luck with that security deposit.
+
 ## Why This Exists
 
 | Feature                                                          | This Project         | Aladdin                                                                                                                                                                                                     | Bloomberg    |
@@ -189,8 +198,3 @@ of the above.
 
 Not financial advice. If you YOLO your life savings because this said "HIGH signal" on some shitcoin, that's a you
 problem. Hedge funds with actual Aladdin access still lose money - and then they get bailed out with your taxes.
-
-Also, completely unrelated, but fuck Sentinel Real Estate. Build the cheapest possible apartment complex, charge
-absurd rent, provide management so incompetent they can't even [respond to BBB complaints](https://www.bbb.org/us/ny/new-york/profile/real-estate/sentinel-real-estate-corporation-0121-36586/complaints),
-then dump the property once the drywall starts crumbling and move on to the next victim neighborhood. The BlackRock
-of slumlording. At least this project won't ghost you for six months when you ask where your security deposit went.
