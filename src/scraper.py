@@ -29,9 +29,8 @@ import logging
 import random
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import AsyncIterator
 
-from twscrape import API, gather
+from twscrape import API
 from twscrape.models import Tweet
 
 logger = logging.getLogger("jafar.scraper")
@@ -59,7 +58,7 @@ class ScrapedTweet:
         # Extract hashtags from tweet entities
         hashtags = []
         if tweet.hashtags:
-            hashtags = [tag for tag in tweet.hashtags]
+            hashtags = list(tweet.hashtags)
 
         return cls(
             id=tweet.id,
@@ -341,10 +340,11 @@ class TwitterScraper:
             return []
 
         # Determine concurrency based on active accounts
-        stats = await self.get_account_stats()
-        active_count = stats.get("active", 1)
+        await self.get_account_stats()
         # Cap concurrency to avoid overwhelming the system or hitting global limits
-        concurrency = min(active_count, 5)
+        # FORCE SERIAL EXECUTION to prevent 429s until stability is proven
+        concurrency = 1 
+        # concurrency = min(active_count, 5)
         # Ensure at least 1 worker
         concurrency = max(1, concurrency)
 
@@ -458,8 +458,7 @@ class TwitterScraper:
             return {}
 
         # Determine concurrency based on active accounts
-        stats = await self.get_account_stats()
-        active_count = stats.get("active", 1)
+        await self.get_account_stats()
         # FORCE SERIAL EXECUTION to prevent 429s until stability is proven
         concurrency = 1
         # concurrency = min(active_count, 5)

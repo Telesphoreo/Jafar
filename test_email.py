@@ -88,7 +88,7 @@ def main():
 
     # 2. Test Current Configuration
     logger.info("\n--- Step 1: Testing Configured Settings ---")
-    if test_connection(
+    test_connection(
         config.smtp.host, 
         config.smtp.port, 
         current_protocol, 

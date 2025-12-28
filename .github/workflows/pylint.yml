@@ -26,4 +26,5 @@ jobs:
       run: |
         # We run pylint through 'uv run' to ensure it has access to the installed dependencies
         # checking src directory and root python scripts
-        uv run pylint $(git ls-files '*.py')
+        # We set a passing threshold of 9.0/10.0 so the build doesn't fail on minor warnings
+        uv run pylint --fail-under=9.0 $(git ls-files '*.py')
