@@ -155,18 +155,19 @@ async def main():
     proxy = None
 
     if proxies:
-        # Count existing accounts to determine proxy index
+        # Count existing accounts (excluding the one we're about to add/replace)
         api = API("accounts.db")
         try:
             accounts = await api.pool.accounts_info()
-            account_count = len(accounts)
+            # Don't count the account we're replacing
+            account_count = len([a for a in accounts if a["username"] != username])
         except Exception:
             account_count = 0
 
         # Assign proxy round-robin based on existing account count
         proxy_index = account_count % len(proxies)
         proxy = proxies[proxy_index]
-        print(f"Assigning proxy {proxy_index + 1}/{len(proxies)} to this account")
+        print(f"Assigning proxy {proxy_index + 1}/{len(proxies)} to this account (based on {account_count} existing accounts)")
     else:
         print("No proxies configured in config.yaml")
 
