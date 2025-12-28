@@ -1,8 +1,9 @@
 # Twitter/X Economic Sentiment Analysis
 
-*BlackRock's Aladdin
-manages $21 trillion in assets, mass-shorted Treasuries before the 2023 bank failures, got caught coordinating with the Fed, and charges $
-25,000/month for their sentiment tools. You have a mass-produced Roth IRA from Fidelity and a dream. Let's fucking go.*
+BlackRock's Aladdin manages \$21 trillion dollars in assets while their CEO has [private phone calls with the Fed Chair](https://wallstreetonparade.com/2020/08/fed-chair-powell-had-4-private-phone-calls-with-blackrocks-ceo-since-march-as-blackrock-manages-upwards-of-25-million-of-powells-personal-money-and-lands-3-no-bid-deals-with-the-fed/) who conveniently has
+[$25 million of his personal wealth invested with BlackRock](https://wallstreetonparade.com/2020/05/fed-chair-powell-has-upwards-of-11-6-million-invested-with-blackrock-the-firm-that-will-manage-a-750-billion-corporate-bond-bailout-program-for-the-fed/).
+They charge \$25,000/month for sentiment tools. You have a mass-produced Roth IRA from Fidelity and a dream. Let's
+fucking go.
 
 A system for discovering emerging market trends from Twitter/X before they hit mainstream news. Uses statistical
 analysis, NLP, real-time market data verification, and LLM-powered summarization with semantic memory.
@@ -18,7 +19,8 @@ to manufacture urgency like Jim Cramer speed-running his thirteenth margin call 
 - **Vector Memory**: Semantic search finds historical parallels - unlike fintwit influencers who recycle the same thread
   every 6 months hoping you forgot
 - **Skeptical Analysis**: LLM is explicitly instructed to say "nothing notable today" - a concept that would bankrupt
-  CNBC
+  CNBC and make BlackRock's [55.8% underperforming funds](https://www.yodelar.com/insights/blackrock-review) look even
+  worse
 - **Checkpoint System**: Got rate limited by Elon's clown show? Just run it again
 - **SOCKS5 Proxy Support**: For completely legitimate research purposes, officer
 - **Background Runner**: Start it, forget it, check logs whenever - like that Mandarin Duolingo streak you started after
@@ -42,7 +44,8 @@ uv run python -m spacy download en_core_web_sm
 Copy `config.yaml.example` to `config.yaml` and `.env.example` to `.env`.
 
 Figure it out. The examples are commented. You're building a market intelligence system - if you can't edit a YAML file,
-maybe just buy index funds and touch grass.
+maybe just buy index funds and touch grass. At least you won't be paying BlackRock's fees
+while [their own executive admits ESG is a "dangerous placebo that harms the public interest"](https://www.cnbc.com/2022/12/07/activist-investor-calls-for-blackrock-ceo-fink-to-step-down-over-esg-hypocrisy.html).
 
 ## Twitter Setup
 
@@ -75,7 +78,7 @@ uv run python main.py
 3. **Deep Dive** - Targeted scraping for discovered trends
 4. **Fact Checker** - Fetches real prices from Yahoo Finance. Exposes the liars.
 5. **Analyst** - LLM generates skeptical summary with signal strength
-6. **Reporter** - Emails you a digest so you can feel like a Bloomberg terminal owner
+6. **Reporter** - Emails you a digest so you can pretend you're a Bloomberg terminal owner without paying $24k/year
 7. **Memory** - Stores everything for future historical parallel detection
 
 ## Signal Strength
@@ -87,7 +90,8 @@ uv run python main.py
 | **LOW**    | Normal Twitter nonsense | Most days                 |
 | **NONE**   | Quieter than usual      | When everyone's at brunch |
 
-Unlike Aladdin, we don't pretend every day is Lehman Brothers.
+Unlike Aladdin, we don't pretend every day is Lehman Brothers. We also
+don't [hold $11 billion in coal investments while lecturing everyone about climate](https://en.wikipedia.org/wiki/BlackRock#Investments_in_contributors_to_climate_change).
 
 ## Fact Check Classifications
 
@@ -131,18 +135,73 @@ cookies.
 
 ## Why This Exists
 
-| Feature                               | This Project         | Aladdin                                                                       | Bloomberg            |
-|---------------------------------------|----------------------|-------------------------------------------------------------------------------|----------------------|
-| Cost                                  | ~$10/mo in API calls | $25,000/month                                                                 | $24,000/year         |
-| Twitter Sentiment                     | Yes                  | Probably                                                                      | Kinda                |
-| Will tell you "nothing matters today" | **Yes**              | Never. Gotta justify that invoice.                                            | Lol                  |
-| Open Source                           | Yes                  | Absolutely not                                                                | Cute                 |
-| Actually makes you a quant            | No                   | Also no                                                                       | Still no             |
-| Got no-bid Fed contracts to buy its own ETFs with taxpayer money | No                   | [Yes](https://wallstreetonparade.com/2020/06/blackrock-is-bailing-out-its-etfs-with-fed-money-and-taxpayers-eating-losses-its-also-the-sole-manager-for-335-billion-of-federal-employees-retirement-funds/) | No |
+| Feature                                                          | This Project         | Aladdin                                                                                                                                                                                                     | Bloomberg    |
+|------------------------------------------------------------------|----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------|
+| Cost                                                             | ~$10/mo in API calls | $25,000/month                                                                                                                                                                                               | $24,000/year |
+| Twitter Sentiment                                                | Yes                  | Probably                                                                                                                                                                                                    | Kinda        |
+| Will tell you "nothing matters today"                            | **Yes**              | Never. Gotta justify that invoice.                                                                                                                                                                          | Lol          |
+| Open Source                                                      | Yes                  | Absolutely not                                                                                                                                                                                              | Cute         |
+| Actually makes you a quant                                       | No                   | Also no                                                                                                                                                                                                     | Still no     |
+| Got no-bid Fed contracts to buy its own ETFs with taxpayer money | No                   | [Yes](https://wallstreetonparade.com/2020/06/blackrock-is-bailing-out-its-etfs-with-fed-money-and-taxpayers-eating-losses-its-also-the-sole-manager-for-335-billion-of-federal-employees-retirement-funds/) | No           |
+| Lost $5B+ in pension mandates because of ESG failures            | No                   | [Yes](https://www.fa-mag.com/news/blackrock-loses--5-9-billion-mandate-from-dutch-pension-pme-85220.html)                                                                                                   | No           |
 
 *At least when we're wrong, it's free. When they're wrong, they get a bailout.*
+
+## The Corruption Receipts
+
+Since you made it this far, here's the full BlackRock starter pack:
+
+- **Fed Chair Powell has $25M personally invested with BlackRock** while giving them no-bid
+  contracts. ["Extremely carefully managed"](https://www.investing.com/news/economy/blackrock-conflicts-managed-extremely-carefully-feds-powell-says-2245953)
+  he says. Sure
+  bro. ([Source](https://wallstreetonparade.com/2020/05/fed-chair-powell-has-upwards-of-11-6-million-invested-with-blackrock-the-firm-that-will-manage-a-750-billion-corporate-bond-bailout-program-for-the-fed/))
+
+- **BlackRock wrote the bailout plan before the crisis happened**, then got hired to implement it. They literally
+  authored a paper called "Going Direct" in August 2019 proposing central banks inject money directly into the economy.
+  Six months later, COVID happens, and they get the
+  contract. ([Source](https://wallstreetonparade.com/2020/06/blackrock-authored-the-bailout-plan-before-there-was-a-crisis-now-its-been-hired-by-three-central-banks-to-implement-the-plan/))
+
+- **55.8% of their funds underperform** their sector peers, with some pension funds returning -50.91% over 3 years while
+  the sector average was positive. ([Source](https://www.yodelar.com/insights/blackrock-review))
+
+- **Dutch pension funds pulled $5B+** from BlackRock because they're not acting in beneficiaries' best interests on
+  climate
+  risk. ([Source 1](https://www.fa-mag.com/news/blackrock-loses--5-9-billion-mandate-from-dutch-pension-pme-85220.html))
+
+- **Larry Fink said "I'm ashamed of being part of this conversation"** about ESG at Aspen 2023, then denied saying it moments later in the same interview. After years of lecturing everyone about stakeholder capitalism. ([Source](https://www.axios.com/2023/06/26/larry-fink-ashamed-esg-weaponized-desantis))
+
+- **Their own former Chief Investment Officer for Sustainable Investing** called their ESG investing "a dangerous
+  placebo that harms the public interest" because ESG products have higher
+  fees. ([Source](https://www.cnbc.com/2022/12/07/activist-investor-calls-for-blackrock-ceo-fink-to-step-down-over-esg-hypocrisy.html))
+
+- **$11 billion in coal investments** while being the world's largest investor in coal-fired power stations, as of 2018.
+  The Sierra Club literally started a campaign called "BlackRock's Big
+  Problem." ([Source](https://en.wikipedia.org/wiki/BlackRock#Investments_in_contributors_to_climate_change)
+
+- **They voted against management 1,500+ times for "insufficient diversity"** while simultaneously dropping ESG support
+  from 47% to 4% when it became politically
+  inconvenient. ([Source](https://fortune.com/2024/02/14/blackrock-voting-choice-ceo-larry-fink-shareholder-democracy-stakeholder-capitalism-esg/))
+
+This project costs you maybe $10/month in API calls. Aladdin costs $25,000/month and the people running it are doing all
+of the above.
 
 ## Disclaimer
 
 Not financial advice. If you YOLO your life savings because this said "HIGH signal" on some shitcoin, that's a you
-problem. Hedge funds with actual Aladdin access still lose money.
+problem. Hedge funds with actual Aladdin access still lose money - and then they get bailed out with your taxes.
+
+## Contributing
+
+PRs welcome. Especially for:
+
+- More shade in the README (with receipts)
+- Better fact-checker symbol mappings
+- Making the LLM even more skeptical
+- Telling us we're wrong (we can take it)
+
+## Acknowledgments
+
+- **twscrape** - For making Twitter scraping possible post-API-apocalypse
+- **spaCy** - NLP that works
+- **yfinance** - Yahoo's one contribution to society
+- **BlackRock** - For the motivation. See you at the next ~~Fed meeting~~ private phone call with Jerome.
