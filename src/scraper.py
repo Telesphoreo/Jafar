@@ -197,40 +197,35 @@ class TwitterScraper:
         Returns:
             List of ScrapedTweet objects.
         """
-        # Set worker context for logging
-        if worker_id is not None:
-            worker_context.set(worker_id)
-
         api = await self._get_api()
         tweets: list[ScrapedTweet] = []
-        worker_prefix = f"[Worker {worker_id}] " if worker_id is not None else ""
 
         # Add language filter to query
         search_query = f"{query} lang:{lang}"
-        
+
         # Check account availability and adjust timeout if rate limited
         wait_time_needed = 0
         try:
             stats = await api.pool.stats()
             active = stats.get("active", 0)
             total = stats.get("total", 0)
-            
+
             if total > 0 and active == 0:
                 # All accounts rate limited. Twscrape will wait automatically.
                 # We need to ensure our timeout is longer than the wait time.
                 # Since we can't easily get the exact reset time from stats here,
                 # we'll assume a standard 15-minute window + buffer if we detect this state.
                 wait_time_needed = 900  # 15 minutes
-                logger.warning(f"{worker_prefix}All {total} accounts are rate-limited. Increasing timeout to allow waiting...")
+                logger.warning(f"All {total} accounts are rate-limited. Increasing timeout to allow waiting...")
                 timeout = max(timeout, wait_time_needed + 60)
         except Exception as e:
-            logger.debug(f"{worker_prefix}Could not check account availability: {e}")
+            logger.debug(f"Could not check account availability: {e}")
 
-        logger.info(f"{worker_prefix}Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
+        logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
 
         if limit > 100:
-            logger.warning(f"{worker_prefix}High tweet limit ({limit}) detected. This may trigger rate limits quickly.")
-            logger.warning(f"{worker_prefix}Consider reducing 'broad_tweet_limit' in config.yaml to < 100 for safer scraping.")
+            logger.warning(f"High tweet limit ({limit}) detected. This may trigger rate limits quickly.")
+            logger.warning("Consider reducing 'broad_tweet_limit' in config.yaml to < 100 for safer scraping.")
 
         # Use a long safety timeout (20 min) to allow twscrape to wait for rate limits (15 min window)
         # We rely on twscrape's internal logic to handle 429s and waits.
@@ -241,10 +236,10 @@ class TwitterScraper:
 
             # Add initial jitter to stagger workers naturally
             jitter = random.uniform(1, 5)
-            logger.debug(f"{worker_prefix}Initial jitter: {jitter:.1f}s")
+            logger.debug(f"Initial jitter: {jitter:.1f}s")
             await asyncio.sleep(jitter)
 
-            logger.info(f"{worker_prefix}Starting search...")
+            logger.info("Starting search...")
 
             # Manual consumption of the generator to allow inter-page delays
             # Each worker paces itself independently (they have separate proxies/IPs)
@@ -259,7 +254,7 @@ class TwitterScraper:
                     # Target: 10-20 seconds between HTTP requests per worker
                     if count % 15 == 0:
                         delay = random.uniform(10, 15)
-                        logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Pacing delay {delay:.1f}s...")
+                        logger.debug(f"Search '{query}': {count} tweets retrieved. Pacing delay {delay:.1f}s...")
                         await asyncio.sleep(delay)
                 return raw_tweets
 
@@ -271,18 +266,18 @@ class TwitterScraper:
                     scraped = ScrapedTweet.from_twscrape(tweet)
                     tweets.append(scraped)
                 except Exception as e:
-                    logger.warning(f"{worker_prefix}Failed to parse tweet {tweet.id}: {e}")
+                    logger.warning(f"Failed to parse tweet {tweet.id}: {e}")
                     continue
 
-            logger.info(f"{worker_prefix}Retrieved {len(tweets)} tweets for query: {query}")
+            logger.info(f"Retrieved {len(tweets)} tweets for query: {query}")
             return tweets
 
         except asyncio.TimeoutError:
-            logger.error(f"{worker_prefix}Safety timeout reached for '{query}' after {safety_timeout}s")
-            logger.error(f"{worker_prefix}This suggests a genuine network hang or extremely long rate limit.")
+            logger.error(f"Safety timeout reached for '{query}' after {safety_timeout}s")
+            logger.error("This suggests a genuine network hang or extremely long rate limit.")
             return tweets
         except Exception as e:
-            logger.error(f"{worker_prefix}Error searching for '{query}': {e}")
+            logger.error(f"Error searching for '{query}': {e}")
             # Return empty list instead of crashing
             return []
 
@@ -363,26 +358,29 @@ class TwitterScraper:
         for topic in remaining:
             queue.put_nowait(topic)
 
-        async def worker(worker_id: int):
+        async def worker(wid: int):
+            # Set worker context for logging - all log messages will include [Worker X]
+            worker_context.set(wid)
+
             while not queue.empty():
                 try:
                     topic = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
 
-                logger.info(f"[Worker {worker_id}] Scraping topic: {topic}")
+                logger.info(f"Scraping topic: {topic}")
 
                 try:
-                    tweets = await self.search_tweets(topic, limit=limit_per_topic, timeout=timeout, worker_id=worker_id)
+                    tweets = await self.search_tweets(topic, limit=limit_per_topic, timeout=timeout, worker_id=wid)
                     all_tweets.extend(tweets)
 
                     if on_topic_complete:
                         on_topic_complete(topic, tweets)
 
-                    logger.info(f"[Worker {worker_id}] Topic '{topic}': {len(tweets)} tweets")
+                    logger.info(f"Topic '{topic}': {len(tweets)} tweets")
 
                 except Exception as e:
-                    logger.error(f"[Worker {worker_id}] Failed to scrape topic '{topic}': {e}")
+                    logger.error(f"Failed to scrape topic '{topic}': {e}")
                     if on_topic_complete:
                         on_topic_complete(topic, [])
                 finally:
@@ -478,24 +476,27 @@ class TwitterScraper:
         for trend in remaining:
             queue.put_nowait(trend)
 
-        async def worker(worker_id: int):
+        async def worker(wid: int):
+            # Set worker context for logging - all log messages will include [Worker X]
+            worker_context.set(wid)
+
             while not queue.empty():
                 try:
                     trend = queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
 
-                logger.info(f"[Worker {worker_id}] Scraping trend: {trend}")
+                logger.info(f"Scraping trend: {trend}")
 
                 try:
-                    tweets = await self.search_tweets(trend, limit=limit_per_trend, timeout=timeout, worker_id=worker_id)
+                    tweets = await self.search_tweets(trend, limit=limit_per_trend, timeout=timeout, worker_id=wid)
                     trend_tweets[trend] = tweets
 
                     if on_trend_complete:
                         on_trend_complete(trend, tweets)
 
                 except Exception as e:
-                    logger.error(f"[Worker {worker_id}] Failed to scrape trend '{trend}': {e}")
+                    logger.error(f"Failed to scrape trend '{trend}': {e}")
                     trend_tweets[trend] = []
                     if on_trend_complete:
                         on_trend_complete(trend, [])
