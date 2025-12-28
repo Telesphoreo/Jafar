@@ -107,7 +107,7 @@ class TwitterScraper:
         # Global rate limiter: only 1 concurrent API call at a time
         self._api_semaphore = asyncio.Semaphore(1)
         # Minimum delay between API calls (seconds)
-        self._min_api_delay = 5.0
+        self._min_api_delay = 10.0
         self._last_api_call: float = 0.0
         logger.info(f"TwitterScraper initialized with database: {db_path}")
 
@@ -257,8 +257,8 @@ class TwitterScraper:
                     logger.debug(f"{worker_prefix}Rate limit delay: waiting {wait_time:.1f}s...")
                     await asyncio.sleep(wait_time)
 
-                # Add random jitter on top of the minimum delay
-                jitter = random.uniform(2, 5)
+                # Add random jitter on top of the minimum delay (ensures 10+ seconds total)
+                jitter = random.uniform(2, 8)
                 logger.debug(f"{worker_prefix}Jitter: {jitter:.1f}s")
                 await asyncio.sleep(jitter)
 
@@ -273,10 +273,12 @@ class TwitterScraper:
                         raw_tweets.append(tweet)
                         count += 1
 
-                        # Every ~20 tweets (approx one page request), take a human-like breath
-                        if count % 20 == 0:
+                        # Every ~10 tweets, take a human-like breath
+                        # This ensures we delay BEFORE each page boundary (pages are ~20 tweets)
+                        # so we never have back-to-back HTTP requests
+                        if count % 10 == 0:
                             delay = random.uniform(10, 15)
-                            logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Humanizing delay {delay:.1f}s...")
+                            logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Pacing delay {delay:.1f}s...")
                             await asyncio.sleep(delay)
                             # Update last API call time for inter-page requests
                             self._last_api_call = time.time()
