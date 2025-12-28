@@ -36,7 +36,8 @@ NOISE_TERMS = {
     # Government/Political (always present, never actionable)
     "federal reserve", "fed", "the fed", "fomc", "powell", "jerome powell",
     "congress", "senate", "house", "white house", "government",
-    "trump", "biden", "harris", "obama", "desantis", "musk", "elon",
+    "trump", "donald trump", "donald t", "don t", "don trump", "donaldtrump",
+    "biden", "joe biden", "harris", "kamala", "obama", "desantis", "musk", "elon",
     "gop", "republican", "republicans", "democrat", "democrats", "democratic",
     "president", "vice president", "treasury", "sec", "ftc", "doj", "cftc",
     "yellen", "janet yellen",
