@@ -1,298 +1,148 @@
 # Twitter/X Economic Sentiment Analysis
 
-A sophisticated system for discovering emerging market trends from Twitter/X before they hit mainstream news. Uses statistical analysis, NLP, and LLM-powered summarization with historical memory for finding genuine parallels.
+*BlackRock's Aladdin
+manages $21 trillion in assets, mass-shorted Treasuries before the 2023 bank failures, got caught coordinating with the Fed, and charges $
+25,000/month for their sentiment tools. You have a mass-produced Roth IRA from Fidelity and a dream. Let's fucking go.*
 
-**Key Philosophy**: Most days are boring. This system is calibrated to tell you when something *actually* matters, not to manufacture urgency.
+A system for discovering emerging market trends from Twitter/X before they hit mainstream news. Uses statistical
+analysis, NLP, real-time market data verification, and LLM-powered summarization with semantic memory.
+
+**Key Philosophy**: Most days are boring. This system is calibrated to tell you when something *actually* matters, not
+to manufacture urgency like Jim Cramer speed-running his thirteenth margin call of the week.
 
 ## Features
 
-- **Dynamic Discovery**: Finds trends you didn't know to look for (not just keyword matching)
-- **Statistical Anomaly Detection**: Surfaces what's *unusually* active, weighted by engagement
-- **Aggressive Noise Filtering**: Filters out Fed, Trump, generic market chatter
-- **Vector Memory**: Semantic search finds historical parallels ("history rhymes")
-- **Skeptical Analysis**: LLM is explicitly instructed to say "nothing notable today" when appropriate
-- **Signal Strength Rating**: HIGH / MEDIUM / LOW / NONE calibration
-- **Swappable LLM Providers**: OpenAI or Google Gemini
-- **Professional Email Digests**: HTML-formatted with signal strength indicators
-
-## Architecture
-
-```
-twitter_sentiment_analysis/
-├── main.py                 # Entry point
-├── pyproject.toml          # Dependencies (uv)
-├── .env.example            # Configuration template
-└── src/
-    ├── config.py           # Environment configuration
-    ├── scraper.py          # Twitter scraping (twscrape)
-    ├── analyzer.py         # Statistical trend discovery (spaCy)
-    ├── reporter.py         # Email reports (SMTP)
-    ├── history.py          # SQLite digest history
-    ├── main.py             # Pipeline orchestration
-    ├── llm/
-    │   ├── base.py         # Abstract LLM interface
-    │   ├── factory.py      # Provider factory
-    │   ├── openai_client.py
-    │   └── google_client.py
-    └── memory/
-        ├── base.py         # Vector store interface
-        ├── embeddings.py   # OpenAI/local embeddings
-        ├── chroma_store.py # Local vector storage
-        ├── pgvector_store.py # Production PostgreSQL
-        └── memory_manager.py # Semantic search orchestration
-```
-
-## Prerequisites
-
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv) package manager
-- Twitter/X account(s) for scraping
-- OpenAI API key (for LLM analysis and embeddings)
-- SMTP credentials (for email delivery)
+- **Dynamic Discovery**: Finds trends you didn't know to look for (not just keyword matching like a 2008 RSS feed)
+- **Real-Time Fact Checking**: When some anonymous account with a Pepe avatar screams "SILVER IS MOONING!!!" and it's up
+  0.3%, we expose the grift
+- **Vector Memory**: Semantic search finds historical parallels - unlike fintwit influencers who recycle the same thread
+  every 6 months hoping you forgot
+- **Skeptical Analysis**: LLM is explicitly instructed to say "nothing notable today" - a concept that would bankrupt
+  CNBC
+- **Checkpoint System**: Got rate limited by Elon's clown show? Just run it again
+- **SOCKS5 Proxy Support**: For completely legitimate research purposes, officer
+- **Background Runner**: Start it, forget it, check logs whenever - like that Mandarin Duolingo streak you started after
+  your fifth Renaissance Technologies rejection letter
 
 ## Installation
-
-### 1. Clone and Install Dependencies
 
 ```bash
 git clone <repository-url>
 cd twitter_sentiment_analysis
 
-# Install dependencies with uv
 uv sync
 
-# Download spaCy language model
+# spaCy needs this for reasons nobody can explain
+uv pip install pip
 uv run python -m spacy download en_core_web_sm
-```
-
-### 2. Configure Environment
-
-```bash
-# Copy the example configuration
-cp .env.example .env
-
-# Edit with your credentials
-# See Configuration section below for details
-```
-
-### 3. Set Up Twitter Account
-
-Twitter scraping requires authenticated accounts. Due to Cloudflare protection, cookie-based authentication is recommended.
-
-#### Method 1: Cookie Authentication (Recommended)
-
-1. Log into Twitter/X in your browser
-2. Export cookies using a browser extension (e.g., "Cookie-Editor" for Chrome/Firefox)
-3. Save as `cookies.json` in the project root
-4. Run the account setup script:
-
-```bash
-uv run python add_account.py <your_twitter_username> cookies.json
-```
-
-#### Method 2: Direct Login (May be blocked by Cloudflare)
-
-```bash
-# Create accounts.txt with format: username:password:email:email_password
-echo "myuser:mypass:myemail@example.com:emailpass" > accounts.txt
-
-# Add accounts
-uv run twscrape add_accounts accounts.txt username:password:email:email_password
-
-# Login (use --manual if email doesn't support IMAP)
-uv run twscrape login_accounts
-
-# Verify accounts are active
-uv run twscrape accounts
-```
-
-### 4. Run the Pipeline
-
-```bash
-uv run python main.py
 ```
 
 ## Configuration
 
-Edit `.env` with your settings:
+Copy `config.yaml.example` to `config.yaml` and `.env.example` to `.env`.
 
-### Required Settings
+Figure it out. The examples are commented. You're building a market intelligence system - if you can't edit a YAML file,
+maybe just buy index funds and touch grass.
 
-```bash
-# LLM Provider (choose one)
-LLM_PROVIDER=openai              # or "google"
-OPENAI_API_KEY=sk-your-key-here  # Required if using OpenAI
+## Twitter Setup
 
-# Email (for receiving digests)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=your_email@gmail.com
-SMTP_PASSWORD=your_app_specific_password  # Use app password, not regular password
-EMAIL_FROM=your_email@gmail.com
-EMAIL_TO=recipient@example.com
-```
+Cookie auth because Elon broke everything:
 
-### Optional Settings
+1. Log into Twitter in your browser
+2. Export cookies with the shadiest cookie exporter extension you can find
+3. Save as `cookies.json`
+4. Run: `uv run python add_account.py <username> cookies.json`
+
+Add more accounts for rate limit rotation. Configure proxies in `config.yaml` if you're feeling spicy.
+
+## Running
 
 ```bash
-# Tweet Collection
-BROAD_TWEET_LIMIT=200            # Tweets per broad topic (higher = better discovery)
-SPECIFIC_TWEET_LIMIT=100         # Tweets per discovered trend
-TOP_TRENDS_COUNT=10              # Number of trends to analyze
+# Interactive
+uv run python main.py
 
-# Trend Detection Thresholds
-MIN_TREND_MENTIONS=3             # Minimum mentions to be considered
-MIN_TREND_AUTHORS=2              # Minimum unique authors (filters spam)
-
-# Vector Memory
-MEMORY_ENABLED=true              # Enable semantic parallel detection
-MEMORY_STORE_TYPE=chroma         # "chroma" (local) or "pgvector" (production)
-EMBEDDING_PROVIDER=openai        # "openai" or "local"
-MEMORY_MIN_SIMILARITY=0.6        # 0.0-1.0, higher = stricter matching
-
-# Google (if using Google instead of OpenAI)
-GOOGLE_API_KEY=your-google-key
-GOOGLE_MODEL=gemini-2.0-flash
+# Background (for VPS)
+./run.sh start
+./run.sh logs     # watch progress
+./run.sh status   # check if running
+./run.sh stop     # stop it
 ```
 
 ## How It Works
 
-The pipeline runs in 6 steps:
+1. **Scout** - Scrapes 30+ financial topics from Twitter
+2. **Investigator** - Extracts trending entities via spaCy NLP
+3. **Deep Dive** - Targeted scraping for discovered trends
+4. **Fact Checker** - Fetches real prices from Yahoo Finance. Exposes the liars.
+5. **Analyst** - LLM generates skeptical summary with signal strength
+6. **Reporter** - Emails you a digest so you can feel like a Bloomberg terminal owner
+7. **Memory** - Stores everything for future historical parallel detection
 
-### Step 1: The Scout (Broad Discovery)
-Searches Twitter across 25+ broad financial topics:
-- General: "fintwit", "trading", "markets"
-- Signals: "shortage OR surplus", "unusual volume", "whale alert"
-- Physical: "freight", "shipping rates", "warehouse inventory"
+## Signal Strength
 
-### Step 2: The Investigator (Statistical Analysis)
-Extracts ALL meaningful terms using spaCy NLP:
-- Cashtags ($SLV, $NVDA) - highest signal
-- Hashtags (#silversqueeze)
-- Noun phrases and named entities
-- Commodity/sector keywords
+| Level      | Meaning                 | Frequency                 |
+|------------|-------------------------|---------------------------|
+| **HIGH**   | Actually unusual. Rare. | 1-2x per month            |
+| **MEDIUM** | Worth watching          | Weekly                    |
+| **LOW**    | Normal Twitter nonsense | Most days                 |
+| **NONE**   | Quieter than usual      | When everyone's at brunch |
 
-Scores by engagement velocity:
-```
-score = (mentions * 0.3) + (engagement_weighted_by_author_diversity * 0.7)
-```
+Unlike Aladdin, we don't pretend every day is Lehman Brothers.
 
-### Step 3: The Deep Dive (Targeted Collection)
-Scrapes additional tweets for each discovered trend.
+## Fact Check Classifications
 
-### Step 4: The Analyst (LLM Summary)
-- Retrieves historical parallels via vector similarity search
-- Generates calibrated analysis with signal strength rating
-- Explicitly allowed to say "nothing notable today"
+| Tag              | Meaning                                     |
+|------------------|---------------------------------------------|
+| **VERIFIED**     | They're telling the truth (rare)            |
+| **EXAGGERATED**  | Directionally correct, emotionally unhinged |
+| **FALSE**        | Lying on the internet. Shocking.            |
+| **UNVERIFIABLE** | Made up a ticker or was too vague           |
 
-### Step 5: The Reporter (Email Delivery)
-Sends HTML-formatted digest with:
-- Signal strength banner (color-coded)
-- Trend badges
-- Full analysis
+## Production (pgvector)
 
-### Step 6: Memory Storage
-Stores digest in:
-- SQLite (quick lookups)
-- Vector database (semantic search for future parallels)
+If you're running this on a VPS with PostgreSQL:
 
-## Signal Strength Calibration
-
-| Level | Meaning | Frequency |
-|-------|---------|-----------|
-| HIGH | Genuinely unusual, potential market-moving | 1-2x per month |
-| MEDIUM | Notable developments worth monitoring | Weekly |
-| LOW | Normal market chatter | Most days |
-| NONE | Below-average activity | Quiet days |
-
-## Historical Parallels
-
-The vector memory system finds semantically similar past days:
-
-> **HISTORICAL PARALLEL**: This silver spike with 45,000+ engagement mirrors March 2024 when physical delivery concerns preceded a 12% price move. However, today's narrative focuses on short squeezes rather than supply chain issues.
-
-Or when there's no meaningful parallel:
-
-> **HISTORICAL PARALLEL**: No meaningful historical parallels identified.
-
-The system is explicitly instructed NOT to force connections.
-
-## Production Deployment
-
-### Using pgvector (PostgreSQL)
-
-For production with many memories:
-
-```bash
-# Install PostgreSQL driver
-uv sync --extra postgres
-
-# Set environment variables
-MEMORY_STORE_TYPE=pgvector
-POSTGRES_URL=postgresql://user:password@localhost:5432/sentiment_db
+```yaml
+# config.yaml
+memory:
+  store_type: pgvector
+  embedding_dimensions: 1536  # pgvector maxes at 2000 dims
 ```
 
-Requires PostgreSQL with pgvector extension:
+Then create the extension: `CREATE EXTENSION vector;`
+
+If you get dimension errors, drop the table and let it recreate:
+
 ```sql
-CREATE EXTENSION vector;
-```
-
-### Using Local Embeddings (Free)
-
-To avoid OpenAI embedding costs:
-
-```bash
-# Install sentence-transformers
-uv sync --extra local-embeddings
-
-# Set environment variable
-EMBEDDING_PROVIDER=local
+DROP TABLE IF EXISTS market_memories;
 ```
 
 ## Troubleshooting
 
-### "No tweets retrieved from broad search"
-- Verify Twitter accounts are logged in: `uv run twscrape accounts`
-- Try cookie-based authentication if direct login fails
+**"No tweets retrieved"** - Your accounts are logged out or banned. Check `uv run twscrape accounts`. Re-add via
+cookies.
 
-### "Failed to load spaCy model"
-```bash
-uv run python -m spacy download en_core_web_sm
-```
+**"Failed to initialize vector memory: 2000 dimensions"** - Add `embedding_dimensions: 1536` to config. Drop the table.
 
-### Unicode errors on Windows
-The system automatically sanitizes output for Windows console compatibility.
+**"Failed to load spaCy model"** - Did you even read the installation section?
+`uv pip install pip && uv run python -m spacy download en_core_web_sm`
 
-### "chromadb" errors
-```bash
-uv sync  # Reinstall dependencies
-```
+**Rate limiting** - Add more accounts. Use proxies. Stop scraping during market hours like everyone else.
 
-### Rate limiting
-Add more Twitter accounts to the pool. twscrape automatically rotates between them.
+## Why This Exists
 
-## Customization
+| Feature                               | This Project         | Aladdin                                                                       | Bloomberg            |
+|---------------------------------------|----------------------|-------------------------------------------------------------------------------|----------------------|
+| Cost                                  | ~$10/mo in API calls | $25,000/month                                                                 | $24,000/year         |
+| Twitter Sentiment                     | Yes                  | Probably                                                                      | Kinda                |
+| Will tell you "nothing matters today" | **Yes**              | Never. Gotta justify that invoice.                                            | Lol                  |
+| Open Source                           | Yes                  | Absolutely not                                                                | Cute                 |
+| Actually makes you a quant            | No                   | Also no                                                                       | Still no             |
+| Got no-bid Fed contracts to buy its own ETFs with taxpayer money | No                   | [Yes](https://wallstreetonparade.com/2020/06/blackrock-is-bailing-out-its-etfs-with-fed-money-and-taxpayers-eating-losses-its-also-the-sole-manager-for-335-billion-of-federal-employees-retirement-funds/) | No |
 
-### Adding Search Topics
+*At least when we're wrong, it's free. When they're wrong, they get a bailout.*
 
-Edit `src/config.py` `broad_topics` list:
+## Disclaimer
 
-```python
-broad_topics: list[str] = field(default_factory=lambda: [
-    "fintwit",
-    "your custom topic here",
-    # ...
-])
-```
-
-### Adjusting Noise Filters
-
-Edit `src/analyzer.py` `NOISE_TERMS` set to add/remove filtered terms.
-
-### Modifying LLM Behavior
-
-Edit the `ANALYST_SYSTEM_PROMPT` in `src/main.py` to adjust analysis style.
-
-## License
-
-MIT
+Not financial advice. If you YOLO your life savings because this said "HIGH signal" on some shitcoin, that's a you
+problem. Hedge funds with actual Aladdin access still lose money.
