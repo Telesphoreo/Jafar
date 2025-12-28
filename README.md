@@ -14,6 +14,20 @@ analysis, NLP, real-time market data verification, and LLM-powered summarization
 **Key Philosophy**: Most days are boring. This system is calibrated to tell you when something *actually* matters, not
 to manufacture urgency like Jim Cramer speed-running his thirteenth margin call of the week.
 
+## What Does It Actually Look Like?
+
+Unlike Aladdin, which requires you to sign seventeen NDAs, sacrifice a goat to their enterprise sales team, and sit
+through a 90-minute "demo" that's really just a PowerPoint about their "proprietary AI" (it's a linear regression),
+**we just show you the damn thing**.
+
+**[View an actual digest](digest.pdf)**
+
+That's a real output. Silver actually was up. The system caught it. It also caught some noise because Twitter is a
+hellscape, but at least you can *see* what you're getting before you waste three weeks configuring YAML files. Yes,
+I redacted my email address. No, I will not be doxxing myself to prove a point about open source transparency. The
+difference is you can actually *get* a redacted sample from us. Try asking BlackRock for one. Their legal team will
+get back to you sometime between "never" and "heat death of the universe."
+
 ## Features
 
 - **Dynamic Discovery**: Finds trends you didn't know to look for (not just keyword matching like a 2008 RSS feed)
