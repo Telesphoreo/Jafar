@@ -27,7 +27,6 @@ This populates the accounts.db SQLite database that twscrape uses for authentica
 import asyncio
 import logging
 import random
-import time
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -104,11 +103,6 @@ class TwitterScraper:
         """
         self.db_path = db_path
         self._api: API | None = None
-        # Global rate limiter: only 1 concurrent API call at a time
-        self._api_semaphore = asyncio.Semaphore(1)
-        # Minimum delay between API calls (seconds)
-        self._min_api_delay = 10.0
-        self._last_api_call: float = 0.0
         logger.info(f"TwitterScraper initialized with database: {db_path}")
 
     async def _get_api(self) -> API:
@@ -245,52 +239,32 @@ class TwitterScraper:
         try:
             raw_tweets = []
 
-            # Acquire global semaphore to ensure only one search runs at a time
-            # This prevents multiple workers from hammering the API simultaneously
-            logger.debug(f"{worker_prefix}Waiting for API access...")
-            async with self._api_semaphore:
-                # Enforce minimum delay since last API call
-                now = time.time()
-                time_since_last = now - self._last_api_call
-                if time_since_last < self._min_api_delay:
-                    wait_time = self._min_api_delay - time_since_last
-                    logger.debug(f"{worker_prefix}Rate limit delay: waiting {wait_time:.1f}s...")
-                    await asyncio.sleep(wait_time)
+            # Add initial jitter to stagger workers naturally
+            jitter = random.uniform(1, 5)
+            logger.debug(f"{worker_prefix}Initial jitter: {jitter:.1f}s")
+            await asyncio.sleep(jitter)
 
-                # Add random jitter on top of the minimum delay
-                # Combined with _min_api_delay (10s), total wait is 10-15s
-                jitter = random.uniform(0, 5)
-                if jitter > 0.5:
-                    logger.debug(f"{worker_prefix}Jitter: {jitter:.1f}s")
-                    await asyncio.sleep(jitter)
+            logger.info(f"{worker_prefix}Starting search...")
 
-                logger.info(f"{worker_prefix}Starting search...")
-                self._last_api_call = time.time()
+            # Manual consumption of the generator to allow inter-page delays
+            # Each worker paces itself independently (they have separate proxies/IPs)
+            async def fetch_with_delays():
+                count = 0
+                async for tweet in api.search(search_query, limit=limit):
+                    raw_tweets.append(tweet)
+                    count += 1
 
-                # Manual consumption of the generator to allow inter-page delays
-                # This makes the scraping "slow and steady" and much harder to detect
-                async def fetch_with_delays():
-                    count = 0
-                    async for tweet in api.search(search_query, limit=limit):
-                        raw_tweets.append(tweet)
-                        count += 1
+                    # Every ~15 tweets, take a human-like breath
+                    # Pages are ~20 tweets, so this ensures we delay BEFORE each page boundary
+                    # Target: 10-20 seconds between HTTP requests per worker
+                    if count % 15 == 0:
+                        delay = random.uniform(10, 15)
+                        logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Pacing delay {delay:.1f}s...")
+                        await asyncio.sleep(delay)
+                return raw_tweets
 
-                        # Every ~15 tweets, take a human-like breath
-                        # Pages are ~20 tweets, so this ensures we delay BEFORE each page boundary
-                        # Target: 10-20 seconds between HTTP requests
-                        if count % 15 == 0:
-                            delay = random.uniform(8, 12)
-                            logger.debug(f"{worker_prefix}Search '{query}': {count} tweets retrieved. Pacing delay {delay:.1f}s...")
-                            await asyncio.sleep(delay)
-                            # Update last API call time for inter-page requests
-                            self._last_api_call = time.time()
-                    return raw_tweets
-
-                # Still use wait_for to prevent total hangs, but with the manual loop inside
-                await asyncio.wait_for(fetch_with_delays(), timeout=safety_timeout)
-
-                # Update last API call time after completion
-                self._last_api_call = time.time()
+            # Still use wait_for to prevent total hangs, but with the manual loop inside
+            await asyncio.wait_for(fetch_with_delays(), timeout=safety_timeout)
 
             for tweet in raw_tweets:
                 try:
@@ -389,12 +363,7 @@ class TwitterScraper:
         for topic in remaining:
             queue.put_nowait(topic)
 
-        async def worker(worker_id: int, startup_delay: float):
-            # Stagger worker startup to prevent thundering herd
-            if startup_delay > 0:
-                logger.debug(f"[Worker {worker_id}] Startup delay: {startup_delay:.1f}s")
-                await asyncio.sleep(startup_delay)
-
+        async def worker(worker_id: int):
             while not queue.empty():
                 try:
                     topic = queue.get_nowait()
@@ -419,8 +388,8 @@ class TwitterScraper:
                 finally:
                     queue.task_done()
 
-        # Stagger worker startups by 2 seconds each to reduce initial contention
-        workers = [asyncio.create_task(worker(i, i * 2.0)) for i in range(concurrency)]
+        # Workers run in parallel - each has its own proxy/IP and paces itself
+        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
         await asyncio.gather(*workers)
 
         logger.info(f"Incremental scrape complete: {len(all_tweets)} tweets from {len(remaining)} topics")
@@ -509,12 +478,7 @@ class TwitterScraper:
         for trend in remaining:
             queue.put_nowait(trend)
 
-        async def worker(worker_id: int, startup_delay: float):
-            # Stagger worker startup to prevent thundering herd
-            if startup_delay > 0:
-                logger.debug(f"[Worker {worker_id}] Startup delay: {startup_delay:.1f}s")
-                await asyncio.sleep(startup_delay)
-
+        async def worker(worker_id: int):
             while not queue.empty():
                 try:
                     trend = queue.get_nowait()
@@ -538,8 +502,8 @@ class TwitterScraper:
                 finally:
                     queue.task_done()
 
-        # Stagger worker startups by 2 seconds each to reduce initial contention
-        workers = [asyncio.create_task(worker(i, i * 2.0)) for i in range(concurrency)]
+        # Workers run in parallel - each has its own proxy/IP and paces itself
+        workers = [asyncio.create_task(worker(i)) for i in range(concurrency)]
         await asyncio.gather(*workers)
 
         total = sum(len(t) for t in trend_tweets.values())
