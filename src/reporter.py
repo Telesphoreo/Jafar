@@ -52,7 +52,7 @@ class EmailReporter:
         signal_strength: str = "low",
     ) -> str:
         """
-        Generate a nicely formatted HTML email from the report content.
+        Generate a clean, minimalist HTML email.
 
         Args:
             report_content: The LLM-generated analysis.
@@ -66,34 +66,28 @@ class EmailReporter:
         """
         today = datetime.now().strftime("%B %d, %Y")
 
-        # Signal strength indicator styling
-        signal_colors = {
-            "high": ("#d32f2f", "#ffebee", "HIGH SIGNAL"),  # Red - attention
-            "medium": ("#f57c00", "#fff3e0", "MEDIUM SIGNAL"),  # Orange - notable
-            "low": ("#388e3c", "#e8f5e9", "LOW SIGNAL"),  # Green - normal
-            "none": ("#757575", "#f5f5f5", "NO SIGNAL"),  # Gray - quiet
+        # Minimalist signal indicators (Monochrome/High Contrast)
+        signal_styles = {
+            "high": "border-left: 4px solid #000000; background-color: #f0f0f0;",
+            "medium": "border-left: 4px solid #666666; background-color: #f8f8f8;",
+            "low": "border-left: 4px solid #bbbbbb; background-color: #ffffff;",
+            "none": "border-left: 4px solid #eeeeee; background-color: #ffffff; color: #888888;",
         }
-        signal_color, signal_bg, signal_text = signal_colors.get(
-            signal_strength, signal_colors["low"]
-        )
+        signal_style = signal_styles.get(signal_strength, signal_styles["low"])
+        signal_text_upper = signal_strength.upper()
 
-        # Format trends as badges
-        trend_badges = " ".join(
-            f'<span style="background-color: #e3f2fd; color: #1976d2; '
-            f'padding: 4px 12px; border-radius: 16px; margin-right: 8px; '
-            f'font-size: 14px; display: inline-block; margin-bottom: 4px;">{trend}</span>'
+        # Format trends as simple tags
+        trend_tags = " ".join(
+            f'<span style="border: 1px solid #ddd; padding: 2px 8px; font-size: 12px; margin-right: 6px; display: inline-block; font-family: monospace;">{trend}</span>'
             for trend in trends
         )
 
-        # Convert markdown-style formatting to HTML
-        formatted_content = report_content
-        # Convert **bold** to <strong>
+        # HTML Formatting
         import re
+        formatted_content = report_content
         formatted_content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', formatted_content)
-        # Convert *italic* to <em>
         formatted_content = re.sub(r'\*(.*?)\*', r'<em>\1</em>', formatted_content)
-        # Convert newlines to <br> for proper HTML rendering
-        formatted_content = formatted_content.replace('\n\n', '</p><p style="margin: 16px 0; line-height: 1.6;">')
+        formatted_content = formatted_content.replace('\n\n', '</p><p style="margin: 16px 0;">')
         formatted_content = formatted_content.replace('\n', '<br>')
 
         html = f"""
@@ -102,76 +96,68 @@ class EmailReporter:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jafar Market Digest - {today}</title>
+    <title>Jafar Digest - {today}</title>
 </head>
-<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-             background-color: #f5f5f5; margin: 0; padding: 20px;">
-    <div style="max-width: 700px; margin: 0 auto; background-color: #ffffff;
-                border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
-
-        <!-- Signal Strength Banner -->
-        <div style="background-color: {signal_bg}; color: {signal_color};
-                    padding: 12px 30px; border-radius: 8px 8px 0 0;
-                    font-weight: 600; font-size: 14px; letter-spacing: 1px;">
-            {signal_text} - {today}
-        </div>
-
+<body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; line-height: 1.5; margin: 0; padding: 20px; background-color: #ffffff;">
+    <div style="max-width: 650px; margin: 0 auto; border: 1px solid #000;">
+        
         <!-- Header -->
-        <div style="background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
-                    color: white; padding: 30px;">
-            <h1 style="margin: 0; font-size: 28px; font-weight: 600;">
-                Jafar Market Digest
+        <div style="border-bottom: 1px solid #000; padding: 20px; background-color: #000; color: #fff;">
+            <div style="font-family: monospace; font-size: 12px; letter-spacing: 1px; margin-bottom: 8px; opacity: 0.8;">
+                JAFAR INTELLIGENCE SYSTEM
+            </div>
+            <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">
+                Market Digest
             </h1>
-            <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 14px;">
-                The villain to BlackRock's Aladdin
-            </p>
+            <div style="margin-top: 5px; font-size: 14px; opacity: 0.9;">
+                {today}
+            </div>
         </div>
 
-        <!-- Stats Bar -->
-        <div style="background-color: #f8f9fa; padding: 15px 30px;
-                    border-bottom: 1px solid #e0e0e0; display: flex; gap: 30px;">
-            <div>
-                <span style="font-size: 24px; font-weight: 600; color: #1976d2;">{tweet_count}</span>
-                <span style="color: #666; font-size: 14px; margin-left: 5px;">tweets analyzed</span>
+        <!-- Signal Banner -->
+        <div style="padding: 15px 20px; {signal_style} border-bottom: 1px solid #eee;">
+            <span style="font-family: monospace; font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">
+                SIGNAL STRENGTH: {signal_text_upper}
+            </span>
+        </div>
+
+        <!-- Metadata Grid -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px;">
+            <div style="padding: 10px 20px; border-right: 1px solid #eee;">
+                ANALYZED: {tweet_count} TWEETS
+            </div>
+            <div style="padding: 10px 20px;">
+                DETECTED: {len(trends)} TRENDS
+            </div>
+        </div>
+
+        <!-- Trends -->
+        <div style="padding: 15px 20px; border-bottom: 1px solid #eee; background-color: #fcfcfc;">
+            <div style="font-family: monospace; font-size: 10px; color: #666; margin-bottom: 8px; text-transform: uppercase;">
+                Active Topics
             </div>
             <div>
-                <span style="font-size: 24px; font-weight: 600; color: #1976d2;">{len(trends)}</span>
-                <span style="color: #666; font-size: 14px; margin-left: 5px;">trends identified</span>
+                {trend_tags}
             </div>
         </div>
 
-        <!-- Trending Topics -->
-        <div style="padding: 20px 30px; border-bottom: 1px solid #e0e0e0;">
-            <h2 style="margin: 0 0 12px 0; font-size: 14px; text-transform: uppercase;
-                       color: #666; letter-spacing: 1px;">
-                Today's Trending Topics
-            </h2>
-            <div style="line-height: 2.2;">
-                {trend_badges}
-            </div>
-        </div>
-
-        <!-- Main Content -->
-        <div style="padding: 30px;">
-            <h2 style="margin: 0 0 20px 0; font-size: 20px; color: #333;">
-                Market Sentiment Analysis
-            </h2>
-            <div style="color: #444; font-size: 15px;">
-                <p style="margin: 16px 0; line-height: 1.6;">
-                    {formatted_content}
-                </p>
+        <!-- Main Body -->
+        <div style="padding: 30px 20px;">
+            <div style="font-size: 16px; color: #222; line-height: 1.6;">
+                {formatted_content}
             </div>
         </div>
 
         <!-- Footer -->
-        <div style="background-color: #f8f9fa; padding: 20px 30px;
-                    border-radius: 0 0 8px 8px; border-top: 1px solid #e0e0e0;">
-            <p style="margin: 0; color: #888; font-size: 12px;">
-                Generated by <strong>Jafar</strong> - Twitter/X sentiment analysis for people
-                who can't afford $25k/month for BlackRock's tools. Powered by {provider_info}.
+        <div style="border-top: 1px solid #000; padding: 20px; font-size: 12px; color: #666; background-color: #f9f9f9;">
+            <p style="margin: 0 0 10px 0;">
+                <strong>Jafar</strong> &mdash; The villain to BlackRock's Aladdin.
             </p>
-            <p style="margin: 10px 0 0 0; color: #888; font-size: 12px;">
-                Disclaimer: Not financial advice. If you lose money, that's on you.
+            <p style="margin: 0 0 10px 0; font-style: italic;">
+                "The only thing BlackRock manages better than assets is their conflict of interest."
+            </p>
+            <p style="margin: 0; font-family: monospace; font-size: 10px; color: #999;">
+                POWERED BY {provider_info.upper()} | NOT FINANCIAL ADVICE
             </p>
         </div>
     </div>
@@ -201,28 +187,22 @@ class EmailReporter:
         trends_str = ", ".join(trends)
 
         return f"""
-JAFAR MARKET DIGEST
-The villain to BlackRock's Aladdin
-{today}
+JAFAR INTELLIGENCE SYSTEM
+Market Digest - {today}
+--------------------------------------------------------------------------------
 
-================================================================================
+SIGNAL: DETECTED
+INPUTS: {tweet_count} tweets
+TOPICS: {trends_str}
 
-STATS: {tweet_count} tweets analyzed | {len(trends)} trends identified
-
-TRENDING TOPICS: {trends_str}
-
-================================================================================
-
-MARKET SENTIMENT ANALYSIS
+--------------------------------------------------------------------------------
 
 {report_content}
 
-================================================================================
+--------------------------------------------------------------------------------
+"The only thing BlackRock manages better than assets is their conflict of interest."
 
-Generated by Jafar - Twitter/X sentiment analysis for people who can't
-afford $25k/month for BlackRock's tools.
-
-Disclaimer: Not financial advice. If you lose money, that's on you.
+Disclaimer: Not financial advice.
 """
 
     def send_email(
