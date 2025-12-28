@@ -43,7 +43,7 @@ def test_connection(host: str, port: int, method: str, username: str, password: 
             logger.info("  ✓ Login successful")
             server.quit()
             
-elif method == "STARTTLS":
+        elif method == "STARTTLS":
             # Explicit SSL (usually port 587)
             server = smtplib.SMTP(host, port, timeout=timeout)
             logger.info(f"  ✓ Connected (Time: {time.time() - start_time:.2f}s)")
