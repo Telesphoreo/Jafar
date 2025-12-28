@@ -75,6 +75,35 @@ NOISE_TERMS = {
     "now", "then", "here", "there", "also", "too", "so", "yet", "still",
     "first", "last", "next", "other", "another", "same", "different",
 
+    # Generic nouns that appear everywhere (no signal value)
+    "thing", "things", "stuff", "something", "anything", "everything", "nothing",
+    "world", "life", "way", "ways", "day", "days", "night", "nights",
+    "time", "times", "moment", "moments", "hour", "hours", "minute", "minutes",
+    "people", "person", "man", "men", "woman", "women", "guy", "guys", "kid", "kids",
+    "group", "groups", "team", "teams", "part", "parts", "side", "sides",
+    "place", "places", "area", "areas", "point", "points", "end", "ends",
+    "case", "cases", "fact", "facts", "reason", "reasons", "example", "examples",
+    "kind", "kinds", "type", "types", "sort", "sorts", "lot", "lots",
+    "step", "steps", "move", "moves", "action", "actions", "change", "changes",
+    "experience", "experiences", "story", "stories", "situation", "situations",
+    "problem", "problems", "issue", "issues", "question", "questions", "answer", "answers",
+    "idea", "ideas", "thought", "thoughts", "opinion", "opinions", "view", "views",
+    "work", "works", "job", "jobs", "business", "businesses", "service", "services",
+    "system", "systems", "process", "processes", "plan", "plans", "project", "projects",
+    "result", "results", "effect", "effects", "impact", "impacts", "outcome", "outcomes",
+    "level", "levels", "rate", "rates", "number", "numbers", "amount", "amounts",
+    "worth", "value", "values", "cost", "costs", "money", "cash", "funds",
+    "right", "rights", "left", "wrong", "good", "bad", "best", "worst", "better", "worse",
+    "start", "beginning", "middle", "end", "top", "bottom", "front", "back",
+    "head", "hand", "hands", "eye", "eyes", "face", "body", "mind", "heart",
+    "home", "house", "room", "office", "school", "city", "country", "state",
+    "game", "games", "play", "video", "media", "content", "post", "posts",
+    "chat", "message", "messages", "call", "calls", "email", "emails",
+    "word", "words", "name", "names", "title", "titles", "term", "terms",
+    "don", "dont", "won", "wont", "cant", "didnt", "doesnt", "isnt", "arent",
+    "gonna", "gotta", "wanna", "kinda", "sorta", "dunno", "idk", "imo", "imho",
+    "lol", "lmao", "omg", "wtf", "smh", "tbh", "ngl", "fr", "rn", "af",
+
     # Social media noise
     "rt", "via", "breaking", "just in", "news", "update", "thread",
     "http", "https", "www", "com", "link", "click", "follow", "retweet",
@@ -167,15 +196,17 @@ class DiscoveredTrend:
 
         base_score = freq_component + engagement_component
 
-        # Financial context multiplier: 0.1x to 1.5x
-        # < 20% financial context = heavily penalized (0.1x - 0.4x)
-        # > 50% financial context = boosted (1.0x - 1.5x)
-        if self.financial_context_ratio < 0.2:
-            context_multiplier = 0.1 + (self.financial_context_ratio * 1.5)
-        elif self.financial_context_ratio < 0.5:
-            context_multiplier = 0.4 + (self.financial_context_ratio * 1.2)
+        # Financial context multiplier: 0.01x to 1.5x
+        # Stricter thresholds to filter generic words that occasionally appear in financial tweets
+        # < 40% financial context = heavily penalized (0.01x - 0.2x)
+        # 40-70% = moderate (0.2x - 0.8x)
+        # > 70% financial context = boosted (0.8x - 1.5x)
+        if self.financial_context_ratio < 0.4:
+            context_multiplier = 0.01 + (self.financial_context_ratio * 0.5)
+        elif self.financial_context_ratio < 0.7:
+            context_multiplier = 0.2 + (self.financial_context_ratio * 0.85)
         else:
-            context_multiplier = 1.0 + (self.financial_context_ratio * 0.5)
+            context_multiplier = 0.8 + (self.financial_context_ratio * 0.7)
 
         return base_score * context_multiplier
 
