@@ -188,8 +188,20 @@ class TwitterScraper:
         search_query = f"{query} lang:{lang}"
         logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
 
+        # Check if any accounts are available BEFORE starting search
+        try:
+            stats = await api.pool.stats()
+            active = stats.get("active", 0)
+            if active == 0:
+                logger.warning(f"No active Twitter accounts available for query '{query}' - skipping")
+                return []
+        except Exception as e:
+            logger.debug(f"Could not check account availability: {e}")
+
         try:
             # Use gather for async collection of tweets with timeout protection
+            # This timeout is for genuine hangs (network issues, parsing deadlocks)
+            # NOT for rate limit waits (which should fail fast above)
             raw_tweets = await asyncio.wait_for(
                 gather(api.search(search_query, limit=limit)),
                 timeout=timeout
@@ -207,7 +219,8 @@ class TwitterScraper:
             return tweets
 
         except asyncio.TimeoutError:
-            logger.error(f"Timeout searching for '{query}' after {timeout}s - returning partial results ({len(tweets)} tweets)")
+            logger.error(f"Genuine hang detected for '{query}' after {timeout}s - network or parsing issue")
+            logger.error(f"Returning partial results ({len(tweets)} tweets)")
             return tweets
         except Exception as e:
             logger.error(f"Error searching for '{query}': {e}")

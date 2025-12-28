@@ -295,6 +295,26 @@ async def run_pipeline() -> bool:
     analyzer = TrendAnalyzer()
     history = DigestHistory()
 
+    # Check if Twitter accounts are available before starting
+    try:
+        stats = await scraper.get_account_stats()
+        active = stats.get("active", 0)
+        total = stats.get("total", 0)
+
+        if total == 0:
+            logger.error("No Twitter accounts configured. Run 'uv run twscrape accounts' to check.")
+            logger.error("Add accounts with: uv run python add_account.py <username> cookies.json")
+            return False
+
+        if active == 0:
+            logger.warning(f"All {total} Twitter accounts are rate-limited or inactive")
+            logger.warning("The pipeline will skip queries where no accounts are available")
+            logger.warning("Consider adding more accounts or waiting for rate limits to reset")
+        else:
+            logger.info(f"Twitter accounts: {active}/{total} active")
+    except Exception as e:
+        logger.warning(f"Could not check Twitter account status: {e}")
+
     # Initialize vector memory system
     memory: MemoryManager | None = None
     if config.memory.enabled:
