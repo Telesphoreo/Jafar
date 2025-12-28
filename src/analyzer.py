@@ -100,9 +100,23 @@ NOISE_TERMS = {
     "game", "games", "play", "video", "media", "content", "post", "posts",
     "chat", "message", "messages", "call", "calls", "email", "emails",
     "word", "words", "name", "names", "title", "titles", "term", "terms",
-    "don", "dont", "won", "wont", "cant", "didnt", "doesnt", "isnt", "arent",
+    "don", "dont", "don t", "won", "wont", "won t", "cant", "can t",
+    "didnt", "didn t", "doesnt", "doesn t", "isnt", "isn t", "arent", "aren t",
+    "wouldn", "wouldn t", "couldn", "couldn t", "shouldn", "shouldn t",
+    "hasn", "hasn t", "haven", "haven t", "hadn", "hadn t",
     "gonna", "gotta", "wanna", "kinda", "sorta", "dunno", "idk", "imo", "imho",
     "lol", "lmao", "omg", "wtf", "smh", "tbh", "ngl", "fr", "rn", "af",
+
+    # Common first names (no signal value)
+    "donald", "mark", "john", "james", "michael", "david", "robert", "william",
+    "richard", "joseph", "thomas", "charles", "chris", "daniel", "matt", "matthew",
+    "anthony", "brian", "kevin", "steve", "steven", "paul", "andrew", "josh",
+    "mary", "jennifer", "lisa", "sarah", "karen", "nancy", "betty", "susan",
+
+    # Seasonal/holiday noise
+    "christmas", "xmas", "holiday", "holidays", "thanksgiving", "easter",
+    "new year", "new years", "halloween", "valentine", "valentines",
+    "birthday", "anniversary", "weekend", "vacation",
 
     # Social media noise
     "rt", "via", "breaking", "just in", "news", "update", "thread",
