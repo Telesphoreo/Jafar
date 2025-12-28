@@ -1,102 +1,176 @@
 """
-NLP Analyzer Module using spaCy.
+Statistical Trend Discovery Module.
 
-Performs Named Entity Recognition (NER) to identify trending topics
-from broad Twitter searches. This is the "Investigator" phase that
-extracts Organizations, Geopolitical Entities, and Products.
+COMPLETELY DIFFERENT APPROACH: Instead of keyword matching, this module:
+1. Extracts ALL n-grams (1-3 word phrases) from tweets
+2. Scores them by engagement velocity and frequency
+3. Filters out eternal noise (Fed, Trump, etc.)
+4. Surfaces whatever is STATISTICALLY ANOMALOUS right now
+
+This finds trucks, silver, shipping containers, whatever - we don't need to know
+what to look for in advance.
 
 SETUP REQUIRED:
-Before running, download the spaCy model:
     python -m spacy download en_core_web_sm
 """
 
 import logging
-from collections import Counter
-from dataclasses import dataclass
+import re
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Iterator
 
 import spacy
 from spacy.language import Language
+from spacy.tokens import Doc
 
 from .scraper import ScrapedTweet
 
 logger = logging.getLogger("twitter_sentiment.analyzer")
 
-# Entity types we're interested in for financial/economic analysis
-RELEVANT_ENTITY_TYPES = {
-    "ORG",      # Organizations (companies, agencies, institutions)
-    "GPE",      # Geopolitical entities (countries, cities, states)
-    "PRODUCT",  # Products (can include commodities, financial products)
-    "NORP",     # Nationalities, religious/political groups
-    "EVENT",    # Named events (could be financial events)
-    "MONEY",    # Monetary values
-    "PERCENT",  # Percentages
+# =============================================================================
+# NOISE FILTER - Terms that are ALWAYS mentioned (no signal value)
+# =============================================================================
+NOISE_TERMS = {
+    # Government/Political (always present, never actionable)
+    "federal reserve", "fed", "the fed", "fomc", "powell", "jerome powell",
+    "congress", "senate", "house", "white house", "government",
+    "trump", "biden", "harris", "obama", "desantis", "musk", "elon",
+    "gop", "republican", "republicans", "democrat", "democrats", "democratic",
+    "president", "vice president", "treasury", "sec", "ftc", "doj", "cftc",
+    "yellen", "janet yellen",
+
+    # Countries (too generic)
+    "us", "usa", "u.s.", "u.s", "america", "united states", "american",
+    "china", "chinese", "russia", "russian", "uk", "eu", "european union",
+    "canada", "canadian", "mexico", "mexican", "japan", "japanese",
+    "germany", "german", "france", "french", "india", "indian",
+
+    # Generic market terms (always discussed)
+    "wall street", "main street", "stock market", "market", "markets",
+    "stocks", "stock", "shares", "share", "equity", "equities",
+    "economy", "economic", "recession", "inflation", "deflation",
+    "interest rate", "interest rates", "rate hike", "rate cut",
+    "bull", "bear", "bullish", "bearish", "rally", "crash", "correction",
+    "volatility", "volatile", "momentum", "trend", "trending",
+    "buy", "sell", "hold", "long", "short", "trade", "trading", "trader",
+    "investor", "investors", "investing", "investment",
+
+    # Time words
+    "today", "yesterday", "tomorrow", "week", "month", "year", "daily",
+    "weekly", "monthly", "yearly", "annual", "quarter", "quarterly",
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "morning", "afternoon", "evening", "night",
+
+    # Common filler words
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+    "have", "has", "had", "do", "does", "did", "will", "would", "could", "should",
+    "may", "might", "must", "can", "this", "that", "these", "those",
+    "it", "its", "they", "their", "them", "we", "our", "you", "your",
+    "i", "me", "my", "he", "she", "his", "her", "who", "what", "when",
+    "where", "why", "how", "which", "all", "each", "every", "both",
+    "new", "old", "big", "small", "high", "low", "up", "down", "out", "in",
+    "more", "less", "most", "least", "very", "just", "only", "even",
+    "now", "then", "here", "there", "also", "too", "so", "yet", "still",
+    "first", "last", "next", "other", "another", "same", "different",
+
+    # Social media noise
+    "rt", "via", "breaking", "just in", "news", "update", "thread",
+    "http", "https", "www", "com", "link", "click", "follow", "retweet",
+    "like", "share", "comment", "subscribe", "dm", "tweet", "twitter",
+
+    # Media outlets
+    "cnbc", "bloomberg", "reuters", "wsj", "cnn", "fox", "msnbc",
+    "yahoo", "marketwatch", "seeking alpha", "zerohedge", "financial times",
+    "wall street journal", "barrons", "investors business daily",
+
+    # Generic company terms
+    "inc", "corp", "llc", "ltd", "co", "company", "companies", "corporation",
+    "ceo", "cfo", "coo", "executive", "management", "board", "director",
+
+    # Overused tech buzzwords
+    "ai", "artificial intelligence", "chatgpt", "openai", "gpt", "machine learning",
+
+    # Crypto (unless specifically wanted - can be toggled)
+    "bitcoin", "btc", "ethereum", "eth", "crypto", "cryptocurrency", "blockchain",
+
+    # Numbers and percentages (not meaningful alone)
+    "percent", "percentage", "%", "million", "billion", "trillion",
+    "thousand", "hundred", "dollar", "dollars", "usd", "price", "prices",
 }
 
-# Entities to exclude (too common or not useful)
-EXCLUDED_ENTITIES = {
-    "the",
-    "a",
-    "an",
-    "us",
-    "usa",
-    "u.s.",
-    "u.s",
-    "america",
-    "rt",
-    "via",
-    "today",
-    "yesterday",
-    "tomorrow",
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-    "sunday",
-    "this",
-    "that",
-    "these",
-    "those",
-    "http",
-    "https",
-}
+# Compile patterns for faster matching
+CASHTAG_PATTERN = re.compile(r'\$([A-Za-z]{1,5})\b')
+HASHTAG_PATTERN = re.compile(r'#(\w+)')
+URL_PATTERN = re.compile(r'https?://\S+')
+MENTION_PATTERN = re.compile(r'@\w+')
 
 
 @dataclass
-class ExtractedEntity:
-    """Represents an extracted named entity."""
-    text: str
-    label: str
-    count: int
-    sample_contexts: list[str]
+class DiscoveredTrend:
+    """A statistically discovered trend with scoring metrics."""
+    term: str
+    term_type: str  # 'cashtag', 'hashtag', 'ngram', 'entity'
+    mention_count: int
+    unique_authors: int
+    total_engagement: float
+    avg_engagement: float
+    sample_tweets: list[str] = field(default_factory=list)
+    first_seen: datetime | None = None
+    last_seen: datetime | None = None
+
+    @property
+    def velocity_score(self) -> float:
+        """
+        Score based on engagement velocity.
+        High unique authors + high engagement = organic trend, not spam.
+        """
+        # Penalize if same accounts posting repeatedly (potential spam)
+        author_ratio = self.unique_authors / max(self.mention_count, 1)
+
+        # Base score from engagement
+        engagement_score = self.total_engagement
+
+        # Boost for diverse authorship (organic spread)
+        diversity_bonus = author_ratio * 2
+
+        return engagement_score * (1 + diversity_bonus)
+
+    @property
+    def composite_score(self) -> float:
+        """
+        Final ranking score combining all factors.
+        """
+        # Frequency matters but engagement matters more
+        freq_component = self.mention_count * 0.2
+        engagement_component = self.velocity_score * 0.8
+
+        return freq_component + engagement_component
 
     def __str__(self) -> str:
-        return f"{self.text} ({self.label}): {self.count} mentions"
+        return (
+            f"{self.term} ({self.term_type}): "
+            f"{self.mention_count} mentions by {self.unique_authors} authors, "
+            f"engagement={self.total_engagement:.0f}"
+        )
 
 
-class TrendAnalyzer:
+class StatisticalTrendAnalyzer:
     """
-    Analyzes tweets using spaCy NER to identify trending entities.
+    Statistical anomaly detector for Twitter trends.
 
-    This is the "Investigator" that processes broad search results
-    to find specific trending topics for deeper analysis.
+    Instead of keyword matching, this extracts ALL meaningful terms and
+    ranks them by engagement velocity to find what's HOT right now.
     """
 
     def __init__(self, model_name: str = "en_core_web_sm"):
-        """
-        Initialize the analyzer with a spaCy model.
-
-        Args:
-            model_name: Name of the spaCy model to load.
-                       Run `python -m spacy download en_core_web_sm` first.
-        """
         self.model_name = model_name
         self._nlp: Language | None = None
-        logger.info(f"TrendAnalyzer initialized with model: {model_name}")
+        logger.info("StatisticalTrendAnalyzer initialized")
 
     def _get_nlp(self) -> Language:
-        """Lazy load the spaCy model."""
+        """Lazy load spaCy model."""
         if self._nlp is None:
             logger.info(f"Loading spaCy model: {self.model_name}")
             try:
@@ -112,192 +186,331 @@ class TrendAnalyzer:
                 ) from e
         return self._nlp
 
-    def _clean_entity_text(self, text: str) -> str:
-        """Clean and normalize entity text."""
-        # Remove leading/trailing whitespace and convert to title case
-        cleaned = text.strip()
+    def _is_noise(self, term: str) -> bool:
+        """Check if term should be filtered out."""
+        normalized = term.lower().strip()
 
-        # Remove @ mentions and # symbols
-        if cleaned.startswith("@") or cleaned.startswith("#"):
-            cleaned = cleaned[1:]
+        # Too short
+        if len(normalized) < 2:
+            return True
 
-        # Remove common prefixes
-        for prefix in ["$", "the ", "a ", "an "]:
-            if cleaned.lower().startswith(prefix):
-                cleaned = cleaned[len(prefix):]
+        # Direct match with noise terms
+        if normalized in NOISE_TERMS:
+            return True
 
-        return cleaned.strip()
+        # Pure numbers
+        if normalized.replace('.', '').replace(',', '').replace('%', '').replace('$', '').isdigit():
+            return True
 
-    def _is_valid_entity(self, text: str, label: str) -> bool:
-        """Check if an entity is valid and relevant."""
-        cleaned = text.lower().strip()
+        # URLs
+        if 'http' in normalized or '.com' in normalized or 'www' in normalized:
+            return True
 
-        # Skip if too short
-        if len(cleaned) < 2:
-            return False
+        # Check partial matches for multi-word noise
+        for noise in NOISE_TERMS:
+            if len(noise) > 3 and noise in normalized:
+                return True
 
-        # Skip excluded entities
-        if cleaned in EXCLUDED_ENTITIES:
-            return False
+        return False
 
-        # Skip if mostly numbers (except for MONEY/PERCENT)
-        if label not in {"MONEY", "PERCENT"}:
-            alpha_chars = sum(1 for c in cleaned if c.isalpha())
-            if alpha_chars < len(cleaned) * 0.5:
-                return False
+    def _calculate_engagement(self, tweet: ScrapedTweet) -> float:
+        """Calculate engagement score for a tweet."""
+        return (tweet.likes * 1.0) + (tweet.retweets * 0.5) + (tweet.replies * 0.3)
 
-        # Skip URLs
-        if "http" in cleaned or ".com" in cleaned or "www" in cleaned:
-            return False
+    def _clean_text(self, text: str) -> str:
+        """Remove URLs, mentions, and clean up text for n-gram extraction."""
+        text = URL_PATTERN.sub('', text)
+        text = MENTION_PATTERN.sub('', text)
+        # Keep cashtags and hashtags but clean other noise
+        text = re.sub(r'[^\w\s$#\'-]', ' ', text)
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
 
-        return True
-
-    def extract_entities(
-        self,
-        tweets: list[ScrapedTweet],
-        entity_types: set[str] | None = None,
-    ) -> list[ExtractedEntity]:
-        """
-        Extract named entities from a list of tweets.
-
-        Args:
-            tweets: List of tweets to analyze.
-            entity_types: Set of entity types to extract.
-                         Defaults to RELEVANT_ENTITY_TYPES.
-
-        Returns:
-            List of ExtractedEntity objects sorted by count.
-        """
-        if entity_types is None:
-            entity_types = {"ORG", "GPE", "PRODUCT"}
-
-        nlp = self._get_nlp()
-        entity_counter: Counter[tuple[str, str]] = Counter()
-        entity_contexts: dict[tuple[str, str], list[str]] = {}
-
-        logger.info(f"Extracting entities from {len(tweets)} tweets")
+    def _extract_cashtags(self, tweets: list[ScrapedTweet]) -> dict[str, DiscoveredTrend]:
+        """Extract cashtags - highest signal for markets."""
+        trends: dict[str, DiscoveredTrend] = {}
+        author_tracker: dict[str, set[str]] = defaultdict(set)
 
         for tweet in tweets:
-            # Skip retweets to avoid counting duplicates
             if tweet.is_retweet:
                 continue
 
-            # Process the tweet text
-            doc = nlp(tweet.text)
+            matches = CASHTAG_PATTERN.findall(tweet.text)
+            engagement = self._calculate_engagement(tweet)
 
+            for match in matches:
+                ticker = match.upper()
+
+                if self._is_noise(ticker):
+                    continue
+
+                key = ticker
+                author_tracker[key].add(tweet.username)
+
+                if key not in trends:
+                    trends[key] = DiscoveredTrend(
+                        term=f"${ticker}",
+                        term_type="cashtag",
+                        mention_count=0,
+                        unique_authors=0,
+                        total_engagement=0,
+                        avg_engagement=0,
+                        sample_tweets=[],
+                        first_seen=tweet.created_at,
+                        last_seen=tweet.created_at,
+                    )
+
+                trends[key].mention_count += 1
+                trends[key].total_engagement += engagement
+                trends[key].last_seen = tweet.created_at
+
+                if len(trends[key].sample_tweets) < 3:
+                    trends[key].sample_tweets.append(tweet.text[:200])
+
+        # Update unique author counts
+        for key, trend in trends.items():
+            trend.unique_authors = len(author_tracker[key])
+            trend.avg_engagement = trend.total_engagement / max(trend.mention_count, 1)
+
+        return trends
+
+    def _extract_hashtags(self, tweets: list[ScrapedTweet]) -> dict[str, DiscoveredTrend]:
+        """Extract meaningful hashtags."""
+        trends: dict[str, DiscoveredTrend] = {}
+        author_tracker: dict[str, set[str]] = defaultdict(set)
+
+        for tweet in tweets:
+            if tweet.is_retweet:
+                continue
+
+            engagement = self._calculate_engagement(tweet)
+
+            for hashtag in tweet.hashtags:
+                tag = hashtag.lower().strip('#')
+
+                if self._is_noise(tag) or len(tag) < 3 or len(tag) > 25:
+                    continue
+
+                author_tracker[tag].add(tweet.username)
+
+                if tag not in trends:
+                    trends[tag] = DiscoveredTrend(
+                        term=f"#{tag}",
+                        term_type="hashtag",
+                        mention_count=0,
+                        unique_authors=0,
+                        total_engagement=0,
+                        avg_engagement=0,
+                        sample_tweets=[],
+                        first_seen=tweet.created_at,
+                        last_seen=tweet.created_at,
+                    )
+
+                trends[tag].mention_count += 1
+                trends[tag].total_engagement += engagement
+                trends[tag].last_seen = tweet.created_at
+
+                if len(trends[tag].sample_tweets) < 3:
+                    trends[tag].sample_tweets.append(tweet.text[:200])
+
+        for key, trend in trends.items():
+            trend.unique_authors = len(author_tracker[key])
+            trend.avg_engagement = trend.total_engagement / max(trend.mention_count, 1)
+
+        return trends
+
+    def _extract_ngrams(self, tweets: list[ScrapedTweet]) -> dict[str, DiscoveredTrend]:
+        """
+        Extract meaningful n-grams (1-3 words) using spaCy for better tokenization.
+        This is the CORE discovery mechanism - finds terms we didn't know to look for.
+        """
+        nlp = self._get_nlp()
+        trends: dict[str, DiscoveredTrend] = {}
+        author_tracker: dict[str, set[str]] = defaultdict(set)
+
+        # Process tweets in batches for efficiency
+        texts = []
+        tweet_data = []
+
+        for tweet in tweets:
+            if tweet.is_retweet:
+                continue
+            cleaned = self._clean_text(tweet.text)
+            if cleaned:
+                texts.append(cleaned)
+                tweet_data.append(tweet)
+
+        logger.info(f"Processing {len(texts)} tweets for n-gram extraction...")
+
+        # Process with spaCy
+        for doc, tweet in zip(nlp.pipe(texts, batch_size=100), tweet_data):
+            engagement = self._calculate_engagement(tweet)
+
+            # Extract noun phrases and named entities - these are the meaningful terms
+            meaningful_terms = set()
+
+            # Named entities (ORG, PRODUCT, EVENT, WORK_OF_ART, etc.)
             for ent in doc.ents:
-                # Filter by entity type
-                if ent.label_ not in entity_types:
-                    continue
+                if ent.label_ in {"ORG", "PRODUCT", "EVENT", "WORK_OF_ART", "FAC", "GPE", "LOC"}:
+                    term = ent.text.strip()
+                    if len(term) >= 2 and not self._is_noise(term):
+                        meaningful_terms.add(term.lower())
 
-                # Clean and validate the entity
-                cleaned_text = self._clean_entity_text(ent.text)
-                if not self._is_valid_entity(cleaned_text, ent.label_):
-                    continue
+            # Noun chunks (noun phrases)
+            for chunk in doc.noun_chunks:
+                # Filter out chunks that are just determiners or pronouns
+                root = chunk.root
+                if root.pos_ in {"NOUN", "PROPN"}:
+                    term = chunk.text.strip()
+                    if len(term) >= 2 and not self._is_noise(term):
+                        meaningful_terms.add(term.lower())
 
-                # Use title case for consistency
-                normalized = cleaned_text.title()
-                key = (normalized, ent.label_)
+            # Individual nouns and proper nouns (single important words)
+            for token in doc:
+                if token.pos_ in {"NOUN", "PROPN"} and not token.is_stop:
+                    term = token.text.strip()
+                    if len(term) >= 3 and not self._is_noise(term):
+                        meaningful_terms.add(term.lower())
 
-                entity_counter[key] += 1
+            # Add each meaningful term
+            for term in meaningful_terms:
+                author_tracker[term].add(tweet.username)
 
-                # Store sample contexts (up to 3)
-                if key not in entity_contexts:
-                    entity_contexts[key] = []
-                if len(entity_contexts[key]) < 3:
-                    entity_contexts[key].append(tweet.text[:200])
+                if term not in trends:
+                    # Use title case for display
+                    display_term = term.title() if not term.startswith(('$', '#')) else term
+                    trends[term] = DiscoveredTrend(
+                        term=display_term,
+                        term_type="ngram",
+                        mention_count=0,
+                        unique_authors=0,
+                        total_engagement=0,
+                        avg_engagement=0,
+                        sample_tweets=[],
+                        first_seen=tweet.created_at,
+                        last_seen=tweet.created_at,
+                    )
 
-        # Convert to ExtractedEntity objects
-        entities = [
-            ExtractedEntity(
-                text=text,
-                label=label,
-                count=count,
-                sample_contexts=entity_contexts.get((text, label), []),
-            )
-            for (text, label), count in entity_counter.most_common()
-        ]
+                trends[term].mention_count += 1
+                trends[term].total_engagement += engagement
+                trends[term].last_seen = tweet.created_at
 
-        logger.info(f"Extracted {len(entities)} unique entities")
-        return entities
+                if len(trends[term].sample_tweets) < 3:
+                    trends[term].sample_tweets.append(tweet.text[:200])
+
+        for key, trend in trends.items():
+            trend.unique_authors = len(author_tracker[key])
+            trend.avg_engagement = trend.total_engagement / max(trend.mention_count, 1)
+
+        return trends
 
     def extract_trends(
         self,
         tweets: list[ScrapedTweet],
-        top_n: int = 5,
+        top_n: int = 10,
+        min_mentions: int = 3,
+        min_authors: int = 2,
     ) -> list[str]:
         """
-        Extract the top trending entities from tweets.
-
-        This is the main method for the "Investigator" phase.
-        It identifies the most frequently mentioned organizations,
-        locations, and products for deeper sentiment analysis.
+        Extract top trending topics using statistical analysis.
 
         Args:
-            tweets: List of tweets from broad search.
-            top_n: Number of top trends to return.
+            tweets: List of scraped tweets to analyze
+            top_n: Number of top trends to return
+            min_mentions: Minimum mention count to be considered
+            min_authors: Minimum unique authors (filters spam)
 
         Returns:
-            List of top trending entity names.
+            List of top trending terms
         """
-        logger.info(f"Extracting top {top_n} trends from {len(tweets)} tweets")
+        logger.info(f"Analyzing {len(tweets)} tweets for emerging trends...")
 
-        # Extract entities focusing on ORG, GPE, and PRODUCT
-        entities = self.extract_entities(
-            tweets,
-            entity_types={"ORG", "GPE", "PRODUCT"},
-        )
+        all_trends: list[DiscoveredTrend] = []
 
-        # Get top N entities by count
-        top_entities = entities[:top_n]
+        # 1. Cashtags (highest signal)
+        cashtags = self._extract_cashtags(tweets)
+        logger.info(f"Found {len(cashtags)} unique cashtags")
+        all_trends.extend(cashtags.values())
 
-        # Log the trends found
-        for entity in top_entities:
-            logger.info(f"Trend found: {entity}")
+        # 2. Hashtags
+        hashtags = self._extract_hashtags(tweets)
+        logger.info(f"Found {len(hashtags)} unique hashtags")
+        all_trends.extend(hashtags.values())
 
-        # Return just the entity names
-        trends = [entity.text for entity in top_entities]
+        # 3. N-grams (discovered terms)
+        ngrams = self._extract_ngrams(tweets)
+        logger.info(f"Found {len(ngrams)} unique n-grams/entities")
+        all_trends.extend(ngrams.values())
 
-        logger.info(f"Top trends: {trends}")
-        return trends
+        # Filter by minimum thresholds
+        filtered = [
+            t for t in all_trends
+            if t.mention_count >= min_mentions and t.unique_authors >= min_authors
+        ]
+        logger.info(f"{len(filtered)} trends pass minimum thresholds")
 
-    def get_entity_summary(self, entities: list[ExtractedEntity]) -> str:
-        """
-        Generate a summary of extracted entities.
+        # Sort by composite score
+        filtered.sort(key=lambda x: x.composite_score, reverse=True)
 
-        Args:
-            entities: List of extracted entities.
+        # Deduplicate (same term from different sources)
+        seen_terms = set()
+        unique_trends: list[DiscoveredTrend] = []
+        for trend in filtered:
+            normalized = trend.term.lower().strip('$#')
+            if normalized not in seen_terms:
+                seen_terms.add(normalized)
+                unique_trends.append(trend)
 
-        Returns:
-            Formatted string summary.
-        """
-        if not entities:
-            return "No entities found."
+        # Get top N
+        top_trends = unique_trends[:top_n]
 
-        summary_parts = ["=== Entity Analysis ===\n"]
+        # Log results
+        logger.info("=" * 60)
+        logger.info("TOP EMERGING TRENDS (by engagement velocity):")
+        for i, trend in enumerate(top_trends, 1):
+            logger.info(f"  {i}. {trend}")
+        logger.info("=" * 60)
 
-        # Group by entity type
-        by_type: dict[str, list[ExtractedEntity]] = {}
-        for entity in entities:
-            if entity.label not in by_type:
-                by_type[entity.label] = []
-            by_type[entity.label].append(entity)
+        return [t.term for t in top_trends]
 
-        # Format each type
-        type_labels = {
-            "ORG": "Organizations",
-            "GPE": "Locations",
-            "PRODUCT": "Products",
-            "NORP": "Groups",
-            "EVENT": "Events",
-            "MONEY": "Monetary Values",
-            "PERCENT": "Percentages",
-        }
+    def get_detailed_analysis(self, tweets: list[ScrapedTweet], top_n: int = 15) -> str:
+        """Get detailed breakdown of all discovered signals."""
+        cashtags = self._extract_cashtags(tweets)
+        hashtags = self._extract_hashtags(tweets)
+        ngrams = self._extract_ngrams(tweets)
 
-        for label, type_entities in by_type.items():
-            label_name = type_labels.get(label, label)
-            summary_parts.append(f"\n{label_name}:")
-            for entity in type_entities[:5]:  # Top 5 per type
-                summary_parts.append(f"  - {entity.text}: {entity.count} mentions")
+        lines = ["=== STATISTICAL TREND DISCOVERY REPORT ===\n"]
+        lines.append(f"Analyzed {len(tweets)} tweets\n")
 
-        return "\n".join(summary_parts)
+        lines.append("\n[CASHTAGS] - Highest signal for market moves:")
+        sorted_cashtags = sorted(cashtags.values(), key=lambda x: x.composite_score, reverse=True)
+        for trend in sorted_cashtags[:top_n]:
+            lines.append(
+                f"  {trend.term}: {trend.mention_count} mentions, "
+                f"{trend.unique_authors} authors, "
+                f"engagement={trend.total_engagement:.0f}"
+            )
+
+        lines.append("\n[HASHTAGS] - Topic clustering:")
+        sorted_hashtags = sorted(hashtags.values(), key=lambda x: x.composite_score, reverse=True)
+        for trend in sorted_hashtags[:top_n]:
+            lines.append(
+                f"  {trend.term}: {trend.mention_count} mentions, "
+                f"{trend.unique_authors} authors, "
+                f"engagement={trend.total_engagement:.0f}"
+            )
+
+        lines.append("\n[DISCOVERED TERMS] - Statistically significant phrases:")
+        sorted_ngrams = sorted(ngrams.values(), key=lambda x: x.composite_score, reverse=True)
+        for trend in sorted_ngrams[:top_n]:
+            lines.append(
+                f"  {trend.term}: {trend.mention_count} mentions, "
+                f"{trend.unique_authors} authors, "
+                f"engagement={trend.total_engagement:.0f}"
+            )
+
+        return "\n".join(lines)
+
+
+# Keep backward compatibility alias
+TrendAnalyzer = StatisticalTrendAnalyzer

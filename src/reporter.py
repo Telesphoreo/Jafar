@@ -49,6 +49,7 @@ class EmailReporter:
         trends: list[str],
         tweet_count: int,
         provider_info: str,
+        signal_strength: str = "low",
     ) -> str:
         """
         Generate a nicely formatted HTML email from the report content.
@@ -58,11 +59,23 @@ class EmailReporter:
             trends: List of trending topics analyzed.
             tweet_count: Total number of tweets analyzed.
             provider_info: LLM provider used for analysis.
+            signal_strength: Signal strength rating (high/medium/low/none).
 
         Returns:
             HTML formatted email body.
         """
         today = datetime.now().strftime("%B %d, %Y")
+
+        # Signal strength indicator styling
+        signal_colors = {
+            "high": ("#d32f2f", "#ffebee", "HIGH SIGNAL"),  # Red - attention
+            "medium": ("#f57c00", "#fff3e0", "MEDIUM SIGNAL"),  # Orange - notable
+            "low": ("#388e3c", "#e8f5e9", "LOW SIGNAL"),  # Green - normal
+            "none": ("#757575", "#f5f5f5", "NO SIGNAL"),  # Gray - quiet
+        }
+        signal_color, signal_bg, signal_text = signal_colors.get(
+            signal_strength, signal_colors["low"]
+        )
 
         # Format trends as badges
         trend_badges = " ".join(
@@ -96,14 +109,21 @@ class EmailReporter:
     <div style="max-width: 700px; margin: 0 auto; background-color: #ffffff;
                 border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
 
+        <!-- Signal Strength Banner -->
+        <div style="background-color: {signal_bg}; color: {signal_color};
+                    padding: 12px 30px; border-radius: 8px 8px 0 0;
+                    font-weight: 600; font-size: 14px; letter-spacing: 1px;">
+            {signal_text} - {today}
+        </div>
+
         <!-- Header -->
         <div style="background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
-                    color: white; padding: 30px; border-radius: 8px 8px 0 0;">
+                    color: white; padding: 30px;">
             <h1 style="margin: 0; font-size: 28px; font-weight: 600;">
                 Economic Sentiment Digest
             </h1>
-            <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 16px;">
-                {today}
+            <p style="margin: 10px 0 0 0; opacity: 0.9; font-size: 14px;">
+                A skeptical analysis of today's market chatter
             </p>
         </div>
 
@@ -212,6 +232,7 @@ be considered financial advice.
         trends: list[str],
         tweet_count: int,
         provider_info: str = "AI",
+        signal_strength: str = "low",
     ) -> bool:
         """
         Send the economic digest via email.
@@ -221,22 +242,33 @@ be considered financial advice.
             trends: List of trending topics analyzed.
             tweet_count: Total number of tweets analyzed.
             provider_info: Description of LLM used.
+            signal_strength: Signal strength rating (high/medium/low/none).
 
         Returns:
             True if email was sent successfully.
         """
         today = datetime.now().strftime("%B %d, %Y")
 
+        # Subject line reflects signal strength
+        signal_prefix = {
+            "high": "[HIGH SIGNAL]",
+            "medium": "[MEDIUM]",
+            "low": "",
+            "none": "[QUIET DAY]",
+        }.get(signal_strength, "")
+
+        subject = f"{signal_prefix} Economic Sentiment Digest - {today}".strip()
+
         # Create message container
         msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"Economic Sentiment Digest - {today}"
+        msg["Subject"] = subject
         msg["From"] = self.config.email_from
         msg["To"] = ", ".join(self.config.email_to)
 
         # Generate both plain text and HTML versions
         text_content = self._generate_plain_text(report_content, trends, tweet_count)
         html_content = self._generate_html_report(
-            report_content, trends, tweet_count, provider_info
+            report_content, trends, tweet_count, provider_info, signal_strength
         )
 
         # Attach both versions (email clients will choose the best one)

@@ -8,7 +8,14 @@ dependencies = [
     "twscrape",
     "spacy",
     "openai",
-    "google-generativeai",
+    "google-genai",
     "python-dotenv",
     "aiohttp",
+    "chromadb",
 ]
+
+[project.optional-dependencies]
+# For production pgvector support
+postgres = ["asyncpg"]
+# For local embeddings (free, no API needed)
+local-embeddings = ["sentence-transformers"]

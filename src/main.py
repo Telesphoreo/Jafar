@@ -28,32 +28,82 @@ from datetime import datetime
 
 from .config import config
 from .scraper import TwitterScraper, ScrapedTweet
-from .analyzer import TrendAnalyzer
+from .analyzer import TrendAnalyzer, DiscoveredTrend
 from .llm import create_llm_provider, LLMProvider
 from .reporter import create_reporter_from_config
+from .history import DigestHistory, calculate_signal_strength
+from .memory import create_memory_manager, MemoryManager
 
 logger = logging.getLogger("twitter_sentiment.main")
 
-# System prompt for the LLM analyst
-ANALYST_SYSTEM_PROMPT = """You are an expert financial analyst tasked with summarizing economic sentiment from Twitter/X data.
+# System prompt for the LLM analyst - CALIBRATED FOR SKEPTICISM + HISTORICAL AWARENESS
+ANALYST_SYSTEM_PROMPT = """You are a skeptical, experienced financial analyst with a long memory. Your job is to separate SIGNAL from NOISE, and to recognize when history rhymes.
 
-Your role is to:
-1. Identify the overall market sentiment (bullish, bearish, or neutral)
-2. Highlight key themes and narratives driving discussion
-3. Note any significant events, announcements, or concerns
-4. Distinguish between informed analysis and noise/spam
+CRITICAL MINDSET:
+- Most days are BORING. Normal market chatter is not news.
+- Your default assumption should be "nothing unusual today" unless data proves otherwise.
+- A seasoned trader would roll their eyes at hype. Channel that energy.
+- Just because people are discussing something doesn't mean it matters.
+- Engagement metrics can be gamed. Be skeptical of viral content.
 
-IMPORTANT GUIDELINES:
-- IGNORE obvious bots, spam, and promotional content
-- IGNORE repetitive copy-paste tweets or coordinated campaigns
-- FOCUS on tweets that appear to be from informed individuals, analysts, or news sources
-- LOOK FOR consensus views and notable contrarian opinions
-- Be CONCISE but comprehensive
-- Use professional, objective language
-- If sentiment is mixed, explain the different perspectives
-- Highlight any emerging risks or opportunities mentioned
+WHAT ACTUALLY MATTERS (rare):
+- Genuine supply/demand shocks (not just people talking about them)
+- Unusual volume/engagement that's 5-10x normal levels
+- Multiple independent sources converging on the same narrative
+- Information that ISN'T already priced in by mainstream news
 
-Your summary should be actionable and insightful for someone tracking economic trends."""
+WHAT DOESN'T MATTER (common):
+- People complaining about the Fed, inflation, or politicians (eternal noise)
+- Generic bullish/bearish sentiment (this is ALWAYS present)
+- Crypto pumps and meme stock chatter (unless specifically asked)
+- Recycled narratives from last week/month
+- Promotional content or coordinated campaigns
+
+HISTORICAL PARALLELS - USE WITH EXTREME CARE:
+"History doesn't repeat itself, but it often rhymes." - Mark Twain
+
+When historical parallels are provided:
+- ONLY mention them if the similarity is SUBSTANTIVE, not superficial
+- Ask: Is this just keyword overlap, or are the underlying dynamics similar?
+- Consider: What happened AFTER those historical periods? Is that instructive?
+- Be honest: Sometimes there IS no meaningful parallel. Say so.
+- Never force a connection just because data is available
+
+GOOD parallel usage:
+- "This silver rally shows similar engagement patterns to March 2024, when physical demand surged before a 15% price move"
+- "Unlike the semiconductor chatter in Q2, today's discussion includes specific supply chain concerns"
+
+BAD parallel usage (AVOID):
+- "This reminds me of last Tuesday" (too recent, not meaningful)
+- "Similar to every time gold is mentioned" (too generic)
+- "History shows..." without specific context (lazy analysis)
+
+YOUR OUTPUT CALIBRATION:
+1. **Signal Strength**: Rate today as HIGH / MEDIUM / LOW / NONE
+   - HIGH: Genuinely unusual activity, potential market-moving (rare - maybe 1-2x per month)
+   - MEDIUM: Interesting developments worth monitoring (weekly occurrence)
+   - LOW: Normal market chatter, nothing actionable (most days)
+   - NONE: Below-average activity, truly nothing to report
+
+2. **If signal is LOW or NONE**: Say so clearly. "Today's Twitter activity shows normal market discussion with no unusual signals." is a VALID and GOOD response.
+
+3. **Actionability**: Even if something IS trending, explicitly state whether action is warranted:
+   - "Interesting to monitor but NOT actionable yet"
+   - "Worth researching further before any decisions"
+   - "Pure speculation at this point"
+   - Only rarely: "This warrants immediate attention"
+
+4. **Historical Comparison**: If parallels exist, analyze them critically. If not, say "No meaningful historical parallels identified."
+
+NEVER:
+- Manufacture urgency where none exists
+- Suggest action on every digest
+- Force historical parallels where none exist
+- Hype normal market discussion as "breaking"
+- Use exclamation points or urgent language unless truly warranted
+- Assume the reader should do anything based on Twitter sentiment alone
+
+Remember: The reader is sophisticated. They don't need hand-holding. They need honest signal assessment and thoughtful historical context when it genuinely applies."""
 
 
 def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
@@ -91,34 +141,60 @@ def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
 async def analyze_with_llm(
     llm: LLMProvider,
     trend_tweets: dict[str, list[ScrapedTweet]],
-) -> str:
+    historical_context: str = "",
+    parallel_context: str = "",
+    top_engagement: float = 0,
+) -> tuple[str, str, bool]:
     """
-    Use the LLM to generate an economic sentiment analysis.
+    Use the LLM to generate a CALIBRATED sentiment analysis.
 
     Args:
         llm: The LLM provider to use.
         trend_tweets: Dictionary mapping trends to their tweets.
+        historical_context: Formatted string of recent digest history.
+        parallel_context: Historical parallels from vector search.
+        top_engagement: Highest engagement score from today's trends.
 
     Returns:
-        Generated analysis text.
+        Tuple of (analysis_text, signal_strength, is_notable).
     """
     logger.info(f"Generating analysis with {llm.provider_name} ({llm.model_name})")
 
     # Format the data for the LLM
     data_prompt = format_tweets_for_llm(trend_tweets)
 
-    user_prompt = f"""Based on the following Twitter/X data about economic topics, provide a comprehensive sentiment analysis.
+    user_prompt = f"""Analyze the following Twitter/X data. Be SKEPTICAL - most days are boring.
 
+{historical_context}
+
+{parallel_context}
+
+## Today's Data
+Top engagement score: {top_engagement:.0f}
 {data_prompt}
 
-Please provide:
-1. **Overall Sentiment**: Is the general mood bullish, bearish, or mixed?
-2. **Key Themes**: What are the main topics driving discussion?
-3. **Notable Insights**: Any interesting observations or contrarian views?
-4. **Potential Concerns**: Any risks or warnings being discussed?
-5. **Summary**: A brief 2-3 sentence takeaway for someone who needs the quick version.
+## Required Output Format
 
-Remember to filter out obvious spam, bots, and promotional content in your analysis."""
+**SIGNAL STRENGTH**: [HIGH / MEDIUM / LOW / NONE]
+(Be honest - HIGH should be rare, maybe 1-2x per month)
+
+**ASSESSMENT**:
+[2-3 sentences. If signal is LOW/NONE, say "Normal market chatter, nothing unusual" - that's a valid response]
+
+**TRENDS OBSERVED**:
+[Bullet points of what's being discussed - factual, not hyped]
+
+**ACTIONABILITY**: [NOT ACTIONABLE / MONITOR ONLY / WORTH RESEARCHING / WARRANTS ATTENTION]
+[1 sentence explaining why]
+
+**HISTORICAL PARALLEL**:
+[ONLY if genuinely meaningful - "History rhymes: [specific parallel with what happened after]"
+OR "No meaningful historical parallels identified" - this is a valid and often correct answer]
+
+**BOTTOM LINE**:
+[1 sentence. Be direct. "Nothing worth acting on today" is perfectly acceptable]
+
+Remember: Your job is to FILTER, not to HYPE. A good analyst knows when to say "pass"."""
 
     try:
         response = await llm.generate(
@@ -128,7 +204,23 @@ Remember to filter out obvious spam, bots, and promotional content in your analy
             max_tokens=2000,
         )
         logger.info(f"Analysis generated ({response.token_count} tokens used)")
-        return response.content
+
+        # Parse signal strength from response
+        content = response.content
+        signal_strength = "low"  # default
+        is_notable = False
+
+        content_upper = content.upper()
+        if "**SIGNAL STRENGTH**: HIGH" in content_upper or "SIGNAL STRENGTH: HIGH" in content_upper:
+            signal_strength = "high"
+            is_notable = True
+        elif "**SIGNAL STRENGTH**: MEDIUM" in content_upper or "SIGNAL STRENGTH: MEDIUM" in content_upper:
+            signal_strength = "medium"
+        elif "**SIGNAL STRENGTH**: NONE" in content_upper or "SIGNAL STRENGTH: NONE" in content_upper:
+            signal_strength = "none"
+
+        logger.info(f"Signal strength: {signal_strength.upper()}, Notable: {is_notable}")
+        return content, signal_strength, is_notable
 
     except Exception as e:
         logger.error(f"LLM analysis failed: {e}")
@@ -158,6 +250,26 @@ async def run_pipeline() -> bool:
     # Initialize components
     scraper = TwitterScraper(db_path=config.twitter.db_path)
     analyzer = TrendAnalyzer()
+    history = DigestHistory()  # Stores past digests for comparison (simple SQLite)
+
+    # Initialize vector memory system (semantic search for parallels)
+    memory: MemoryManager | None = None
+    if config.memory.enabled:
+        try:
+            logger.info("Initializing vector memory system...")
+            memory = await create_memory_manager(
+                store_type=config.memory.store_type,
+                embedding_provider=config.memory.embedding_provider,
+                openai_api_key=config.openai.api_key,
+                postgres_url=config.memory.postgres_url,
+                chroma_path=config.memory.chroma_path,
+            )
+            memory_count = await memory.vector_store.count()
+            logger.info(f"Vector memory initialized with {memory_count} stored memories")
+        except Exception as e:
+            logger.warning(f"Failed to initialize vector memory: {e}")
+            logger.warning("Continuing without semantic search for parallels")
+            memory = None
 
     try:
         llm = create_llm_provider(
@@ -207,6 +319,8 @@ async def run_pipeline() -> bool:
         trends = analyzer.extract_trends(
             tweets=broad_tweets,
             top_n=config.app.top_trends_count,
+            min_mentions=config.app.min_trend_mentions,
+            min_authors=config.app.min_trend_authors,
         )
 
         if not trends:
@@ -229,17 +343,60 @@ async def run_pipeline() -> bool:
         logger.info(f"Collected {total_tweets} tweets for sentiment analysis")
 
         # ============================================================
-        # STEP 4: THE ANALYST - LLM Summary
+        # STEP 4: THE ANALYST - LLM Summary (with historical context)
         # ============================================================
-        logger.info("\n[STEP 4] THE ANALYST: Generating AI-powered summary...")
+        logger.info("\n[STEP 4] THE ANALYST: Generating calibrated analysis...")
 
-        analysis = await analyze_with_llm(llm, trend_tweets)
+        # Get historical context for comparison (simple SQLite-based)
+        historical_context = history.format_context_for_llm(days=7)
+        baseline = history.get_baseline_stats(days=30)
+
+        # Calculate top engagement from today's trends
+        top_engagement = 0.0
+        for tweets_list in trend_tweets.values():
+            for tweet in tweets_list:
+                eng = (tweet.likes * 1.0) + (tweet.retweets * 0.5) + (tweet.replies * 0.3)
+                top_engagement = max(top_engagement, eng)
+
+        logger.info(f"Top engagement today: {top_engagement:.0f}")
+        logger.info(f"Historical avg: {baseline.get('avg_top_engagement', 0):.0f}")
+
+        # Search for historical parallels using vector memory
+        parallel_context = ""
+        if memory:
+            logger.info("Searching for historical parallels...")
+            try:
+                # Extract themes for parallel search
+                # (We'll use trends as a proxy until analysis is done)
+                parallels = await memory.find_parallels(
+                    trends=trends,
+                    themes=trends,  # Use trends as themes proxy
+                    sentiment="unknown",  # Will be determined after analysis
+                    signal_strength="unknown",
+                    limit=5,
+                    min_similarity=config.memory.min_similarity,
+                )
+                if parallels:
+                    logger.info(f"Found {len(parallels)} potential historical parallels")
+                    parallel_context = await memory.format_parallels_for_llm(parallels)
+                else:
+                    logger.info("No strong historical parallels found")
+            except Exception as e:
+                logger.warning(f"Error searching for parallels: {e}")
+
+        analysis, signal_strength, is_notable = await analyze_with_llm(
+            llm,
+            trend_tweets,
+            historical_context=historical_context,
+            parallel_context=parallel_context,
+            top_engagement=top_engagement,
+        )
 
         if not analysis:
             logger.error("LLM analysis returned empty result")
             return False
 
-        logger.info("Analysis generated successfully")
+        logger.info(f"Analysis generated - Signal: {signal_strength.upper()}, Notable: {is_notable}")
         logger.debug(f"Analysis preview: {analysis[:200]}...")
 
         # ============================================================
@@ -253,6 +410,7 @@ async def run_pipeline() -> bool:
             trends=trends,
             tweet_count=total_tweets,
             provider_info=provider_info,
+            signal_strength=signal_strength,
         )
 
         if success:
@@ -263,6 +421,38 @@ async def run_pipeline() -> bool:
             # User might want to see it even if email failed
 
         # ============================================================
+        # STEP 6: STORE HISTORY - For future comparison
+        # ============================================================
+        logger.info("\n[STEP 6] Storing digest in history databases...")
+
+        # Store in simple SQLite history (quick lookups)
+        history.store_digest(
+            trends=trends,
+            tweet_count=total_tweets,
+            digest_text=analysis,
+            signal_strength=signal_strength,
+            top_engagement=top_engagement,
+            notable=is_notable,
+        )
+        logger.info("Digest stored in SQLite history")
+
+        # Store in vector memory (semantic search for parallels)
+        if memory:
+            try:
+                memory_record = await memory.create_memory(
+                    trends=trends,
+                    analysis=analysis,
+                    signal_strength=signal_strength,
+                    top_engagement=top_engagement,
+                    tweet_count=total_tweets,
+                    notable=is_notable,
+                )
+                await memory.store_memory(memory_record)
+                logger.info(f"Memory stored in vector database: {memory_record.id}")
+            except Exception as e:
+                logger.warning(f"Failed to store in vector memory: {e}")
+
+        # ============================================================
         # COMPLETE
         # ============================================================
         logger.info("\n" + "=" * 60)
@@ -270,13 +460,26 @@ async def run_pipeline() -> bool:
         logger.info("=" * 60)
 
         # Print the analysis to console as well
+        # Sanitize for Windows console (strip non-ASCII chars like emoji)
+        def safe_print(text: str) -> None:
+            """Print text safely on Windows by removing non-ASCII characters."""
+            try:
+                print(text)
+            except UnicodeEncodeError:
+                # Fall back to ASCII-safe version
+                print(text.encode('ascii', 'ignore').decode('ascii'))
+
         print("\n" + "=" * 60)
         print("ECONOMIC SENTIMENT DIGEST")
+        print(f"Signal Strength: {signal_strength.upper()}")
         print("=" * 60)
-        print(f"\nTrending Topics: {', '.join(trends)}")
+        safe_trends = [t.encode('ascii', 'ignore').decode('ascii').strip() for t in trends]
+        print(f"\nTrending Topics: {', '.join(safe_trends)}")
         print(f"Tweets Analyzed: {total_tweets}")
+        if is_notable:
+            print("*** THIS DAY WAS FLAGGED AS NOTABLE ***")
         print("\n" + "-" * 60)
-        print(analysis)
+        safe_print(analysis)
         print("-" * 60 + "\n")
 
         return True
@@ -287,6 +490,8 @@ async def run_pipeline() -> bool:
 
     finally:
         await scraper.close()
+        if memory:
+            await memory.close()
 
 
 def main():

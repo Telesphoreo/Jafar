@@ -28,8 +28,16 @@ wheels/
 
 # twscrape database (contains account credentials)
 accounts.db
+*.json
+
+# Digest history database (local data)
+digest_history.db
+
+# Vector memory store (ChromaDB local storage)
+memory_store/
+
+# Generic database files (in case of other SQLite usage)
 *.db
-cookies.json
 
 # IDE
 .idea/

@@ -37,7 +37,7 @@ class OpenAIConfig:
 class GoogleConfig:
     """Google Generative AI configuration."""
     api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
-    model: str = field(default_factory=lambda: os.getenv("GOOGLE_MODEL", "gemini-1.5-pro"))
+    model: str = field(default_factory=lambda: os.getenv("GOOGLE_MODEL", "gemini-2.0-flash"))
 
 
 @dataclass
@@ -57,22 +57,103 @@ class SMTPConfig:
 @dataclass
 class AppConfig:
     """Application settings."""
-    broad_tweet_limit: int = field(default_factory=lambda: int(os.getenv("BROAD_TWEET_LIMIT", "50")))
-    specific_tweet_limit: int = field(default_factory=lambda: int(os.getenv("SPECIFIC_TWEET_LIMIT", "20")))
-    top_trends_count: int = field(default_factory=lambda: int(os.getenv("TOP_TRENDS_COUNT", "5")))
+    # Higher limits = more data = better discovery (but slower due to rate limits)
+    # With multiple accounts, you can increase these significantly
+    broad_tweet_limit: int = field(default_factory=lambda: int(os.getenv("BROAD_TWEET_LIMIT", "200")))
+    specific_tweet_limit: int = field(default_factory=lambda: int(os.getenv("SPECIFIC_TWEET_LIMIT", "100")))
+    top_trends_count: int = field(default_factory=lambda: int(os.getenv("TOP_TRENDS_COUNT", "10")))
+
+    # Minimum thresholds for trend detection (filters spam/noise)
+    min_trend_mentions: int = field(default_factory=lambda: int(os.getenv("MIN_TREND_MENTIONS", "3")))
+    min_trend_authors: int = field(default_factory=lambda: int(os.getenv("MIN_TREND_AUTHORS", "2")))
+
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
     llm_provider: Literal["openai", "google"] = field(
         default_factory=lambda: os.getenv("LLM_PROVIDER", "openai").lower()  # type: ignore
     )
 
-    # Broad search topics for initial discovery
+    # Broad search topics for DISCOVERY - cast the widest possible net
+    # The goal is to capture ALL financial chatter, then let the analyzer find anomalies
     broad_topics: list[str] = field(default_factory=lambda: [
-        "economy",
-        "recession",
+        # General financial Twitter communities - high volume, diverse content
+        "fintwit",
+        "stock market today",
+        "trading",
         "markets",
-        "inflation",
-        "federal reserve",
+
+        # Breaking/emerging signals
+        "breaking market",
+        "just announced",
+        "shortage OR surplus",
+        "supply chain",
+
+        # Commodities broad sweep
+        "commodities",
+        "futures",
+        "spot price",
+
+        # Options flow - often leads price
+        "unusual volume",
+        "options flow",
+        "dark pool",
+        "whale alert",
+
+        # Sector rotation signals
+        "sector rotation",
+        "money flowing",
+        "outperform OR underperform",
+
+        # Macro signals
+        "inflation data",
+        "yield curve",
+        "dollar index",
+
+        # International markets (often lead US)
+        "asia markets",
+        "europe open",
+        "emerging markets",
+
+        # Sentiment extremes
+        "oversold OR overbought",
+        "capitulation",
+        "FOMO OR panic",
+
+        # Earnings/events
+        "earnings surprise",
+        "guidance raised OR lowered",
+        "FDA approval OR rejection",
+
+        # Physical markets
+        "physical delivery",
+        "warehouse inventory",
+        "shipping rates",
+        "freight",
     ])
+
+
+@dataclass
+class MemoryConfig:
+    """Vector memory configuration for historical context."""
+    # Store type: "chroma" (local) or "pgvector" (production)
+    store_type: Literal["chroma", "pgvector"] = field(
+        default_factory=lambda: os.getenv("MEMORY_STORE_TYPE", "chroma")  # type: ignore
+    )
+    # Embedding provider: "openai" (better) or "local" (free)
+    embedding_provider: Literal["openai", "local"] = field(
+        default_factory=lambda: os.getenv("EMBEDDING_PROVIDER", "openai")  # type: ignore
+    )
+    # ChromaDB storage path (for local store)
+    chroma_path: str = field(default_factory=lambda: os.getenv("CHROMA_PATH", "./memory_store"))
+    # PostgreSQL connection string (for pgvector)
+    postgres_url: str = field(default_factory=lambda: os.getenv("POSTGRES_URL", ""))
+    # Whether to enable memory system
+    enabled: bool = field(
+        default_factory=lambda: os.getenv("MEMORY_ENABLED", "true").lower() == "true"
+    )
+    # Minimum similarity for parallel detection
+    min_similarity: float = field(
+        default_factory=lambda: float(os.getenv("MEMORY_MIN_SIMILARITY", "0.6"))
+    )
 
 
 @dataclass
@@ -83,6 +164,7 @@ class Config:
     google: GoogleConfig = field(default_factory=GoogleConfig)
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
     app: AppConfig = field(default_factory=AppConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
     def setup_logging(self) -> logging.Logger:
         """Configure and return the application logger."""
