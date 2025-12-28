@@ -68,8 +68,8 @@ class EmailReporter:
 
         # Minimalist signal indicators (Monochrome/High Contrast)
         signal_styles = {
-            "high": "border-left: 4px solid #000000; background-color: #f0f0f0;",
-            "medium": "border-left: 4px solid #666666; background-color: #f8f8f8;",
+            "high": "border-left: 4px solid #000000; background-color: #fafafa;",
+            "medium": "border-left: 4px solid #666666; background-color: #fafafa;",
             "low": "border-left: 4px solid #bbbbbb; background-color: #ffffff;",
             "none": "border-left: 4px solid #eeeeee; background-color: #ffffff; color: #888888;",
         }
@@ -78,7 +78,7 @@ class EmailReporter:
 
         # Format trends as simple tags
         trend_tags = " ".join(
-            f'<span style="border: 1px solid #ddd; padding: 2px 8px; font-size: 12px; margin-right: 6px; display: inline-block; font-family: monospace;">{trend}</span>'
+            f'<span style="border: 1px solid #ddd; padding: 4px 10px; font-size: 12px; margin-right: 8px; display: inline-block; margin-bottom: 8px; font-family: monospace; background-color: #fff;">{trend}</span>'
             for trend in trends
         )
 
@@ -87,7 +87,7 @@ class EmailReporter:
         formatted_content = report_content
         formatted_content = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', formatted_content)
         formatted_content = re.sub(r'\*(.*?)\*', r'<em>\1</em>', formatted_content)
-        formatted_content = formatted_content.replace('\n\n', '</p><p style="margin: 16px 0;">')
+        formatted_content = formatted_content.replace('\n\n', '</p><p style="margin: 20px 0;">')
         formatted_content = formatted_content.replace('\n', '<br>')
 
         html = f"""
@@ -98,68 +98,88 @@ class EmailReporter:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Jafar Digest - {today}</title>
 </head>
-<body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; line-height: 1.5; margin: 0; padding: 20px; background-color: #ffffff;">
-    <div style="max-width: 650px; margin: 0 auto; border: 1px solid #000;">
+<body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; line-height: 1.6; margin: 0; padding: 40px 20px; background-color: #f6f6f6;">
+    <div style="max-width: 850px; margin: 0 auto; border: 1px solid #000; background-color: #fff; box-shadow: 10px 10px 0px #000;">
         
         <!-- Header -->
-        <div style="border-bottom: 1px solid #000; padding: 20px; background-color: #000; color: #fff;">
-            <div style="font-family: monospace; font-size: 12px; letter-spacing: 1px; margin-bottom: 8px; opacity: 0.8;">
+        <div style="border-bottom: 1px solid #000; padding: 30px 40px; background-color: #000; color: #fff;">
+            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; opacity: 0.8; text-transform: uppercase;">
                 JAFAR INTELLIGENCE SYSTEM
             </div>
-            <h1 style="margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px;">
-                Market Digest
-            </h1>
-            <div style="margin-top: 5px; font-size: 14px; opacity: 0.9;">
-                {today}
-            </div>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                    <td align="left">
+                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; text-transform: uppercase;">
+                            Market Digest
+                        </h1>
+                    </td>
+                    <td align="right" style="font-family: monospace; font-size: 16px; opacity: 0.9;">
+                        {today}
+                    </td>
+                </tr>
+            </table>
         </div>
 
         <!-- Signal Banner -->
-        <div style="padding: 15px 20px; {signal_style} border-bottom: 1px solid #eee;">
-            <span style="font-family: monospace; font-weight: bold; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">
+        <div style="padding: 20px 40px; {signal_style} border-bottom: 1px solid #000;">
+            <span style="font-family: monospace; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 2px;">
                 SIGNAL STRENGTH: {signal_text_upper}
             </span>
         </div>
 
-        <!-- Metadata Grid -->
-        <div style="display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px;">
-            <div style="padding: 10px 20px; border-right: 1px solid #eee;">
-                ANALYZED: {tweet_count} TWEETS
+        <!-- Metadata Row -->
+        <div style="display: flex; border-bottom: 1px solid #000; font-family: monospace; font-size: 13px; background-color: #fcfcfc;">
+            <div style="padding: 15px 40px; border-right: 1px solid #000; flex: 1;">
+                ANALYZED: <strong>{tweet_count}</strong> TWEETS
             </div>
-            <div style="padding: 10px 20px;">
-                DETECTED: {len(trends)} TRENDS
+            <div style="padding: 15px 40px; flex: 1;">
+                DETECTED: <strong>{len(trends)}</strong> TRENDS
             </div>
         </div>
 
-        <!-- Trends -->
-        <div style="padding: 15px 20px; border-bottom: 1px solid #eee; background-color: #fcfcfc;">
-            <div style="font-family: monospace; font-size: 10px; color: #666; margin-bottom: 8px; text-transform: uppercase;">
-                Active Topics
+        <!-- Trends Section -->
+        <div style="padding: 25px 40px; border-bottom: 1px solid #eee; background-color: #fff;">
+            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
+                Current Market Topics
             </div>
-            <div>
+            <div style="line-height: 1.8;">
                 {trend_tags}
             </div>
         </div>
 
-        <!-- Main Body -->
-        <div style="padding: 30px 20px;">
-            <div style="font-size: 16px; color: #222; line-height: 1.6;">
-                {formatted_content}
+        <!-- Main Content -->
+        <div style="padding: 50px 40px;">
+            <div style="font-size: 18px; color: #111; line-height: 1.7; max-width: 750px;">
+                <p style="margin-top: 0;">
+                    {formatted_content}
+                </p>
             </div>
         </div>
 
         <!-- Footer -->
-        <div style="border-top: 1px solid #000; padding: 20px; font-size: 12px; color: #666; background-color: #f9f9f9;">
-            <p style="margin: 0 0 10px 0;">
-                <strong>Jafar</strong> &mdash; The villain to BlackRock's Aladdin.
-            </p>
-            <p style="margin: 0 0 10px 0; font-style: italic;">
-                "The only thing BlackRock manages better than assets is their conflict of interest."
-            </p>
-            <p style="margin: 0; font-family: monospace; font-size: 10px; color: #999;">
-                POWERED BY {provider_info.upper()} | NOT FINANCIAL ADVICE
-            </p>
+        <div style="border-top: 1px solid #000; padding: 30px 40px; font-size: 13px; color: #444; background-color: #fafafa;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                    <td style="padding-bottom: 20px;">
+                        <div style="font-weight: bold; font-size: 15px; margin-bottom: 5px; color: #000;">Jafar</div>
+                        <div style="opacity: 0.8;">The villain to BlackRock's Aladdin.</div>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="border-top: 1px solid #ddd; padding-top: 20px;">
+                        <p style="margin: 0 0 15px 0; font-style: italic; font-size: 14px; color: #000;">
+                            "The only thing BlackRock manages better than assets is their conflict of interest."
+                        </p>
+                        <p style="margin: 0; font-family: monospace; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px;">
+                            ENGINE: {provider_info.upper()} | NOT FINANCIAL ADVICE | {today}
+                        </p>
+                    </td>
+                </tr>
+            </table>
         </div>
+    </div>
+    <div style="max-width: 850px; margin: 20px auto 0; text-align: center; font-family: monospace; font-size: 10px; color: #bbb; text-transform: uppercase; letter-spacing: 2px;">
+        End of Transmission
     </div>
 </body>
 </html>
