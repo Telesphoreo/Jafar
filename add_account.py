@@ -127,11 +127,11 @@ async def add_account_with_cookies(
     # Show account status
     accounts = await api.pool.accounts_info()
     for acc in accounts:
-        if acc.username == username:
-            print(f"\n  Username: {acc.username}")
-            print(f"  Active: {acc.active}")
-            if hasattr(acc, 'proxy') and acc.proxy:
-                print(f"  Proxy: {acc.proxy[:40]}...")
+        if acc["username"] == username:
+            print(f"\n  Username: {acc['username']}")
+            print(f"  Active: {acc['active']}")
+            if acc.get("proxy"):
+                print(f"  Proxy: {acc['proxy'][:40]}...")
 
     print(f"\nRun 'twscrape accounts' to verify.")
 
