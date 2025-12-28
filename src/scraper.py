@@ -207,12 +207,15 @@ class TwitterScraper:
 
         logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
 
+        # Use a long safety timeout (20 min) to allow twscrape to wait for rate limits (15 min window)
+        # We rely on twscrape's internal logic to handle 429s and waits.
+        safety_timeout = 1200  
+        
         try:
-            # Use gather for async collection of tweets with timeout protection
-            # This timeout is for genuine hangs (network issues, parsing deadlocks)
+            # Removed aggressive asyncio.wait_for which was killing rate-limit waits
             raw_tweets = await asyncio.wait_for(
                 gather(api.search(search_query, limit=limit)),
-                timeout=timeout
+                timeout=safety_timeout
             )
 
             for tweet in raw_tweets:
@@ -227,13 +230,8 @@ class TwitterScraper:
             return tweets
 
         except asyncio.TimeoutError:
-            logger.error(f"Search timed out for '{query}' after {timeout}s")
-            if wait_time_needed > 0:
-                logger.error("Note: This likely happened because all accounts were rate limited.")
-            else:
-                logger.error("Genuine hang detected - network or parsing issue.")
-            
-            logger.error(f"Returning partial results ({len(tweets)} tweets)")
+            logger.error(f"Safety timeout reached for '{query}' after {safety_timeout}s")
+            logger.error("This suggests a genuine network hang or extremely long rate limit.")
             return tweets
         except Exception as e:
             logger.error(f"Error searching for '{query}': {e}")
