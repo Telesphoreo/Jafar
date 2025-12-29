@@ -51,6 +51,9 @@ memory_store/
 # Logs
 *.log
 
+# Runtime files (pid, logs, checkpoints)
+.run/
+
 # OS
 .DS_Store
 Thumbs.db

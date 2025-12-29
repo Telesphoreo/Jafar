@@ -18,7 +18,9 @@ from .scraper import ScrapedTweet
 
 logger = logging.getLogger("jafar.checkpoint")
 
-CHECKPOINT_FILE = "pipeline_checkpoint.json"
+# Runtime directory for checkpoint files
+RUN_DIR = Path(".run")
+CHECKPOINT_FILE = str(RUN_DIR / "pipeline_checkpoint.json")
 
 
 @dataclass
@@ -66,6 +68,10 @@ class CheckpointManager:
     def __init__(self, checkpoint_file: str = CHECKPOINT_FILE):
         self.checkpoint_file = Path(checkpoint_file)
         self._state: Optional[PipelineState] = None
+
+        # Ensure .run directory exists
+        self.checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
+
         logger.info(f"CheckpointManager initialized: {checkpoint_file}")
 
     def _serialize_tweet(self, tweet: ScrapedTweet) -> dict:

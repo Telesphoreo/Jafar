@@ -11,7 +11,7 @@ Group=yourusername
 WorkingDirectory=/home/yourusername/Jafar
 
 # Use uv to run the pipeline
-ExecStart=/home/yourusername/.local/bin/uv run main.py
+ExecStart=/home/yourusername/.local/bin/uv run python -m src.main
 
 # Restart on failure (but not on success since this is oneshot)
 Restart=on-failure
@@ -24,16 +24,9 @@ CPUQuota=80%
 # Timeout (10 minutes should be enough for the pipeline)
 TimeoutStartSec=600
 
-# Logging
-StandardOutput=append:/home/yourusername/Jafar/pipeline.log
-StandardError=append:/home/yourusername/Jafar/pipeline.log
-
-# Security hardening
-PrivateTmp=true
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/home/yourusername/Jafar
+# Logging (writes to .run/ directory with log rotation)
+StandardOutput=append:/home/yourusername/Jafar/.run/pipeline.log
+StandardError=append:/home/yourusername/Jafar/.run/pipeline.log
 
 [Install]
 WantedBy=multi-user.target

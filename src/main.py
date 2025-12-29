@@ -355,15 +355,15 @@ async def run_pipeline() -> bool:
     logger.info("Twitter Economic Sentiment Analysis Pipeline")
     logger.info("=" * 60)
 
-    # Rotate logs from previous run (before we start writing to new log)
+    # Clean up old logs from .run directory
     if config.smtp.admin.enabled:
         try:
             rotate_logs(
-                log_file="pipeline.log",
+                log_file=".run/pipeline.log",
                 keep_count=config.smtp.admin.log_retention_count
             )
         except Exception as e:
-            logger.warning(f"Failed to rotate logs: {e}")
+            logger.warning(f"Failed to clean up logs: {e}")
 
     # Validate configuration
     errors = config.validate()

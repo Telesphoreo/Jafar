@@ -13,9 +13,34 @@ set -euo pipefail
 
 # Immutable configuration - prevent accidental modification
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly LOG_FILE="${SCRIPT_DIR}/pipeline.log"
-readonly PID_FILE="${SCRIPT_DIR}/pipeline.pid"
+readonly RUN_DIR="${SCRIPT_DIR}/.run"
+readonly PID_FILE="${RUN_DIR}/pipeline.pid"
 readonly SHUTDOWN_TIMEOUT=10
+
+# Ensure .run directory exists
+ensure_run_dir() {
+    if [[ ! -d "$RUN_DIR" ]]; then
+        mkdir -p "$RUN_DIR" || {
+            echo "Error: Cannot create runtime directory: $RUN_DIR" >&2
+            exit 1
+        }
+    fi
+}
+
+# Get the most recent log file
+get_latest_log_file() {
+    # Find the most recent pipeline_*.log file
+    local latest_log
+    latest_log="$(find "$RUN_DIR" -maxdepth 1 -name 'pipeline_*.log' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+    echo "$latest_log"
+}
+
+# Generate new timestamped log filename
+generate_log_filename() {
+    local timestamp
+    timestamp="$(date +%Y%m%d_%H%M%S)"
+    echo "${RUN_DIR}/pipeline_${timestamp}.log"
+}
 
 # Validate that a string is a valid PID (numeric, reasonable range)
 is_valid_pid() {
@@ -77,6 +102,9 @@ is_process_running() {
 }
 
 start() {
+    # Ensure runtime directory exists
+    ensure_run_dir
+
     local existing_pid
     if existing_pid="$(read_pid_file 2>/dev/null)"; then
         if is_process_running "$existing_pid"; then
@@ -89,8 +117,12 @@ start() {
         fi
     fi
 
+    # Generate new timestamped log file
+    local log_file
+    log_file="$(generate_log_filename)"
+
     echo "Starting pipeline in background..."
-    echo "Log file: $LOG_FILE"
+    echo "Log file: $log_file"
 
     # Verify we're in the right directory before running
     if [[ ! -d "$SCRIPT_DIR" ]]; then
@@ -101,13 +133,13 @@ start() {
     cd "$SCRIPT_DIR" || { echo "Error: Cannot change to $SCRIPT_DIR" >&2; exit 1; }
 
     # Run with nohup, redirect all output to log
-    nohup uv run python -m src.main >> "$LOG_FILE" 2>&1 &
+    nohup uv run python -m src.main >> "$log_file" 2>&1 &
     local new_pid=$!
 
     # Verify the process actually started
     sleep 0.5
     if ! is_process_running "$new_pid"; then
-        echo "Error: Pipeline failed to start. Check $LOG_FILE for details." >&2
+        echo "Error: Pipeline failed to start. Check $log_file for details." >&2
         exit 1
     fi
 
@@ -174,43 +206,52 @@ status() {
         return 0
     fi
 
+    local log_file
+    log_file="$(get_latest_log_file)"
+
     if is_process_running "$pid"; then
         echo "Pipeline: RUNNING (PID: $pid)"
         echo ""
         # Show last few lines of log
-        if [[ -f "$LOG_FILE" ]]; then
-            echo "Recent activity:"
-            tail -5 "$LOG_FILE" || true
+        if [[ -n "$log_file" && -f "$log_file" ]]; then
+            echo "Recent activity from: $(basename "$log_file")"
+            tail -5 "$log_file" || true
         fi
     else
         echo "Pipeline: NOT RUNNING (finished or crashed)"
         safe_remove_pid_file
-        if [[ -f "$LOG_FILE" ]]; then
+        if [[ -n "$log_file" && -f "$log_file" ]]; then
             echo ""
-            echo "Last log entries:"
-            tail -10 "$LOG_FILE" || true
+            echo "Last log entries from: $(basename "$log_file")"
+            tail -10 "$log_file" || true
         fi
     fi
 }
 
 logs() {
-    if [[ ! -f "$LOG_FILE" ]]; then
+    local log_file
+    log_file="$(get_latest_log_file)"
+
+    if [[ -z "$log_file" || ! -f "$log_file" ]]; then
         echo "No log file yet. Start the pipeline first."
         exit 1
     fi
 
-    echo "Watching $LOG_FILE (Ctrl+C to stop watching)"
+    echo "Watching $(basename "$log_file") (Ctrl+C to stop watching)"
     echo "-------------------------------------------"
-    tail -f "$LOG_FILE"
+    tail -f "$log_file"
 }
 
 logs_all() {
-    if [[ ! -f "$LOG_FILE" ]]; then
+    local log_file
+    log_file="$(get_latest_log_file)"
+
+    if [[ -z "$log_file" || ! -f "$log_file" ]]; then
         echo "No log file yet."
         exit 1
     fi
 
-    less "$LOG_FILE"
+    less "$log_file"
 }
 
 # Main entry point
