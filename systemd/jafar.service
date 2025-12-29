@@ -1,6 +1,6 @@
 [Unit]
 Description=Jafar Twitter Sentiment Analysis
-Documentation=https://github.com/yourusername/twitter_sentiment_analysis
+Documentation=https://github.com/Telesphoreo/Jafar
 After=network-online.target
 Wants=network-online.target
 

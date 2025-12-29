@@ -1,9 +1,11 @@
 [Unit]
 Description=Jafar Daily Run Timer (8am-8pm randomized)
-Documentation=https://github.com/yourusername/twitter_sentiment_analysis
-Requires=jafar.service
+Documentation=https://github.com/Telesphoreo/Jafar
 
 [Timer]
+# Explicitly specify which service to trigger
+Unit=jafar.service
+
 # Run every day at 2:00 PM (14:00) as the anchor time
 OnCalendar=*-*-* 14:00:00
 

@@ -1,9 +1,10 @@
 [Unit]
 Description=Jafar Morning Run Timer (7am-12pm randomized)
-Documentation=https://github.com/yourusername/twitter_sentiment_analysis
-Requires=jafar.service
+Documentation=https://github.com/Telesphoreo/Jafar
 
 [Timer]
+Unit=jafar.service
+
 # Run every day at 7:00 AM
 OnCalendar=*-*-* 07:00:00
 
@@ -12,9 +13,6 @@ RandomizedDelaySec=18000
 
 # If the system was off when the timer should have triggered, run it on next boot
 Persistent=true
-
-# Ensure we don't run if evening run just completed
-# (systemd will skip if service is already running or just ran)
 
 [Install]
 WantedBy=timers.target
