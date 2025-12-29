@@ -3,7 +3,6 @@ Description=Jafar Daily Run Timer (8am-8pm randomized)
 Documentation=https://github.com/Telesphoreo/Jafar
 
 [Timer]
-# Explicitly specify which service to trigger
 Unit=jafar.service
 
 # Run every day at 2:00 PM (14:00) as the anchor time
@@ -14,11 +13,6 @@ RandomizedDelaySec=21600
 
 # If the system was off when the timer should have triggered, run it on next boot
 Persistent=true
-
-# WARNING: Single daily run can create gaps of up to 36 hours
-# Example: Run at 8pm Monday, then 8am Wednesday = 36h gap
-# Consider using jafar-morning.timer + jafar-evening.timer instead
-# for better coverage (max 14h gap)
 
 [Install]
 WantedBy=timers.target

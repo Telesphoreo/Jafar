@@ -8,7 +8,7 @@ Wants=network-online.target
 Type=oneshot
 User=yourusername
 Group=yourusername
-WorkingDirectory=/home/yourusername/twitter_sentiment_analysis
+WorkingDirectory=/home/yourusername/Jafar
 
 # Use uv to run the pipeline
 ExecStart=/home/yourusername/.local/bin/uv run main.py
@@ -25,15 +25,15 @@ CPUQuota=80%
 TimeoutStartSec=600
 
 # Logging
-StandardOutput=append:/home/yourusername/twitter_sentiment_analysis/pipeline.log
-StandardError=append:/home/yourusername/twitter_sentiment_analysis/pipeline.log
+StandardOutput=append:/home/yourusername/Jafar/pipeline.log
+StandardError=append:/home/yourusername/Jafar/pipeline.log
 
 # Security hardening
 PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/yourusername/twitter_sentiment_analysis
+ReadWritePaths=/home/yourusername/Jafar
 
 [Install]
 WantedBy=multi-user.target
