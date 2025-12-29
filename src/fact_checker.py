@@ -271,67 +271,94 @@ class MarketFactChecker:
         return result
 
     def _fetch_batch(self, symbols: set[str]) -> None:
-        """Fetch a batch of symbols (synchronous, called from executor)."""
+        """
+        Fetch a batch of symbols (synchronous, called from executor).
+        Uses history(period="5d") to get context on recent moves.
+        """
         try:
-            tickers = yf.Tickers(" ".join(symbols))
-
+            # Join symbols for batch fetching if possible, but history() is per-ticker usually
+            # efficient enough to just loop if we use the Ticker object correctly
+            
             for symbol in symbols:
                 try:
-                    ticker = tickers.tickers.get(symbol)
-                    if ticker is None:
+                    ticker = yf.Ticker(symbol)
+                    
+                    # Fetch 5 days of history for context
+                    # period="1mo" is safer to ensure we get 5 trading days even with holidays
+                    hist = ticker.history(period="1mo")
+                    
+                    if hist.empty:
+                        logger.warning(f"No history found for {symbol}")
                         continue
 
-                    info = ticker.info
-                    if not info or "regularMarketPrice" not in info:
-                        # Try fast_info as fallback
-                        try:
-                            fast = ticker.fast_info
-                            current_price = fast.get("lastPrice", 0) or fast.get("regularMarketPrice", 0)
-                            if current_price:
-                                data = MarketDataPoint(
-                                    symbol=symbol,
-                                    name=symbol,
-                                    current_price=current_price,
-                                    price_change_1d=fast.get("regularMarketChange", 0) or 0,
-                                    price_change_1d_pct=fast.get("regularMarketChangePercent", 0) or 0,
-                                    price_change_5d_pct=None,
-                                    volume=fast.get("regularMarketVolume", 0) or 0,
-                                    avg_volume=fast.get("averageVolume", 0) or 0,
-                                    high_52w=fast.get("fiftyTwoWeekHigh", 0) or 0,
-                                    low_52w=fast.get("fiftyTwoWeekLow", 0) or 0,
-                                    market_cap=fast.get("marketCap"),
-                                    fetched_at=datetime.now(),
-                                    category=self._get_category(symbol),
-                                )
-                                self._cache[symbol] = (data, datetime.now())
-                        except Exception:
-                            pass
-                        continue
+                    # Get latest data
+                    current_row = hist.iloc[-1]
+                    current_price = float(current_row["Close"])
+                    
+                    # Calculate 1-day change
+                    if len(hist) >= 2:
+                        prev_close = float(hist.iloc[-2]["Close"])
+                        price_change_1d = current_price - prev_close
+                        price_change_1d_pct = (price_change_1d / prev_close * 100)
+                    else:
+                        price_change_1d = 0.0
+                        price_change_1d_pct = 0.0
 
-                    current_price = info.get("regularMarketPrice", 0)
-                    prev_close = info.get("regularMarketPreviousClose", 0)
+                    # Calculate 5-day change (1 week)
+                    price_change_5d_pct = None
+                    if len(hist) >= 6:
+                        # 5 trading days ago is index -6 (current is -1)
+                        # e.g., if we have [Mon, Tue, Wed, Thu, Fri, Mon(Today)]
+                        # -1 is Mon(Today), -6 is Mon(Last week)
+                        five_day_close = float(hist.iloc[-6]["Close"])
+                        price_change_5d_pct = ((current_price - five_day_close) / five_day_close * 100)
+                    elif len(hist) > 1:
+                        # Fallback to start of available data if < 6 days
+                        start_close = float(hist.iloc[0]["Close"])
+                        price_change_5d_pct = ((current_price - start_close) / start_close * 100)
 
-                    price_change_1d = current_price - prev_close if prev_close else 0
-                    price_change_1d_pct = (price_change_1d / prev_close * 100) if prev_close else 0
+                    # Get auxiliary info (volume, ranges) from fast_info or info
+                    try:
+                        fast = ticker.fast_info
+                        vol = int(current_row["Volume"]) if "Volume" in current_row else 0
+                        avg_vol = fast.get("averageVolume", 0) or 0
+                        high_52 = fast.get("fiftyTwoWeekHigh", 0) or 0
+                        low_52 = fast.get("fiftyTwoWeekLow", 0) or 0
+                        mkt_cap = fast.get("marketCap")
+                        name = symbol # Default
+                    except Exception:
+                        # Fallback to slower .info if fast_info fails
+                        info = ticker.info
+                        vol = info.get("regularMarketVolume", 0) or 0
+                        avg_vol = info.get("averageDailyVolume10Day", 0) or 0
+                        high_52 = info.get("fiftyTwoWeekHigh", 0) or 0
+                        low_52 = info.get("fiftyTwoWeekLow", 0) or 0
+                        mkt_cap = info.get("marketCap")
+                        name = info.get("shortName", symbol)
 
+                    # Create data point
                     data = MarketDataPoint(
                         symbol=symbol,
-                        name=info.get("shortName", info.get("longName", symbol)),
+                        name=name,
                         current_price=current_price,
                         price_change_1d=price_change_1d,
                         price_change_1d_pct=price_change_1d_pct,
-                        price_change_5d_pct=None,  # Would require historical data
-                        volume=info.get("regularMarketVolume", 0) or 0,
-                        avg_volume=info.get("averageDailyVolume10Day", 0) or info.get("averageVolume", 0) or 0,
-                        high_52w=info.get("fiftyTwoWeekHigh", 0) or 0,
-                        low_52w=info.get("fiftyTwoWeekLow", 0) or 0,
-                        market_cap=info.get("marketCap"),
+                        price_change_5d_pct=price_change_5d_pct,
+                        volume=vol,
+                        avg_volume=avg_vol,
+                        high_52w=high_52,
+                        low_52w=low_52,
+                        market_cap=mkt_cap,
                         fetched_at=datetime.now(),
                         category=self._get_category(symbol),
                     )
 
                     self._cache[symbol] = (data, datetime.now())
-                    logger.debug(f"Fetched {symbol}: ${data.current_price:.2f} ({data.price_change_1d_pct:+.2f}%)")
+                    
+                    log_msg = f"Fetched {symbol}: ${data.current_price:.2f} ({data.price_change_1d_pct:+.2f}%)"
+                    if price_change_5d_pct is not None:
+                        log_msg += f" [5d: {price_change_5d_pct:+.2f}%]"
+                    logger.debug(log_msg)
 
                 except Exception as e:
                     logger.warning(f"Failed to fetch {symbol}: {e}")
@@ -364,6 +391,12 @@ class MarketFactChecker:
             "",
         ]
 
+        # Helper to format 5d change
+        def fmt_5d(val: float | None) -> str:
+            if val is None:
+                return "-"
+            return f"{val:+.1f}%"
+
         # Group by category
         commodities = {k: v for k, v in market_data.items() if v.category == "commodity"}
         crypto = {k: v for k, v in market_data.items() if v.category == "crypto"}
@@ -372,52 +405,53 @@ class MarketFactChecker:
 
         if commodities:
             lines.append("### Commodities")
-            lines.append("| Asset | Price | 24h Change | Volume | 52w Range | Notes |")
-            lines.append("|-------|-------|------------|--------|-----------|-------|")
+            lines.append("| Asset | Price | 24h Change | 5d Trend | Volume | Notes |")
+            lines.append("|-------|-------|------------|----------|--------|-------|")
             for symbol, data in sorted(commodities.items(), key=lambda x: x[1].name):
                 notes = self._get_notes(data)
                 vol_str = f"{data.volume_ratio:.1f}x avg" if data.avg_volume > 0 else "N/A"
                 lines.append(
                     f"| {data.name} | ${data.current_price:,.2f} | "
-                    f"{data.price_change_1d_pct:+.1f}% | {vol_str} | "
-                    f"${data.low_52w:,.0f}-${data.high_52w:,.0f} | {notes} |"
+                    f"{data.price_change_1d_pct:+.1f}% | {fmt_5d(data.price_change_5d_pct)} | "
+                    f"{vol_str} | {notes} |"
                 )
             lines.append("")
 
         if indices:
             lines.append("### Indices & ETFs")
-            lines.append("| Index | Level | 24h Change | Notes |")
-            lines.append("|-------|-------|------------|-------|")
+            lines.append("| Index | Level | 24h Change | 5d Trend | Notes |")
+            lines.append("|-------|-------|------------|----------|-------|")
             for symbol, data in sorted(indices.items(), key=lambda x: x[1].name):
                 notes = self._get_notes(data)
                 lines.append(
                     f"| {data.name} ({symbol}) | {data.current_price:,.2f} | "
-                    f"{data.price_change_1d_pct:+.1f}% | {notes} |"
+                    f"{data.price_change_1d_pct:+.1f}% | {fmt_5d(data.price_change_5d_pct)} | {notes} |"
                 )
             lines.append("")
 
         if crypto:
             lines.append("### Crypto")
-            lines.append("| Asset | Price | 24h Change | Notes |")
-            lines.append("|-------|-------|------------|-------|")
+            lines.append("| Asset | Price | 24h Change | 5d Trend | Notes |")
+            lines.append("|-------|-------|------------|----------|-------|")
             for symbol, data in sorted(crypto.items(), key=lambda x: x[1].name):
                 notes = self._get_notes(data)
                 lines.append(
                     f"| {data.name} | ${data.current_price:,.2f} | "
-                    f"{data.price_change_1d_pct:+.1f}% | {notes} |"
+                    f"{data.price_change_1d_pct:+.1f}% | {fmt_5d(data.price_change_5d_pct)} | {notes} |"
                 )
             lines.append("")
 
         if stocks:
             lines.append("### Stocks Mentioned")
-            lines.append("| Ticker | Price | 24h Change | Volume | Notes |")
-            lines.append("|--------|-------|------------|--------|-------|")
+            lines.append("| Ticker | Price | 24h Change | 5d Trend | Volume | Notes |")
+            lines.append("|--------|-------|------------|----------|--------|-------|")
             for symbol, data in sorted(stocks.items()):
                 notes = self._get_notes(data)
                 vol_str = f"{data.volume_ratio:.1f}x avg" if data.avg_volume > 0 else "N/A"
                 lines.append(
                     f"| {symbol} | ${data.current_price:,.2f} | "
-                    f"{data.price_change_1d_pct:+.1f}% | {vol_str} | {notes} |"
+                    f"{data.price_change_1d_pct:+.1f}% | {fmt_5d(data.price_change_5d_pct)} | "
+                    f"{vol_str} | {notes} |"
                 )
             lines.append("")
 
@@ -426,6 +460,7 @@ class MarketFactChecker:
             "---",
             "**FACT-CHECK INSTRUCTIONS:**",
             "- Compare tweet claims against this verified data",
+            "- **CHECK THE 5d TREND**: A large daily drop might just be a pullback if the 5d trend is still positive.",
             "- Flag claims that contradict the actual numbers",
             "- Note when sentiment aligns with real price action",
             "- \"Massive volume\" should show >2x avg; otherwise it's exaggerated",
