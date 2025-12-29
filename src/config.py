@@ -131,6 +131,9 @@ class SMTPConfig:
 
     # Settings from YAML
     email_from: str = field(default_factory=lambda: _get_yaml("email", "from", ""))
+    email_from_name: str = field(
+        default_factory=lambda: _get_yaml_section("email").get("from_name", "Jafar Intelligence System")
+    )
     email_to: list[str] = field(default_factory=lambda: _get_yaml("email", "to", []) or [])
 
     # Admin diagnostics

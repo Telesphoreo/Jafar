@@ -43,6 +43,7 @@ smtp:
 
 email:
   from: your_email@gmail.com
+  from_name: Jafar Intelligence System
   to:
     - recipient@example.com
   # Multiple recipients:

@@ -27,6 +27,7 @@ class EmailConfig:
     password: str
     use_tls: bool
     email_from: str
+    email_from_name: str
     email_to: list[str]
 
 
@@ -280,8 +281,9 @@ Disclaimer: Not financial advice.
         # Create message container
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = self.config.email_from
-        msg["To"] = ", ".join(self.config.email_to)
+        msg["From"] = f"{self.config.email_from_name} <{self.config.email_from}>"
+        # Using the sender's email in 'To' and putting everyone else in BCC
+        msg["To"] = self.config.email_from
 
         # Generate both plain text and HTML versions
         text_content = self._generate_plain_text(report_content, trends, tweet_count)
@@ -295,10 +297,10 @@ Disclaimer: Not financial advice.
         msg.attach(part1)
         msg.attach(part2)
 
-        logger.info(f"Sending email to {len(self.config.email_to)} recipient(s)")
+        logger.info(f"Sending email to {len(self.config.email_to)} recipient(s) via BCC")
         logger.info(f"SMTP Server: {self.config.host}:{self.config.port} (TLS: {self.config.use_tls})")
-        logger.info(f"From: {self.config.email_from}")
-        logger.info(f"To: {', '.join(self.config.email_to)}")
+        logger.info(f"From: {msg['From']}")
+        logger.info(f"To (Visible): {msg['To']}")
         logger.info(f"Subject: {subject}")
 
         try:
@@ -322,9 +324,11 @@ Disclaimer: Not financial advice.
             logger.info("Login successful")
 
             logger.info("Step 4: Sending email...")
+            # to_addrs should include all recipients (To + BCC)
+            all_recipients = self.config.email_to
             server.sendmail(
                 self.config.email_from,
-                self.config.email_to,
+                all_recipients,
                 msg.as_string(),
             )
             logger.info("Email sent, closing connection...")
@@ -637,8 +641,9 @@ Disclaimer: Not financial advice.
         # Create message
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = self.config.email_from
-        msg["To"] = ", ".join(recipients)
+        msg["From"] = f"{self.config.email_from_name} <{self.config.email_from}>"
+        # Using the sender's email in 'To' and putting everyone else in BCC
+        msg["To"] = self.config.email_from
 
         # Generate HTML
         html_content = self._generate_admin_html_report(diagnostics, alert_reason)
@@ -666,7 +671,7 @@ See HTML version for full details.
         msg.attach(part1)
         msg.attach(part2)
 
-        logger.info(f"Sending admin diagnostics email to {len(recipients)} recipient(s)")
+        logger.info(f"Sending admin diagnostics email to {len(recipients)} recipient(s) via BCC")
 
         try:
             timeout = 30
@@ -696,6 +701,7 @@ def create_reporter_from_config(
     password: str,
     use_tls: bool,
     email_from: str,
+    email_from_name: str,
     email_to: list[str],
 ) -> EmailReporter:
     """
@@ -708,6 +714,7 @@ def create_reporter_from_config(
         password: SMTP password.
         use_tls: Whether to use TLS.
         email_from: Sender email address.
+        email_from_name: Sender display name.
         email_to: List of recipient email addresses.
 
     Returns:
@@ -720,6 +727,7 @@ def create_reporter_from_config(
         password=password,
         use_tls=use_tls,
         email_from=email_from,
+        email_from_name=email_from_name,
         email_to=email_to,
     )
     return EmailReporter(config)

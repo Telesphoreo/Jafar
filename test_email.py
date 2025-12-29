@@ -106,6 +106,7 @@ def main():
             password=config.smtp.password,
             use_tls=config.smtp.use_tls,
             email_from=config.smtp.email_from,
+            email_from_name=config.smtp.email_from_name,
             email_to=config.smtp.email_to
         )
         reporter = EmailReporter(email_config)
