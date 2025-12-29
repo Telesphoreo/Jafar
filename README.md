@@ -91,6 +91,20 @@ uv run python main.py
 uv run test_email.py   # Verify SMTP settings and send test email
 ```
 
+## Production Deployment (The Daemon Manifesto)
+
+Running this on a VPS and don't want to babysit it like Larry Fink babysits his relationship with the Fed? Need it to run
+automatically without Cloudflare detecting your traffic pattern faster than BlackRock detects a new bailout opportunity?
+
+**[Read DAEMONIZING.md](DAEMONIZING.md)** for the full systemd setup with randomized timing.
+
+**TL;DR**: systemd timers with `RandomizedDelaySec` make your traffic look like a normal person with insomnia checking fintwit
+at random hours, instead of a cron job that screams "I'M A BOT" at 2 PM every day. Twice-daily randomized runs (7am-12pm,
+5pm-11pm windows) ensure you never wake up to a "Silver up 40%" Reuters alert like the normies while also not getting
+cloudflared into oblivion. Includes automatic admin diagnostics emails so you know when your Twitter accounts get banned before
+you wonder why you haven't gotten a digest in 3 days. Because unlike Aladdin's monitoring dashboard (which probably costs
+$50k/month and requires a PhD to understand), we just email you when shit breaks.
+
 ## How It Works
 
 1. **Scout** - Scrapes 30+ financial topics from Twitter

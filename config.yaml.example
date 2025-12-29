@@ -50,6 +50,23 @@ email:
   #   - recipient1@example.com
   #   - recipient2@example.com
 
+  # Admin diagnostics email settings
+  admin:
+    # Enable admin diagnostics emails (always sent on errors, optional for successful runs)
+    enabled: true
+
+    # Send admin email even on successful runs (for monitoring)
+    send_on_success: false
+
+    # Admin email recipients (defaults to main recipients if not specified)
+    recipients:
+      - admin@example.com
+    # Leave empty to use main recipients:
+    # recipients: []
+
+    # Keep N log files (older logs will be deleted automatically)
+    log_retention_count: 10
+
 # Scraping Limits
 scraping:
   # Tweets per broad topic during discovery phase

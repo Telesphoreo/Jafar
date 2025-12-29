@@ -1,0 +1,22 @@
+[Unit]
+Description=Jafar Daily Run Timer (8am-8pm randomized)
+Documentation=https://github.com/yourusername/twitter_sentiment_analysis
+Requires=jafar.service
+
+[Timer]
+# Run every day at 2:00 PM (14:00) as the anchor time
+OnCalendar=*-*-* 14:00:00
+
+# Add ± 6 hours of randomization (8am-8pm window)
+RandomizedDelaySec=21600
+
+# If the system was off when the timer should have triggered, run it on next boot
+Persistent=true
+
+# WARNING: Single daily run can create gaps of up to 36 hours
+# Example: Run at 8pm Monday, then 8am Wednesday = 36h gap
+# Consider using jafar-morning.timer + jafar-evening.timer instead
+# for better coverage (max 14h gap)
+
+[Install]
+WantedBy=timers.target

@@ -37,25 +37,33 @@ uv run add_account.py <username> cookies.json
 
 ```
 src/
-├── main.py          # Pipeline orchestration (6.5 steps)
-├── config.py        # Hybrid YAML + env config
-├── scraper.py       # Twitter scraping via twscrape
-├── analyzer.py      # Statistical trend discovery (spaCy NLP)
-├── reporter.py      # HTML email reports (SMTP)
-├── history.py       # SQLite digest history
-├── checkpoint.py    # Pipeline state persistence
-├── fact_checker.py  # Market data verification (yfinance)
+├── main.py             # Pipeline orchestration (6.75 steps)
+├── config.py           # Hybrid YAML + env config
+├── scraper.py          # Twitter scraping via twscrape
+├── analyzer.py         # Statistical trend discovery (spaCy NLP)
+├── reporter.py         # HTML email reports (SMTP) + admin diagnostics
+├── history.py          # SQLite digest history + trend timelines
+├── checkpoint.py       # Pipeline state persistence
+├── fact_checker.py     # Market data verification (yfinance)
+├── temporal_analyzer.py # Multi-day trend tracking & continuity detection
+├── diagnostics.py      # Run statistics, error tracking, log rotation
 ├── llm/
-│   ├── base.py      # Abstract LLMProvider interface
-│   ├── factory.py   # create_llm_provider()
+│   ├── base.py         # Abstract LLMProvider interface
+│   ├── factory.py      # create_llm_provider()
 │   ├── openai_client.py
-│   └── google_client.py  # Uses google-genai SDK
+│   └── google_client.py # Uses google-genai SDK
 └── memory/
-    ├── base.py           # VectorStore interface, MemoryRecord
-    ├── embeddings.py     # OpenAI/local embeddings (with dimension control)
-    ├── chroma_store.py   # Local vector storage
+    ├── base.py          # VectorStore interface, MemoryRecord
+    ├── embeddings.py    # OpenAI/local embeddings (with dimension control)
+    ├── chroma_store.py  # Local vector storage
     ├── pgvector_store.py # Production PostgreSQL
     └── memory_manager.py # Semantic search orchestration
+
+systemd/
+├── jafar.service        # systemd service definition
+├── jafar-morning.timer  # Morning run timer (7am-12pm random)
+├── jafar-evening.timer  # Evening run timer (5pm-11pm random)
+└── jafar.timer          # Alternative: single daily run (8am-8pm random)
 ```
 
 ## Pipeline Steps
@@ -65,9 +73,11 @@ src/
 2.5. **Quality Filter** - Three-stage filtering (statistical → quality threshold → LLM validation)
 3. **Deep Dive** - Targeted scraping for validated trends only
 3.5. **Fact Checker** - Fetch real market data from Yahoo Finance to verify claims
-4. **LLM Analysis** - Generate skeptical summary with signal strength rating, cross-referencing fact-check data
-5. **Email Report** - Send HTML digest with trend badges
+3.75. **Temporal Analysis** - Track trend continuity (consecutive days, gaps, recurring themes)
+4. **LLM Analysis** - Generate skeptical summary with signal strength rating, cross-referencing fact-check data + temporal context
+5. **Email Report** - Send HTML digest with trend badges (🔥 Day 3, 🔁 Last seen 6mo ago, 🆕 New)
 6. **Memory Storage** - Store in SQLite + vector DB for future parallels
+6.5. **Admin Diagnostics** - Send optional diagnostics email with run statistics and error alerts
 
 ## Configuration
 
@@ -91,6 +101,17 @@ memory:
 fact_checker:
   enabled: true
   cache_ttl_minutes: 5
+
+temporal:
+  consecutive_threshold: 3    # Days to flag as "developing story"
+  gap_threshold_days: 14      # Gap to consider "new episode" vs continuation
+
+email:
+  admin:
+    enabled: true             # Admin diagnostics emails
+    send_on_success: false    # Email even on successful runs
+    recipients: []            # Defaults to main recipients if empty
+    log_retention_count: 10   # Keep N most recent log files
 
 twitter:
   proxies:

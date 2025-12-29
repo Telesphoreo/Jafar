@@ -1,0 +1,17 @@
+[Unit]
+Description=Jafar Evening Run Timer (5pm-11pm randomized)
+Documentation=https://github.com/yourusername/twitter_sentiment_analysis
+Requires=jafar.service
+
+[Timer]
+# Run every day at 5:00 PM (17:00)
+OnCalendar=*-*-* 17:00:00
+
+# Add 0-6 hours of randomization (5pm-11pm window)
+RandomizedDelaySec=21600
+
+# If the system was off when the timer should have triggered, run it on next boot
+Persistent=true
+
+[Install]
+WantedBy=timers.target

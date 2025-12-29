@@ -101,6 +101,23 @@ class GoogleConfig:
 
 
 @dataclass
+class AdminEmailConfig:
+    """Admin diagnostics email configuration."""
+    enabled: bool = field(
+        default_factory=lambda: _get_yaml_section("email").get("admin", {}).get("enabled", True)
+    )
+    send_on_success: bool = field(
+        default_factory=lambda: _get_yaml_section("email").get("admin", {}).get("send_on_success", False)
+    )
+    recipients: list[str] = field(
+        default_factory=lambda: _get_yaml_section("email").get("admin", {}).get("recipients", []) or []
+    )
+    log_retention_count: int = field(
+        default_factory=lambda: _get_yaml_section("email").get("admin", {}).get("log_retention_count", 10)
+    )
+
+
+@dataclass
 class SMTPConfig:
     """SMTP email configuration."""
     # Settings from YAML
@@ -115,6 +132,9 @@ class SMTPConfig:
     # Settings from YAML
     email_from: str = field(default_factory=lambda: _get_yaml("email", "from", ""))
     email_to: list[str] = field(default_factory=lambda: _get_yaml("email", "to", []) or [])
+
+    # Admin diagnostics
+    admin: AdminEmailConfig = field(default_factory=AdminEmailConfig)
 
 
 @dataclass

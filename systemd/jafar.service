@@ -1,0 +1,39 @@
+[Unit]
+Description=Jafar Twitter Sentiment Analysis
+Documentation=https://github.com/yourusername/twitter_sentiment_analysis
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=yourusername
+Group=yourusername
+WorkingDirectory=/home/yourusername/twitter_sentiment_analysis
+
+# Use uv to run the pipeline
+ExecStart=/home/yourusername/.local/bin/uv run main.py
+
+# Restart on failure (but not on success since this is oneshot)
+Restart=on-failure
+RestartSec=300
+
+# Resource limits (adjust based on your system)
+MemoryMax=2G
+CPUQuota=80%
+
+# Timeout (10 minutes should be enough for the pipeline)
+TimeoutStartSec=600
+
+# Logging
+StandardOutput=append:/home/yourusername/twitter_sentiment_analysis/pipeline.log
+StandardError=append:/home/yourusername/twitter_sentiment_analysis/pipeline.log
+
+# Security hardening
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/yourusername/twitter_sentiment_analysis
+
+[Install]
+WantedBy=multi-user.target

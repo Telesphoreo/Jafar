@@ -36,6 +36,8 @@ from .memory import create_memory_manager, MemoryManager
 from .checkpoint import CheckpointManager
 from .fact_checker import MarketFactChecker
 from .temporal_analyzer import TemporalTrendAnalyzer, TrendTimeline
+from .diagnostics import DiagnosticsCollector, rotate_logs, should_send_admin_alert
+import time
 
 logger = logging.getLogger("jafar.main")
 
@@ -171,7 +173,7 @@ async def analyze_with_llm(
     fact_check_context: str = "",
     temporal_context: str = "",
     top_engagement: float = 0,
-) -> tuple[str, str, bool]:
+) -> tuple[str, str, bool, int]:
     """
     Use the LLM to generate a CALIBRATED sentiment analysis.
 
@@ -185,7 +187,7 @@ async def analyze_with_llm(
         top_engagement: Highest engagement score from today's trends.
 
     Returns:
-        Tuple of (analysis_text, signal_strength, is_notable).
+        Tuple of (analysis_text, signal_strength, is_notable, token_count).
     """
     logger.info(f"Generating analysis with {llm.provider_name} ({llm.model_name})")
 
@@ -253,7 +255,7 @@ Remember: Your job is to FILTER, not to HYPE. A good analyst knows when to say "
             signal_strength = "none"
 
         logger.info(f"Signal strength: {signal_strength.upper()}, Notable: {is_notable}")
-        return content, signal_strength, is_notable
+        return content, signal_strength, is_notable, response.token_count
 
     except Exception as e:
         logger.error(f"LLM analysis failed: {e}")
@@ -353,6 +355,16 @@ async def run_pipeline() -> bool:
     logger.info("Twitter Economic Sentiment Analysis Pipeline")
     logger.info("=" * 60)
 
+    # Rotate logs from previous run (before we start writing to new log)
+    if config.smtp.admin.enabled:
+        try:
+            rotate_logs(
+                log_file="pipeline.log",
+                keep_count=config.smtp.admin.log_retention_count
+            )
+        except Exception as e:
+            logger.warning(f"Failed to rotate logs: {e}")
+
     # Validate configuration
     errors = config.validate()
     if errors:
@@ -362,6 +374,9 @@ async def run_pipeline() -> bool:
 
     # Initialize checkpoint manager
     checkpoint = CheckpointManager()
+
+    # Initialize diagnostics collector
+    diagnostics = DiagnosticsCollector(run_id=checkpoint.run_id if hasattr(checkpoint, 'run_id') else datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     # Check for existing checkpoint to resume
     resuming = checkpoint.should_resume()
@@ -393,19 +408,27 @@ async def run_pipeline() -> bool:
         active = stats.get("active", 0)
         total = stats.get("total", 0)
 
+        # Record in diagnostics
+        diagnostics.diagnostics.twitter_accounts_total = total
+        diagnostics.diagnostics.twitter_accounts_active = active
+        diagnostics.diagnostics.twitter_accounts_rate_limited = total - active
+
         if total == 0:
             logger.error("No Twitter accounts configured. Run 'uv run twscrape accounts' to check.")
             logger.error("Add accounts with: uv run python add_account.py <username> cookies.json")
+            diagnostics.diagnostics.add_error("No Twitter accounts configured")
             return False
 
         if active == 0:
             logger.warning(f"All {total} Twitter accounts are rate-limited or inactive")
             logger.warning("The pipeline will skip queries where no accounts are available")
             logger.warning("Consider adding more accounts or waiting for rate limits to reset")
+            diagnostics.diagnostics.add_warning(f"All {total} Twitter accounts are rate-limited or inactive")
         else:
             logger.info(f"Twitter accounts: {active}/{total} active")
     except Exception as e:
         logger.warning(f"Could not check Twitter account status: {e}")
+        diagnostics.diagnostics.add_warning(f"Could not check Twitter account status: {e}")
 
     # Initialize vector memory system
     memory: MemoryManager | None = None
@@ -453,9 +476,12 @@ async def run_pipeline() -> bool:
         # ============================================================
         # STEP 1: THE SCOUT - Broad Twitter Search (with checkpointing)
         # ============================================================
+        step1_start = time.time()
         if not state.step1_complete:
             logger.info("\n[STEP 1] THE SCOUT: Gathering broad economic tweets...")
             logger.info(f"Topics: {len(state.topics_remaining)} remaining, {len(state.topics_completed)} completed")
+
+            diagnostics.diagnostics.broad_topics_attempted = len(config.app.broad_topics)
 
             # Callback to save progress after each topic
             def on_topic_done(topic: str, tweets: list[ScrapedTweet]) -> None:
@@ -476,12 +502,20 @@ async def run_pipeline() -> bool:
             broad_tweets = existing_tweets + new_tweets
             checkpoint.complete_step1()
             state = checkpoint.get_state()
+
+            diagnostics.diagnostics.broad_topics_completed = len(state.topics_completed)
+            diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
         else:
             logger.info("\n[STEP 1] Skipping (already complete)")
             broad_tweets = checkpoint.get_broad_tweets()
+            diagnostics.diagnostics.broad_topics_completed = len(config.app.broad_topics)
+            diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
+
+        diagnostics.diagnostics.time_step1_scraping = time.time() - step1_start
 
         if not broad_tweets:
             logger.error("No tweets retrieved. Check twscrape setup.")
+            diagnostics.diagnostics.add_error("No tweets retrieved from broad scraping")
             return False
 
         logger.info(f"Total broad tweets: {len(broad_tweets)}")
@@ -489,6 +523,7 @@ async def run_pipeline() -> bool:
         # ============================================================
         # STEP 2: THE INVESTIGATOR - NER Analysis
         # ============================================================
+        step2_start = time.time()
         if not state.step2_complete:
             logger.info("\n[STEP 2] THE INVESTIGATOR: Extracting trending entities...")
 
@@ -501,13 +536,18 @@ async def run_pipeline() -> bool:
 
             if not trends:
                 logger.warning("No trends extracted. Using fallback topics.")
+                diagnostics.diagnostics.add_warning("No trends extracted, using fallback topics")
                 trends = ["Federal Reserve", "Stock Market", "Inflation"]
 
+            diagnostics.diagnostics.trends_discovered = len(trends)
             checkpoint.save_trends(trends)
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 2] Skipping (already complete)")
             trends = state.trends
+            diagnostics.diagnostics.trends_discovered = len(trends)
+
+        diagnostics.diagnostics.time_step2_analysis = time.time() - step2_start
 
         logger.info(f"Trends (pre-filter): {trends}")
 
@@ -518,6 +558,7 @@ async def run_pipeline() -> bool:
         if trends and len(trends) > 0 and not state.step3_complete:
             logger.info("\n[STEP 2.5] LLM FILTER: Validating trend candidates...")
             filtered_trends = await llm_filter_trends(llm, trends)
+            diagnostics.diagnostics.llm_calls_made += 1  # LLM filter call
 
             if filtered_trends != trends:
                 # Save filtered trends to checkpoint
@@ -527,14 +568,19 @@ async def run_pipeline() -> bool:
 
             if not trends:
                 logger.info("LLM filter rejected all candidates - quiet day")
+                diagnostics.diagnostics.add_warning("LLM filter rejected all trend candidates")
 
+        diagnostics.diagnostics.trends_filtered_by_llm = len(trends) if trends else 0
         logger.info(f"Trends (post-filter): {trends}")
 
         # ============================================================
         # STEP 3: THE DEEP DIVE - Targeted Scraping
         # ============================================================
+        step3_start = time.time()
         if not state.step3_complete:
             logger.info("\n[STEP 3] THE DEEP DIVE: Gathering sentiment for each trend...")
+
+            diagnostics.diagnostics.deep_dive_trends_attempted = len(trends) if trends else 0
 
             # Callback to save progress after each trend
             def on_trend_done(trend: str, tweets: list[ScrapedTweet]) -> None:
@@ -554,11 +600,19 @@ async def run_pipeline() -> bool:
             trend_tweets = checkpoint.get_trend_tweets()
             trend_tweets.update(new_trend_tweets)
 
+            diagnostics.diagnostics.deep_dive_trends_completed = len(trend_tweets)
+            diagnostics.diagnostics.deep_dive_tweets_scraped = sum(len(t) for t in trend_tweets.values())
+
             checkpoint.complete_step3()
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 3] Skipping (already complete)")
             trend_tweets = checkpoint.get_trend_tweets()
+            diagnostics.diagnostics.deep_dive_trends_attempted = len(trends) if trends else 0
+            diagnostics.diagnostics.deep_dive_trends_completed = len(trend_tweets)
+            diagnostics.diagnostics.deep_dive_tweets_scraped = sum(len(t) for t in trend_tweets.values())
+
+        diagnostics.diagnostics.time_step3_deep_dive = time.time() - step3_start
 
         total_tweets = sum(len(t) for t in trend_tweets.values())
         logger.info(f"Total trend tweets: {total_tweets}")
@@ -583,11 +637,14 @@ async def run_pipeline() -> bool:
                 market_data = await fact_checker.fetch_market_data(symbols)
                 logger.info(f"Fetched market data for {len(market_data)} symbols")
 
+                diagnostics.diagnostics.fact_checks_performed = len(market_data)
+
                 # Format for LLM context
                 fact_check_context = fact_checker.format_for_llm(market_data, trends)
 
             except Exception as e:
                 logger.warning(f"Fact checking failed (continuing without): {e}")
+                diagnostics.diagnostics.add_warning(f"Fact checking failed: {e}")
 
         # ============================================================
         # STEP 3.75: TEMPORAL ANALYSIS - Track trend continuity
@@ -626,12 +683,17 @@ async def run_pipeline() -> bool:
         # Analyze timelines for all trends
         timelines = temporal_analyzer.analyze_all_trends(trend_details_for_temporal)
 
+        # Count temporal patterns (new, continuing, recurring)
+        temporal_patterns = sum(1 for t in timelines.values() if t.is_new or t.is_continuing or t.is_recurring)
+        diagnostics.diagnostics.temporal_patterns_detected = temporal_patterns
+
         # Format temporal context for LLM
         temporal_context = temporal_analyzer.format_context_for_llm(timelines)
 
         # ============================================================
         # STEP 4: THE ANALYST - LLM Summary
         # ============================================================
+        step4_start = time.time()
         if not state.step4_complete:
             logger.info("\n[STEP 4] THE ANALYST: Generating calibrated analysis...")
 
@@ -660,11 +722,13 @@ async def run_pipeline() -> bool:
                     )
                     if parallels:
                         logger.info(f"Found {len(parallels)} historical parallels")
+                        diagnostics.diagnostics.vector_memories_searched = len(parallels)
                         parallel_context = await memory.format_parallels_for_llm(parallels)
                 except Exception as e:
                     logger.warning(f"Error searching parallels: {e}")
+                    diagnostics.diagnostics.add_warning(f"Error searching parallels: {e}")
 
-            analysis, signal_strength, is_notable = await analyze_with_llm(
+            analysis, signal_strength, is_notable, tokens_used = await analyze_with_llm(
                 llm,
                 trend_tweets,
                 historical_context=historical_context,
@@ -674,8 +738,12 @@ async def run_pipeline() -> bool:
                 top_engagement=top_engagement,
             )
 
+            diagnostics.diagnostics.llm_calls_made += 1  # Main analysis call
+            diagnostics.diagnostics.llm_tokens_used += tokens_used
+
             if not analysis:
                 logger.error("LLM analysis returned empty result")
+                diagnostics.diagnostics.add_error("LLM analysis returned empty result")
                 return False
 
             checkpoint.save_analysis(analysis, signal_strength, is_notable, top_engagement)
@@ -687,11 +755,16 @@ async def run_pipeline() -> bool:
             is_notable = state.is_notable
             top_engagement = state.top_engagement
 
+        diagnostics.diagnostics.time_step4_llm = time.time() - step4_start
+        diagnostics.diagnostics.signal_strength = signal_strength
+        diagnostics.diagnostics.notable = is_notable
+
         logger.info(f"Signal: {signal_strength.upper()}, Notable: {is_notable}")
 
         # ============================================================
         # STEP 5: THE REPORTER - Email Digest
         # ============================================================
+        step5_start = time.time()
         if not state.step5_complete:
             logger.info("\n[STEP 5] THE REPORTER: Sending email digest...")
 
@@ -705,19 +778,26 @@ async def run_pipeline() -> bool:
                 timelines=timelines,
             )
 
+            diagnostics.diagnostics.email_sent = success
+
             if success:
                 logger.info("Email sent successfully!")
             else:
                 logger.warning("Failed to send email")
+                diagnostics.diagnostics.add_error("Failed to send digest email")
 
             checkpoint.complete_step5()
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 5] Skipping (already complete)")
+            diagnostics.diagnostics.email_sent = True  # Assume it was sent in previous run
+
+        diagnostics.diagnostics.time_step5_email = time.time() - step5_start
 
         # ============================================================
         # STEP 6: STORE HISTORY
         # ============================================================
+        step6_start = time.time()
         if not state.step6_complete:
             logger.info("\n[STEP 6] Storing digest in history...")
 
@@ -743,17 +823,55 @@ async def run_pipeline() -> bool:
                     )
                     await memory.store_memory(memory_record)
                     logger.info(f"Memory stored: {memory_record.id}")
+                    diagnostics.diagnostics.vector_memories_stored = 1
                 except Exception as e:
                     logger.warning(f"Failed to store memory: {e}")
+                    diagnostics.diagnostics.add_warning(f"Failed to store memory: {e}")
 
             checkpoint.complete_step6()
         else:
             logger.info("\n[STEP 6] Skipping (already complete)")
 
+        diagnostics.diagnostics.time_step6_storage = time.time() - step6_start
+
         # ============================================================
         # COMPLETE - Clear checkpoint
         # ============================================================
         checkpoint.clear()
+
+        # ============================================================
+        # STEP 6.5: ADMIN DIAGNOSTICS - Send admin email if needed
+        # ============================================================
+        if config.smtp.admin.enabled:
+            logger.info("\n[STEP 6.5] ADMIN DIAGNOSTICS: Checking if alert needed...")
+
+            # Finalize diagnostics
+            final_diagnostics = diagnostics.finalize()
+
+            # Check if admin should be alerted
+            should_alert, alert_reason = should_send_admin_alert(final_diagnostics)
+
+            # Send admin email if alert needed or if send_on_success is enabled
+            if should_alert or config.smtp.admin.send_on_success:
+                admin_recipients = config.smtp.admin.recipients if config.smtp.admin.recipients else config.smtp.email_to
+
+                admin_success = reporter.send_admin_email(
+                    diagnostics=final_diagnostics,
+                    alert_reason=alert_reason,
+                    admin_recipients=admin_recipients,
+                )
+
+                final_diagnostics.admin_email_sent = admin_success
+
+                if admin_success:
+                    logger.info(f"Admin diagnostics email sent: {alert_reason if should_alert else 'Routine report'}")
+                else:
+                    logger.warning("Failed to send admin diagnostics email")
+            else:
+                logger.info(f"No admin alert needed: {alert_reason}")
+        else:
+            # Still finalize for logging
+            diagnostics.finalize()
 
         logger.info("\n" + "=" * 60)
         logger.info("Pipeline completed successfully!")
@@ -784,12 +902,43 @@ async def run_pipeline() -> bool:
     except KeyboardInterrupt:
         logger.info("\nInterrupted by user - progress saved to checkpoint")
         logger.info("Run again to resume from where you left off")
+
+        # Send admin alert for interruption if enabled
+        if config.smtp.admin.enabled:
+            diagnostics.diagnostics.add_error("Pipeline interrupted by user")
+            final_diagnostics = diagnostics.finalize()
+            should_alert, alert_reason = should_send_admin_alert(final_diagnostics)
+
+            if should_alert:
+                admin_recipients = config.smtp.admin.recipients if config.smtp.admin.recipients else config.smtp.email_to
+                reporter.send_admin_email(
+                    diagnostics=final_diagnostics,
+                    alert_reason="Pipeline interrupted by user",
+                    admin_recipients=admin_recipients,
+                )
+
         raise
 
     except Exception as e:
         checkpoint.set_error(str(e))
         logger.exception(f"Pipeline failed: {e}")
         logger.info("Progress saved - run again to resume")
+
+        # Send admin alert for failure
+        if config.smtp.admin.enabled:
+            diagnostics.diagnostics.add_error(f"Pipeline failed: {str(e)}")
+            final_diagnostics = diagnostics.finalize()
+
+            admin_recipients = config.smtp.admin.recipients if config.smtp.admin.recipients else config.smtp.email_to
+            try:
+                reporter.send_admin_email(
+                    diagnostics=final_diagnostics,
+                    alert_reason=f"CRITICAL: Pipeline failed - {str(e)}",
+                    admin_recipients=admin_recipients,
+                )
+            except Exception as email_error:
+                logger.error(f"Failed to send admin alert email: {email_error}")
+
         return False
 
     finally:
