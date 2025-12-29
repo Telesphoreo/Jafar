@@ -35,6 +35,7 @@ from .history import DigestHistory, calculate_signal_strength
 from .memory import create_memory_manager, MemoryManager
 from .checkpoint import CheckpointManager
 from .fact_checker import MarketFactChecker
+from .temporal_analyzer import TemporalTrendAnalyzer, TrendTimeline
 
 logger = logging.getLogger("jafar.main")
 
@@ -168,6 +169,7 @@ async def analyze_with_llm(
     historical_context: str = "",
     parallel_context: str = "",
     fact_check_context: str = "",
+    temporal_context: str = "",
     top_engagement: float = 0,
 ) -> tuple[str, str, bool]:
     """
@@ -179,6 +181,7 @@ async def analyze_with_llm(
         historical_context: Formatted string of recent digest history.
         parallel_context: Historical parallels from vector search.
         fact_check_context: Real market data for fact-checking claims.
+        temporal_context: Trend timeline analysis (consecutive days, gaps).
         top_engagement: Highest engagement score from today's trends.
 
     Returns:
@@ -192,6 +195,8 @@ async def analyze_with_llm(
     user_prompt = f"""Analyze the following Twitter/X data. Be SKEPTICAL - most days are boring.
 
 {historical_context}
+
+{temporal_context}
 
 {parallel_context}
 
@@ -585,6 +590,46 @@ async def run_pipeline() -> bool:
                 logger.warning(f"Fact checking failed (continuing without): {e}")
 
         # ============================================================
+        # STEP 3.75: TEMPORAL ANALYSIS - Track trend continuity
+        # ============================================================
+        logger.info("\n[STEP 3.75] TEMPORAL ANALYSIS: Analyzing trend timelines...")
+        temporal_analyzer = TemporalTrendAnalyzer(
+            history_db=history,
+            consecutive_threshold=config.temporal.consecutive_threshold,
+            gap_threshold_days=config.temporal.gap_threshold_days,
+        )
+
+        # Build trend_details from the scraped data
+        trend_details_for_temporal = {}
+        for trend, tweets_list in trend_tweets.items():
+            if not tweets_list:
+                continue
+
+            mentions = len(tweets_list)
+            total_eng = sum(
+                (t.likes * 1.0) + (t.retweets * 0.5) + (t.replies * 0.3)
+                for t in tweets_list if not t.is_retweet
+            )
+
+            # Find first/last seen timestamps
+            timestamps = [t.created_at for t in tweets_list if t.created_at]
+            first_seen = min(timestamps) if timestamps else datetime.now()
+            last_seen = max(timestamps) if timestamps else datetime.now()
+
+            trend_details_for_temporal[trend] = {
+                'mentions': mentions,
+                'engagement': total_eng,
+                'first_seen': first_seen,
+                'last_seen': last_seen,
+            }
+
+        # Analyze timelines for all trends
+        timelines = temporal_analyzer.analyze_all_trends(trend_details_for_temporal)
+
+        # Format temporal context for LLM
+        temporal_context = temporal_analyzer.format_context_for_llm(timelines)
+
+        # ============================================================
         # STEP 4: THE ANALYST - LLM Summary
         # ============================================================
         if not state.step4_complete:
@@ -625,6 +670,7 @@ async def run_pipeline() -> bool:
                 historical_context=historical_context,
                 parallel_context=parallel_context,
                 fact_check_context=fact_check_context,
+                temporal_context=temporal_context,
                 top_engagement=top_engagement,
             )
 
@@ -656,6 +702,7 @@ async def run_pipeline() -> bool:
                 tweet_count=total_tweets,
                 provider_info=provider_info,
                 signal_strength=signal_strength,
+                timelines=timelines,
             )
 
             if success:
@@ -681,6 +728,7 @@ async def run_pipeline() -> bool:
                 signal_strength=signal_strength,
                 top_engagement=top_engagement,
                 notable=is_notable,
+                trend_details=trend_details_for_temporal,
             )
 
             if memory:

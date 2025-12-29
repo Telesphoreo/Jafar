@@ -50,6 +50,7 @@ class EmailReporter:
         tweet_count: int,
         provider_info: str,
         signal_strength: str = "low",
+        timelines: dict = None,
     ) -> str:
         """
         Generate a clean, minimalist HTML email.
@@ -60,6 +61,7 @@ class EmailReporter:
             tweet_count: Total number of tweets analyzed.
             provider_info: LLM provider used for analysis.
             signal_strength: Signal strength rating (high/medium/low/none).
+            timelines: Dict of {trend: TrendTimeline} for temporal badges.
 
         Returns:
             HTML formatted email body.
@@ -76,11 +78,22 @@ class EmailReporter:
         signal_style = signal_styles.get(signal_strength, signal_styles["low"])
         signal_text_upper = signal_strength.upper()
 
-        # Format trends as simple tags
-        trend_tags = " ".join(
-            f'<span style="border: 1px solid #ddd; padding: 4px 10px; font-size: 12px; margin-right: 8px; display: inline-block; margin-bottom: 8px; font-family: monospace; background-color: #fff;">{trend}</span>'
-            for trend in trends
-        )
+        # Format trends as simple tags with temporal badges
+        trend_tag_list = []
+        for trend in trends:
+            # Get temporal badge if available
+            badge = ""
+            if timelines and trend in timelines:
+                timeline = timelines[trend]
+                badge = timeline.temporal_badge
+                if badge:
+                    badge = f' <span style="font-size: 11px; opacity: 0.7;">{badge}</span>'
+
+            trend_tag_list.append(
+                f'<span style="border: 1px solid #ddd; padding: 4px 10px; font-size: 12px; margin-right: 8px; display: inline-block; margin-bottom: 8px; font-family: monospace; background-color: #fff;">{trend}{badge}</span>'
+            )
+
+        trend_tags = " ".join(trend_tag_list)
 
         # HTML Formatting
         import re
@@ -232,6 +245,7 @@ Disclaimer: Not financial advice.
         tweet_count: int,
         provider_info: str = "AI",
         signal_strength: str = "low",
+        timelines: dict = None,
     ) -> bool:
         """
         Send the economic digest via email.
@@ -242,6 +256,7 @@ Disclaimer: Not financial advice.
             tweet_count: Total number of tweets analyzed.
             provider_info: Description of LLM used.
             signal_strength: Signal strength rating (high/medium/low/none).
+            timelines: Dict of {trend: TrendTimeline} for temporal badges.
 
         Returns:
             True if email was sent successfully.
@@ -267,7 +282,7 @@ Disclaimer: Not financial advice.
         # Generate both plain text and HTML versions
         text_content = self._generate_plain_text(report_content, trends, tweet_count)
         html_content = self._generate_html_report(
-            report_content, trends, tweet_count, provider_info, signal_strength
+            report_content, trends, tweet_count, provider_info, signal_strength, timelines
         )
 
         # Attach both versions (email clients will choose the best one)

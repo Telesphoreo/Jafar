@@ -253,6 +253,17 @@ class FactCheckerConfig:
 
 
 @dataclass
+class TemporalConfig:
+    """Temporal trend tracking configuration."""
+    consecutive_threshold: int = field(
+        default_factory=lambda: _get_yaml("temporal", "consecutive_threshold", 3)
+    )
+    gap_threshold_days: int = field(
+        default_factory=lambda: _get_yaml("temporal", "gap_threshold_days", 14)
+    )
+
+
+@dataclass
 class Config:
     """Main configuration container."""
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
@@ -262,6 +273,7 @@ class Config:
     app: AppConfig = field(default_factory=AppConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     fact_checker: FactCheckerConfig = field(default_factory=FactCheckerConfig)
+    temporal: TemporalConfig = field(default_factory=TemporalConfig)
 
     def setup_logging(self) -> logging.Logger:
         """Configure and return the application logger."""

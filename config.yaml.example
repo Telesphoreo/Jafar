@@ -179,6 +179,18 @@ fact_checker:
   # Allowed variance for "price at X" claims (percentage)
   price_tolerance_pct: 2.0
 
+# Temporal Trend Tracking (multi-day trend analysis)
+temporal:
+  # Number of consecutive days to flag as "developing story"
+  # Example: Set to 3 to highlight trends appearing 3+ days in a row
+  # Recommended: 3 (balances noise filtering with early detection)
+  consecutive_threshold: 3
+
+  # Gap period (in days) to consider a "new episode" vs continuation
+  # Example: Set to 14 so a trend appearing after 14+ days of silence is flagged as "recurring"
+  # Recommended: 14 (two-week gaps indicate distinct events)
+  gap_threshold_days: 14
+
 # Logging
 logging:
   # Level: DEBUG, INFO, WARNING, ERROR, CRITICAL

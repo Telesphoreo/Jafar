@@ -210,6 +210,41 @@ class DigestHistory:
             for row in rows
         ]
 
+    def get_all_recent_trends(self, days: int = 7) -> dict[str, list[dict]]:
+        """
+        Get all trends that appeared in the last N days.
+
+        Returns dict of {trend_term: [{date, mentions, engagement}, ...]}
+        Useful for finding what else was trending during the same period.
+        """
+        cutoff = datetime.now() - timedelta(days=days)
+
+        with sqlite3.connect(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT trend_term, run_date, mention_count, engagement_score
+                FROM trend_history
+                WHERE run_date >= ?
+                ORDER BY trend_term, run_date DESC
+                """,
+                (cutoff.date().isoformat(),)
+            ).fetchall()
+
+        # Group by trend term
+        trends: dict[str, list[dict]] = {}
+        for row in rows:
+            term = row['trend_term']
+            if term not in trends:
+                trends[term] = []
+            trends[term].append({
+                'date': row['run_date'],
+                'mentions': row['mention_count'],
+                'engagement': row['engagement_score'],
+            })
+
+        return trends
+
     def get_baseline_stats(self, days: int = 30) -> dict:
         """
         Calculate baseline statistics for comparison.
