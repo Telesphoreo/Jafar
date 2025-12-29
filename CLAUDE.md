@@ -75,7 +75,7 @@ systemd/
 3.5. **Fact Checker** - Fetch real market data from Yahoo Finance to verify claims
 3.75. **Temporal Analysis** - Track trend continuity (consecutive days, gaps, recurring themes)
 4. **LLM Analysis** - Generate skeptical summary with signal strength rating, cross-referencing fact-check data + temporal context
-5. **Email Report** - Send HTML digest with trend badges (🔥 Day 3, 🔁 Last seen 6mo ago, 🆕 New)
+5. **Email Report** - Send HTML digest with trend badges (Day 3, Last seen 6mo ago, New)
 6. **Memory Storage** - Store in SQLite + vector DB for future parallels
 6.5. **Admin Diagnostics** - Send optional diagnostics email with run statistics and error alerts
 

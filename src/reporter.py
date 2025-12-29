@@ -80,7 +80,7 @@ class EmailReporter:
             "none": "border-left: 4px solid #eeeeee; background-color: #ffffff; color: #888888;",
         }
         signal_style = signal_styles.get(signal_strength, signal_styles["low"])
-        signal_text_upper = signal_strength.upper()
+        signal_text = signal_strength.capitalize()
 
         # Format trends as simple tags with temporal badges
         trend_tag_list = []
@@ -120,13 +120,13 @@ class EmailReporter:
         
         <!-- Header -->
         <div style="border-bottom: 1px solid #000; padding: 30px 40px; background-color: #000; color: #fff;">
-            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; opacity: 0.8; text-transform: uppercase;">
-                JAFAR INTELLIGENCE SYSTEM
+            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; opacity: 0.8;">
+                Jafar Intelligence System
             </div>
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                     <td align="left">
-                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; text-transform: uppercase;">
+                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px;">
                             Market Digest
                         </h1>
                     </td>
@@ -139,18 +139,18 @@ class EmailReporter:
 
         <!-- Signal Banner -->
         <div style="padding: 20px 40px; {signal_style} border-bottom: 1px solid #000;">
-            <span style="font-family: monospace; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 2px;">
-                SIGNAL STRENGTH: {signal_text_upper}
+            <span style="font-family: monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px;">
+                Signal strength: {signal_text}
             </span>
         </div>
 
         <!-- Metadata Row -->
         <div style="display: flex; border-bottom: 1px solid #000; font-family: monospace; font-size: 13px; background-color: #fcfcfc;">
             <div style="padding: 15px 40px; border-right: 1px solid #000; flex: 1;">
-                ANALYZED: <strong>{tweet_count}</strong> TWEETS
+                Analyzed: <strong>{tweet_count}</strong> tweets
             </div>
             <div style="padding: 15px 40px; flex: 1;">
-                DETECTED: <strong>{len(trends)}</strong> TRENDS
+                Detected: <strong>{len(trends)}</strong> trends
             </div>
         </div>
 
@@ -187,16 +187,16 @@ class EmailReporter:
                         <p style="margin: 0 0 15px 0; font-style: italic; font-size: 14px; color: #000;">
                             "The only thing BlackRock manages better than assets is their conflict of interest."
                         </p>
-                        <p style="margin: 0; font-family: monospace; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px;">
-                            ENGINE: {provider_info.upper()} | NOT FINANCIAL ADVICE | {today}
+                        <p style="margin: 0; font-family: monospace; font-size: 11px; color: #999; letter-spacing: 1px;">
+                            Engine: {provider_info} | Not financial advice | {today}
                         </p>
                     </td>
                 </tr>
             </table>
         </div>
     </div>
-    <div style="max-width: 850px; margin: 20px auto 0; text-align: center; font-family: monospace; font-size: 10px; color: #bbb; text-transform: uppercase; letter-spacing: 2px;">
-        End of Transmission
+    <div style="max-width: 850px; margin: 20px auto 0; text-align: center; font-family: monospace; font-size: 10px; color: #bbb; letter-spacing: 2px;">
+        End of transmission
     </div>
 </body>
 </html>
@@ -224,13 +224,13 @@ class EmailReporter:
         trends_str = ", ".join(trends)
 
         return f"""
-JAFAR INTELLIGENCE SYSTEM
+Jafar Intelligence System
 Market Digest - {today}
 --------------------------------------------------------------------------------
 
-SIGNAL: DETECTED
-INPUTS: {tweet_count} tweets
-TOPICS: {trends_str}
+Signal: Detected
+Inputs: {tweet_count} tweets
+Topics: {trends_str}
 
 --------------------------------------------------------------------------------
 
@@ -269,10 +269,10 @@ Disclaimer: Not financial advice.
 
         # Subject line reflects signal strength
         signal_prefix = {
-            "high": "[HIGH SIGNAL]",
-            "medium": "[MEDIUM]",
+            "high": "[High signal]",
+            "medium": "[Medium]",
             "low": "",
-            "none": "[QUIET DAY]",
+            "none": "[Quiet day]",
         }.get(signal_strength, "")
 
         subject = f"{signal_prefix} Jafar Market Digest - {today}".strip()
@@ -372,15 +372,15 @@ Disclaimer: Not financial advice.
 
         # Determine status styling
         if diagnostics.has_critical_errors:
-            status_text = "CRITICAL ERROR"
+            status_text = "Critical error"
             status_color = "#ff0000"
             status_bg = "#fff0f0"
         elif diagnostics.has_warnings:
-            status_text = "WARNING"
+            status_text = "Warning"
             status_color = "#ff8800"
             status_bg = "#fff8f0"
         else:
-            status_text = "OPERATIONAL"
+            status_text = "Operational"
             status_color = "#00aa00"
             status_bg = "#f0fff0"
 
@@ -390,7 +390,7 @@ Disclaimer: Not financial advice.
             errors_list = "".join(f"<li style='margin: 5px 0; font-family: monospace; font-size: 13px; color: #c00;'>{e}</li>" for e in diagnostics.errors)
             errors_html = f"""
             <div style="margin: 20px 0; padding: 20px; background-color: #fff5f5; border-left: 4px solid #c00;">
-                <div style="font-weight: bold; margin-bottom: 10px; color: #c00;">ERRORS DETECTED:</div>
+                <div style="font-weight: bold; margin-bottom: 10px; color: #c00;">Errors detected:</div>
                 <ul style="margin: 0; padding-left: 20px;">
                     {errors_list}
                 </ul>
@@ -402,7 +402,7 @@ Disclaimer: Not financial advice.
             warnings_list = "".join(f"<li style='margin: 5px 0; font-family: monospace; font-size: 13px; color: #c80;'>{w}</li>" for w in diagnostics.warnings)
             warnings_html = f"""
             <div style="margin: 20px 0; padding: 20px; background-color: #fffef5; border-left: 4px solid #c80;">
-                <div style="font-weight: bold; margin-bottom: 10px; color: #c80;">WARNINGS:</div>
+                <div style="font-weight: bold; margin-bottom: 10px; color: #c80;">Warnings:</div>
                 <ul style="margin: 0; padding-left: 20px;">
                     {warnings_list}
                 </ul>
@@ -422,13 +422,13 @@ Disclaimer: Not financial advice.
 
         <!-- Header -->
         <div style="border-bottom: 1px solid #000; padding: 30px 40px; background-color: #000; color: #fff;">
-            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; opacity: 0.8; text-transform: uppercase;">
-                JAFAR ADMIN DIAGNOSTICS
+            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; opacity: 0.8;">
+                Jafar Admin Diagnostics
             </div>
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                     <td align="left">
-                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; text-transform: uppercase;">
+                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px;">
                             System Report
                         </h1>
                     </td>
@@ -441,8 +441,8 @@ Disclaimer: Not financial advice.
 
         <!-- Status Banner -->
         <div style="padding: 20px 40px; background-color: {status_bg}; border-bottom: 1px solid #000; border-left: 4px solid {status_color};">
-            <span style="font-family: monospace; font-weight: bold; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; color: {status_color};">
-                STATUS: {status_text}
+            <span style="font-family: monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px; color: {status_color};">
+                Status: {status_text}
             </span>
             {f'<div style="margin-top: 10px; font-size: 13px; color: #333;">{alert_reason}</div>' if alert_reason else ''}
         </div>
@@ -594,8 +594,8 @@ Disclaimer: Not financial advice.
 
         <!-- Footer -->
         <div style="border-top: 1px solid #000; padding: 30px 40px; font-size: 13px; color: #444; background-color: #fafafa;">
-            <p style="margin: 0; font-family: monospace; font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 1px;">
-                JAFAR ADMIN DIAGNOSTICS | {today}
+            <p style="margin: 0; font-family: monospace; font-size: 11px; color: #999; letter-spacing: 1px;">
+                Jafar Admin Diagnostics | {today}
             </p>
         </div>
     </div>
@@ -626,11 +626,11 @@ Disclaimer: Not financial advice.
 
         # Subject line reflects status
         if diagnostics.has_critical_errors:
-            prefix = "[CRITICAL]"
+            prefix = "[Critical]"
         elif diagnostics.has_warnings:
-            prefix = "[WARNING]"
+            prefix = "[Warning]"
         else:
-            prefix = "[INFO]"
+            prefix = "[Info]"
 
         subject = f"{prefix} Jafar Admin Diagnostics - {today}"
 
@@ -645,18 +645,18 @@ Disclaimer: Not financial advice.
 
         # Simple plain text version
         text_content = f"""
-JAFAR ADMIN DIAGNOSTICS
+Jafar Admin Diagnostics
 {today}
 
-Status: {diagnostics.has_critical_errors and 'CRITICAL ERROR' or diagnostics.has_warnings and 'WARNING' or 'OPERATIONAL'}
-{alert_reason and f'Alert Reason: {alert_reason}' or ''}
+Status: {diagnostics.has_critical_errors and 'Critical error' or diagnostics.has_warnings and 'Warning' or 'Operational'}
+{alert_reason and f'Alert reason: {alert_reason}' or ''}
 
 Run ID: {diagnostics.run_id}
 Duration: {diagnostics.duration_formatted}
-Total Tweets: {diagnostics.total_tweets}
-Signal Strength: {diagnostics.signal_strength.upper()}
+Total tweets: {diagnostics.total_tweets}
+Signal strength: {diagnostics.signal_strength.capitalize()}
 
-Twitter Accounts: {diagnostics.twitter_accounts_active}/{diagnostics.twitter_accounts_total} active
+Twitter accounts: {diagnostics.twitter_accounts_active}/{diagnostics.twitter_accounts_total} active
 
 See HTML version for full details.
 """

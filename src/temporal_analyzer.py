@@ -60,17 +60,17 @@ class TrendTimeline:
     def temporal_badge(self) -> str:
         """Generate display badge for trend timeline."""
         if self.is_new:
-            return "🆕 New"
+            return "New"
         elif self.consecutive_days >= 3:
-            return f"🔥 Day {self.consecutive_days}"
+            return f"Day {self.consecutive_days}"
         elif self.is_recurring:
             if self.days_since_last >= 180:  # 6+ months
                 months = self.days_since_last // 30
-                return f"🔁 Last seen {months}mo ago"
+                return f"Last seen {months}mo ago"
             else:
-                return f"🔁 Last seen {self.days_since_last}d ago"
+                return f"Last seen {self.days_since_last}d ago"
         elif self.consecutive_days == 2:
-            return "📈 Day 2"
+            return "Day 2"
         else:
             return ""
 
@@ -95,15 +95,15 @@ class TrendTimeline:
         lines = []
 
         if self.is_new:
-            lines.append(f"NEW TREND: First appearance in database")
+            lines.append(f"New trend: First appearance in database")
         elif self.is_continuing:
-            lines.append(f"DEVELOPING STORY: Day {self.consecutive_days} of consecutive trending")
+            lines.append(f"Developing story: Day {self.consecutive_days} of consecutive trending")
             lines.append(f"Velocity: {self.trend_velocity}")
             if self.previous_mentions:
                 mention_history = ", ".join(str(m) for m in self.previous_mentions[:5])
                 lines.append(f"Recent mention history: [{mention_history}]")
         elif self.is_recurring:
-            lines.append(f"RECURRING THEME: Last seen {self.days_since_last} days ago")
+            lines.append(f"Recurring theme: Last seen {self.days_since_last} days ago")
             lines.append(f"Previous appearances: {self.total_appearances} times")
             if self.last_seen_date:
                 lines.append(f"Last active: {self.last_seen_date.strftime('%Y-%m-%d')}")
