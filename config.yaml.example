@@ -98,62 +98,56 @@ scraping:
   search_timeout: 120
 
 # Broad Search Topics
-# These topics cast a wide net to discover trending financial content.
-# The analyzer then extracts specific entities from the results.
 broad_topics:
-  # General financial Twitter communities
+  # Financial Twitter (traditional signals)
   - fintwit
-  - stock market today
-  - trading
   - markets
+  - economy
 
-  # Breaking/emerging signals
-  - breaking market
+  # CONSUMER PRICE SIGNALS (critical for inflation, spending, margins)
+  - price increase OR price hike
+  - raising prices OR price change
+  - too expensive OR can't afford
+  - pricing out OR priced out
+  - new pricing OR launch price
+
+  # SUPPLY/AVAILABILITY (shortages = pricing power)
+  - shortage OR sold out
+  - wait list OR backorder
+  - supply OR allocation
+  - in stock OR restocked
+
+  # BREAKING ECONOMIC NEWS (general discovery)
+  - breaking
   - just announced
-  - shortage OR surplus
-  - supply chain
+  - developing
 
-  # Commodities
-  - commodities
-  - futures
-  - spot price
+  # CONSUMER SPENDING BEHAVIOR (recession signals)
+  - consumer spending OR retail sales
+  - cutting back OR tightening budget
+  - splurging OR treating myself
+  - worth it OR not worth it
 
-  # Options flow - often leads price
-  - unusual volume
-  - options flow
-  - dark pool
-  - whale alert
+  # EMPLOYMENT/WAGES (income side of economy)
+  - hiring OR layoffs
+  - pay cut OR pay raise
+  - wage OR salary
 
-  # Sector rotation signals
-  - sector rotation
-  - money flowing
-  - outperform OR underperform
+  # COST OF LIVING (broad inflation signals)
+  - inflation OR cost of living
+  - groceries OR grocery prices
+  - gas prices OR energy costs
+  - rent OR housing costs
 
-  # Macro signals
-  - inflation data
-  - yield curve
-  - dollar index
+  # PRODUCT LAUNCHES (reveals pricing trends, demand)
+  - launched OR released
+  - available now OR pre-order
+  - announced
 
-  # International markets
-  - asia markets
-  - europe open
-  - emerging markets
-
-  # Sentiment extremes
-  - oversold OR overbought
-  - capitulation
-  - FOMO OR panic
-
-  # Earnings/events
-  - earnings surprise
-  - guidance raised OR lowered
-  - FDA approval OR rejection
-
-  # Physical markets
-  - physical delivery
-  - warehouse inventory
-  - shipping rates
-  - freight
+  # SENTIMENT (economic confidence)
+  - worried OR concerned
+  - bullish OR bearish
+  - panic OR euphoria
 
 # Vector Memory Settings (for historical parallels)
 memory:

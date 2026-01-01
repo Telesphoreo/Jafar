@@ -42,17 +42,27 @@ import time
 logger = logging.getLogger("jafar.main")
 
 # System prompt for the LLM analyst - CALIBRATED FOR SKEPTICISM + HISTORICAL AWARENESS
-ANALYST_SYSTEM_PROMPT = """You are a skeptical, experienced financial analyst with a long memory. Your job is to separate SIGNAL from NOISE, and to recognize when history rhymes.
+ANALYST_SYSTEM_PROMPT = """You are a skeptical analyst tracking economic signals that could impact markets. Your job is to separate SIGNAL from NOISE, and to recognize when history rhymes.
+
+YOUR SCOPE: FULL ECONOMIC PICTURE
+You analyze both traditional market signals AND broader economic developments:
+- Market movements (stocks, commodities, earnings, sector rotation)
+- Consumer price changes (product launches, price hikes, affordability concerns)
+- Supply/demand imbalances (shortages, sold-out products, allocation issues)
+- Spending behavior shifts (consumers cutting back, splurging, changing preferences)
+- Employment/wage trends (layoffs, hiring, wage pressure)
+
+Example of non-obvious signal: "RTX 5090 pricing $2000 → $5000" reveals NVIDIA pricing power, consumer GPU affordability crisis, AI hardware cost inflation, discretionary spending pressure.
 
 CRITICAL MINDSET:
-- Most days are BORING. Normal market chatter is not news.
+- Most days are BORING. Normal discussion is not news.
 - Your default assumption should be "nothing unusual today" unless data proves otherwise.
-- A seasoned trader would roll their eyes at hype. Channel that energy.
-- Just because people are discussing something doesn't mean it matters.
-- Engagement metrics can be gamed. Be skeptical of viral content.
+- Be skeptical of hype. Just because people are discussing something doesn't mean it matters.
+- Engagement metrics can be gamed. Look for organic, diverse discussion.
 
 WHAT ACTUALLY MATTERS (rare):
-- Genuine supply/demand shocks (not just people talking about them)
+- Genuine price shocks (not just people complaining - widespread, verified price changes)
+- Supply/demand imbalances (actual shortages, not just speculation)
 - Unusual volume/engagement that's 5-10x normal levels
 - Multiple independent sources converging on the same narrative
 - Information that ISN'T already priced in by mainstream news
@@ -64,10 +74,10 @@ WHAT DOESN'T MATTER (common):
 - Individual complaints without broader pattern
 
 SENTIMENT ANALYSIS NUANCE:
-- Background noise: Some level of bullish/bearish/inflation talk is ALWAYS present
-- Signal: UNUSUAL SPIKES in sentiment (3x+ normal bearish chatter = meaningful fear signal)
+- Background noise: Some level of price complaints/inflation talk is ALWAYS present
+- Signal: UNUSUAL SPIKES in sentiment (3x+ normal "can't afford" chatter = meaningful consumer pressure)
 - The truth is often between Twitter doom and actual market reality
-- If everyone's suddenly talking about "risk" or "crash", that aggregate mood matters
+- If everyone's suddenly talking about "too expensive" or "sold out everywhere", that aggregate pattern matters
 - Compare sentiment intensity to what you'd expect on a normal day
 
 FACT-CHECKING PROTOCOL:
@@ -143,7 +153,7 @@ def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
     Returns:
         Formatted string for LLM analysis.
     """
-    parts = ["# Twitter/X Economic Sentiment Data\n"]
+    parts = ["# Twitter/X Economic Analysis\n"]
     parts.append(f"Collected on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
 
     for trend, tweets in trend_tweets.items():
@@ -166,13 +176,13 @@ def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
 
 
 async def analyze_with_llm(
-    llm: LLMProvider,
-    trend_tweets: dict[str, list[ScrapedTweet]],
-    historical_context: str = "",
-    parallel_context: str = "",
-    fact_check_context: str = "",
-    temporal_context: str = "",
-    top_engagement: float = 0,
+        llm: LLMProvider,
+        trend_tweets: dict[str, list[ScrapedTweet]],
+        historical_context: str = "",
+        parallel_context: str = "",
+        fact_check_context: str = "",
+        temporal_context: str = "",
+        top_engagement: float = 0,
 ) -> tuple[str, str, bool, int]:
     """
     Use the LLM to generate a CALIBRATED sentiment analysis.
@@ -263,8 +273,8 @@ Remember: Your job is to FILTER, not to HYPE. A good analyst knows when to say "
 
 
 async def llm_filter_trends(
-    llm: LLMProvider,
-    candidates: list[str],
+        llm: LLMProvider,
+        candidates: list[str],
 ) -> list[str]:
     """
     Use LLM to filter trend candidates, keeping only actionable financial signals.
@@ -285,35 +295,33 @@ async def llm_filter_trends(
     # Format candidates for the prompt
     candidates_str = "\n".join(f"- {c}" for c in candidates)
 
-    prompt = f"""Review these trend candidates extracted from financial Twitter. Filter out generic noise while keeping meaningful market signals AND sentiment indicators.
+    prompt = f"""Review these trend candidates. Filter out generic noise while keeping meaningful signals.
 
 CANDIDATES:
 {candidates_str}
 
 KEEP terms that are:
 - Specific assets, tickers, or commodities (e.g., "Silver", "$NVDA", "Uranium")
-- Concrete market events (e.g., "Short Squeeze", "Margin Call", "Earnings Miss")
-- Economic indicators (e.g., "Inventories", "Payrolls", "CPI")
-- Specific companies or sectors experiencing notable activity
-- Market sentiment indicators that reveal crowd mood (e.g., "Risk", "Demand", "Buyers", "Selloff", "Panic", "Euphoria")
-- Supply chain / infrastructure developments (e.g., "Shortage", "Allocation", "Orders", "Production", "Capacity") - these signal pricing power shifts
+- Market events (e.g., "Short Squeeze", "Earnings Miss", "Sector Rotation")
+- Economic indicators (e.g., "Inflation", "Wages", "Layoffs", "CPI")
+- Companies/products with notable developments (e.g., "RTX 5090", "iPhone", "Tesla")
+- Price signals (e.g., "Price Increase", "Too Expensive", "Unaffordable")
+- Supply/demand signals (e.g., "Shortage", "Sold Out", "Wait List", "Allocation")
+- Sentiment indicators (e.g., "Risk", "Demand", "Panic", "Can't Afford")
 
 REJECT terms that are:
-- Generic words with no financial meaning (e.g., "Things", "World", "Experience", "Crowd")
+- Generic words with no meaning (e.g., "Things", "World", "Experience")
 - Seasonal/holiday terms (e.g., "Christmas", "Weekend", "Birthday")
-- Common nouns that slipped through filters (e.g., "Books", "Fiction", "Chat")
-- Ambiguous words that could mean anything (e.g., "Gap" unless clearly about $GPS)
+- Common nouns unrelated to economy or markets (e.g., "Books", "Fiction", "Chat")
 
-Remember: This is SENTIMENT analysis. Aggregate mood matters. If lots of people are discussing "Risk" or "Demand", that's valuable context even if you can't directly trade it.
-
-Respond with ONLY a JSON array of terms to KEEP, like: ["Silver", "$NVDA", "Risk", "Demand"]
+Respond with ONLY a JSON array of terms to KEEP, like: ["Silver", "$NVDA", "RTX 5090", "Shortage"]
 If none are worth keeping, respond with: []"""
 
     try:
         response = await llm.generate(
             prompt=prompt,
-            system_prompt="You are a financial signal filter. Keep terms that indicate market developments, sentiment shifts, or supply/demand changes - these drive future price action even if not directly tradeable today. Respond with ONLY a JSON array, no explanation.",
-            temperature=0.3,  # Low temp for consistency
+            system_prompt="You are a signal filter. Keep terms that indicate market movements, economic developments, pricing trends, or supply/demand changes. Respond with ONLY a JSON array, no explanation.",
+            temperature=0.3,
             max_tokens=200,
         )
 
@@ -377,14 +385,16 @@ async def run_pipeline() -> bool:
     checkpoint = CheckpointManager()
 
     # Initialize diagnostics collector
-    diagnostics = DiagnosticsCollector(run_id=checkpoint.run_id if hasattr(checkpoint, 'run_id') else datetime.now().strftime("%Y%m%d_%H%M%S"))
+    diagnostics = DiagnosticsCollector(
+        run_id=checkpoint.run_id if hasattr(checkpoint, 'run_id') else datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     # Check for existing checkpoint to resume
     resuming = checkpoint.should_resume()
     if resuming:
         state = checkpoint.get_state()
         logger.info(f"Resuming from checkpoint: {state.run_id}")
-        logger.info(f"  - Step 1 (broad scraping): {'DONE' if state.step1_complete else f'{len(state.topics_completed)}/{len(state.topics_completed) + len(state.topics_remaining)} topics'}")
+        logger.info(
+            f"  - Step 1 (broad scraping): {'DONE' if state.step1_complete else f'{len(state.topics_completed)}/{len(state.topics_completed) + len(state.topics_remaining)} topics'}")
         logger.info(f"  - Step 2 (trends): {'DONE' if state.step2_complete else 'PENDING'}")
         logger.info(f"  - Step 3 (deep dive): {'DONE' if state.step3_complete else 'PENDING'}")
         logger.info(f"  - Step 4 (analysis): {'DONE' if state.step4_complete else 'PENDING'}")

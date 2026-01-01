@@ -152,21 +152,44 @@ HASHTAG_PATTERN = re.compile(r'#(\w+)')
 URL_PATTERN = re.compile(r'https?://\S+')
 MENTION_PATTERN = re.compile(r'@\w+')
 
-# Financial context indicators - if a tweet contains these, its terms are more relevant
+# Economic context indicators - if a tweet contains these, its terms are economically relevant
 FINANCIAL_CONTEXT_TERMS = {
-    "market", "trading", "stock", "price", "buy", "sell", "long", "short",
+    # Traditional market terms
+    "market", "trading", "stock", "buy", "sell", "long", "short",
     "bullish", "bearish", "rally", "crash", "earnings", "revenue", "profit",
-    "loss", "dividend", "yield", "bond", "treasury", "fed", "inflation",
+    "loss", "dividend", "yield", "bond", "treasury", "fed",
     "recession", "gdp", "commodity", "futures", "options", "puts", "calls",
     "breakout", "support", "resistance", "volume", "volatility", "etf",
     "portfolio", "hedge", "risk", "sector", "index", "dow", "nasdaq", "s&p",
     "gold", "silver", "oil", "copper", "wheat", "corn", "lumber",
 
-    # Supply chain / hardware infrastructure (critical for AI/tech shocks)
+    # CONSUMER PRICES (critical inflation/margin signals)
+    "price", "prices", "pricing", "cost", "costs", "expensive", "cheap",
+    "afford", "affordability", "msrp", "retail price", "launch price",
+    "price increase", "price hike", "price cut", "discount", "sale",
+    "inflation", "deflation", "cost of living",
+
+    # SUPPLY/DEMAND (availability = pricing power)
     "supply", "demand", "shortage", "surplus", "allocation", "backlog",
-    "production", "capacity", "capex", "margin", "margins", "gross margin",
-    "shipments", "deliveries", "orders", "inventory", "stockpile",
+    "sold out", "in stock", "available", "wait list", "backorder",
+    "production", "capacity", "inventory", "stockpile",
+
+    # CONSUMER SPENDING (recession/boom signals)
+    "spending", "sales", "revenue", "consumer", "retail",
+    "buying", "purchased", "splurge", "cutting back", "budget",
+    "worth it", "value", "deal",
+
+    # EMPLOYMENT/WAGES (income side)
+    "hiring", "layoffs", "jobs", "unemployment", "employment",
+    "wage", "wages", "salary", "pay", "raise", "pay cut",
+
+    # BUSINESS OPERATIONS (margin/profitability signals)
+    "capex", "margin", "margins", "gross margin", "operating margin",
+    "shipments", "deliveries", "orders", "guidance",
+
+    # TECH/HARDWARE (AI/semiconductor economy)
     "foundry", "wafer", "chip", "semiconductor", "gpu", "hardware",
+    "datacenter", "cloud", "infrastructure",
 }
 
 

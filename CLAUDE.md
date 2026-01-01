@@ -2,11 +2,15 @@
 
 **Jafar** - The villain to BlackRock's Aladdin.
 
-Twitter/X sentiment analysis system for discovering emerging market trends before they hit mainstream news. Uses statistical NLP analysis, real-time market data fact-checking, vector memory for historical parallels, and LLM-powered summarization.
+**CONSUMER ECONOMY SCOUT** - Not just fintwit. Discovers emerging economic signals from the full consumer economy: price changes, shortages, spending behavior, wages, AND traditional market signals.
+
+Uses statistical NLP analysis, real-time market data fact-checking, vector memory for historical parallels, and LLM-powered summarization.
 
 **Key Philosophy**:
 - Most days are boring. The system is calibrated to identify when something *actually* matters, not manufacture urgency.
-- **True organic discovery**: Broad topics are maximally general ("markets", "economy", "breaking") - NOT keyword lists. Statistical analysis + LLM filtering find what's trending, not pre-specified search terms.
+- **Scouts the full consumer economy** - RTX 5090 pricing $2000→$5000 is economic signal even if not a stock ticker. It reveals NVIDIA pricing power, consumer affordability crisis, AI hardware cost inflation.
+- **True organic discovery**: Broad topics are maximally general ("price increase", "shortage", "too expensive") - NOT keyword lists. Statistical analysis + LLM filtering find what's trending, not pre-specified search terms.
+- **Don't get blindsided** - Consumer price shocks, shortages, and spending shifts impact stocks even if they start outside traditional fintwit.
 
 ## Quick Commands
 
@@ -130,30 +134,46 @@ POSTGRES_URL=postgresql://...  # For pgvector
 
 ### Organic Discovery Philosophy
 
-**The system does NOT use keyword matching.** It casts a wide net with general queries, then uses statistical analysis to find what's actually trending.
+**The system does NOT use keyword matching.** It casts a wide net with CONSUMER ECONOMY queries, then uses statistical analysis to find what's actually trending.
+
+**Scope: CONSUMER ECONOMY, not just fintwit**
+- Consumer price changes (product launches, price hikes, "too expensive")
+- Supply/demand (shortages, sold out, wait lists, allocation)
+- Spending behavior (cutting back, splurging, affordability)
+- Employment/wages (layoffs, hiring, wage pressure)
+- Traditional market signals (earnings, commodities, stock moves)
 
 **How it works:**
-1. **Broad Topics are GENERAL** - "markets", "economy", "breaking", "shortage" - NOT "chip shortage" or "NVIDIA H200"
-2. **Statistical extraction** - spaCy NLP extracts entities, n-grams, cashtags from ALL tweets
+1. **Broad Topics are GENERAL** - "price increase", "shortage", "too expensive", "can't afford" - NOT "RTX 5090 pricing" or "GPU shortage"
+2. **Statistical extraction** - spaCy NLP extracts entities, n-grams, cashtags from ALL tweets (consumer + fintwit)
 3. **Engagement scoring** - Ranks by velocity (likes + retweets + replies) + author diversity
-4. **Financial context ratio** - % of mentions appearing alongside financial terms (65%+ threshold)
+4. **Economic context ratio** - % of mentions appearing alongside economic terms (65%+ threshold)
 5. **Cashtag co-occurrence** - % of mentions appearing with $TICKER symbols (proves financial relevance)
-6. **LLM validation** - Final filter keeps actionable signals, rejects noise
+6. **LLM validation** - Final filter keeps economic signals (tradeable OR consumer economy), rejects noise
 
-**Example:**
+**Example 1: RTX 5090 Pricing**
+- Search query: "price increase" (general)
+- Finds: Tweets about RTX 5090, iPhone, rent, groceries, subscriptions
+- Statistical analysis: "RTX 5090" has 80 mentions, 35 authors, 25,000 engagement, 68% economic context ($2000→$5000 pricing)
+- Quality filter: ✅ Passes (65%+ economic context, diverse authors)
+- LLM filter: ✅ Keeps "RTX 5090" (reveals NVIDIA pricing power, consumer GPU affordability crisis, AI hardware cost inflation)
+- Deep dive: Scrapes 50 more tweets about "RTX 5090" specifically
+- Result: Discovers consumer price shock organically, without ever searching for "RTX 5090"
+
+**Example 2: OpenAI H200 Order**
 - Search query: "shortage" (general)
-- Finds: Tweets about GPU shortage, housing shortage, oil shortage, labor shortage
-- Statistical analysis: "GPU shortage" has 50 mentions, 15 authors, 10,000 engagement, 70% financial context, 60% cashtag co-occurrence ($NVDA)
-- Quality filter: ✅ Passes (65%+ financial context, diverse authors)
-- LLM filter: ✅ Keeps "GPU shortage" (supply chain signal), rejects "housing shortage" (out of scope for fintwit)
-- Deep dive: Scrapes 50 more tweets about "GPU shortage" specifically
-- Result: Discovers OpenAI H200 order organically, without ever searching for "H200"
+- Finds: Tweets about GPU shortage, oil shortage, labor shortage
+- Statistical analysis: "GPU shortage" + "H200" co-occurrence, 50 mentions, 15 authors, 60% cashtag co-occurrence ($NVDA)
+- Quality filter: ✅ Passes
+- LLM filter: ✅ Keeps "H200", "GPU shortage" (supply chain signal affecting NVIDIA)
+- Result: Discovers datacenter hardware order organically, without searching "H200"
 
 **Why this beats keyword lists:**
 - Catches emerging signals you didn't know to search for
-- Adapts to what the market is actually discussing
+- Adapts to what the consumer economy is actually experiencing
 - No maintenance - doesn't need updates when new products/companies/issues emerge
-- True sentiment analysis - sees aggregate mood shifts
+- True economic sentiment - sees price pressure, affordability concerns, spending shifts
+- Don't get blindsided - consumer signals often precede stock market impact
 
 ### Trend Scoring
 ```python
@@ -179,7 +199,7 @@ top_trends_count: 20  →  Quality Threshold  →  LLM Filter  →  Deep Dive
 
 **Stage 2: Quality Threshold** (`passes_quality_threshold()`)
 - Requires 10+ unique authors (proves organic, not one person spamming)
-- Requires 65%+ financial context ratio (includes supply chain / infrastructure terms)
+- Requires 65%+ economic context ratio (includes consumer prices, spending, wages, supply/demand, traditional market terms)
 - For non-cashtags: requires >10% cashtag co-occurrence (proves financial relevance)
 
 **Stage 3: LLM Pre-Filter** (~500 tokens, fast)
@@ -188,8 +208,9 @@ top_trends_count: 20  →  Quality Threshold  →  LLM Filter  →  Deep Dive
 - Rejects: Christmas, Books, Fiction, Crowd, Chat
 
 **Philosophy**:
-- This is *sentiment* analysis. Aggregate mood matters. If "Risk" or "Bearish" is spiking, that's signal even if you can't trade it directly.
-- **65% threshold** allows hardware/infrastructure trends (which mix technical + financial language) vs 85% which only passed pure commodity/equity chatter
+- This scouts the **CONSUMER ECONOMY**. Aggregate patterns matter even if not directly tradeable.
+- **65% threshold** allows consumer price discussions (which mix product + economic language) vs 85% which only passed pure fintwit chatter
+- **Consumer signals matter** - "too expensive", "sold out", "can't afford" reveal pricing power, spending pressure, inflation
 - **Supply chain signals matter** - "shortage", "allocation", "orders" drive future pricing power shifts
 - The truth is often between Twitter doom and actual market reality.
 
