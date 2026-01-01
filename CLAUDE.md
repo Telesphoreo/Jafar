@@ -1,12 +1,12 @@
-# CLAUDE.md
-
 ## Project Overview
 
 **Jafar** - The villain to BlackRock's Aladdin.
 
 Twitter/X sentiment analysis system for discovering emerging market trends before they hit mainstream news. Uses statistical NLP analysis, real-time market data fact-checking, vector memory for historical parallels, and LLM-powered summarization.
 
-**Key Philosophy**: Most days are boring. The system is calibrated to identify when something *actually* matters, not manufacture urgency.
+**Key Philosophy**:
+- Most days are boring. The system is calibrated to identify when something *actually* matters, not manufacture urgency.
+- **True organic discovery**: Broad topics are maximally general ("markets", "economy", "breaking") - NOT keyword lists. Statistical analysis + LLM filtering find what's trending, not pre-specified search terms.
 
 ## Quick Commands
 
@@ -128,6 +128,33 @@ POSTGRES_URL=postgresql://...  # For pgvector
 
 ## Key Concepts
 
+### Organic Discovery Philosophy
+
+**The system does NOT use keyword matching.** It casts a wide net with general queries, then uses statistical analysis to find what's actually trending.
+
+**How it works:**
+1. **Broad Topics are GENERAL** - "markets", "economy", "breaking", "shortage" - NOT "chip shortage" or "NVIDIA H200"
+2. **Statistical extraction** - spaCy NLP extracts entities, n-grams, cashtags from ALL tweets
+3. **Engagement scoring** - Ranks by velocity (likes + retweets + replies) + author diversity
+4. **Financial context ratio** - % of mentions appearing alongside financial terms (65%+ threshold)
+5. **Cashtag co-occurrence** - % of mentions appearing with $TICKER symbols (proves financial relevance)
+6. **LLM validation** - Final filter keeps actionable signals, rejects noise
+
+**Example:**
+- Search query: "shortage" (general)
+- Finds: Tweets about GPU shortage, housing shortage, oil shortage, labor shortage
+- Statistical analysis: "GPU shortage" has 50 mentions, 15 authors, 10,000 engagement, 70% financial context, 60% cashtag co-occurrence ($NVDA)
+- Quality filter: ✅ Passes (65%+ financial context, diverse authors)
+- LLM filter: ✅ Keeps "GPU shortage" (supply chain signal), rejects "housing shortage" (out of scope for fintwit)
+- Deep dive: Scrapes 50 more tweets about "GPU shortage" specifically
+- Result: Discovers OpenAI H200 order organically, without ever searching for "H200"
+
+**Why this beats keyword lists:**
+- Catches emerging signals you didn't know to search for
+- Adapts to what the market is actually discussing
+- No maintenance - doesn't need updates when new products/companies/issues emerge
+- True sentiment analysis - sees aggregate mood shifts
+
 ### Trend Scoring
 ```python
 engagement = (likes * 1.0) + (retweets * 0.5) + (replies * 0.3)
@@ -141,28 +168,32 @@ score = (mentions * 0.3) + (engagement_weighted * 0.7)
 The system uses a funnel approach to avoid deep-diving on noise:
 
 ```
-top_trends_count: 10  →  Quality Threshold  →  LLM Filter  →  Deep Dive
-     (cast wide)            (5-7 pass)         (2-4 best)     (focused)
+top_trends_count: 20  →  Quality Threshold  →  LLM Filter  →  Deep Dive
+  (cast VERY wide)          (8-12 pass)         (3-5 best)     (focused)
 ```
 
 **Stage 1: Statistical Filter**
-- Minimum mentions and unique authors
-- Financial context ratio (% of tweets with market terms)
-- Cashtag co-occurrence (% appearing alongside $TICKER symbols)
+- Minimum 4 mentions, 3 unique authors
+- Engagement velocity scoring (likes + retweets + replies)
+- Author diversity bonus (organic vs spam)
 
 **Stage 2: Quality Threshold** (`passes_quality_threshold()`)
-- Requires 10+ unique authors
-- Requires 85%+ financial context ratio
-- For non-cashtags: requires >10% cashtag co-occurrence
+- Requires 10+ unique authors (proves organic, not one person spamming)
+- Requires 65%+ financial context ratio (includes supply chain / infrastructure terms)
+- For non-cashtags: requires >10% cashtag co-occurrence (proves financial relevance)
 
 **Stage 3: LLM Pre-Filter** (~500 tokens, fast)
-- Asks LLM: "Which are actionable signals OR meaningful sentiment indicators?"
-- Keeps: Silver, $NVDA, Uranium, Inventories, Risk, Demand, Bearish
+- Asks LLM: "Which are actionable signals OR meaningful sentiment indicators OR supply/demand shifts?"
+- Keeps: Silver, $NVDA, Uranium, Inventories, Risk, Demand, Bearish, GPU Shortage, H200
 - Rejects: Christmas, Books, Fiction, Crowd, Chat
 
-**Philosophy**: This is *sentiment* analysis. Aggregate mood matters. If "Risk" or "Bearish" is spiking, that's signal even if you can't trade it directly. The truth is often between Twitter doom and actual market reality.
+**Philosophy**:
+- This is *sentiment* analysis. Aggregate mood matters. If "Risk" or "Bearish" is spiking, that's signal even if you can't trade it directly.
+- **65% threshold** allows hardware/infrastructure trends (which mix technical + financial language) vs 85% which only passed pure commodity/equity chatter
+- **Supply chain signals matter** - "shortage", "allocation", "orders" drive future pricing power shifts
+- The truth is often between Twitter doom and actual market reality.
 
-**Why `top_trends_count: 10` is optimal**: Cast wide statistically, let the LLM pick the 2-4 best. Setting it to 5 might miss something that ranked #7 statistically but is actually the most actionable signal.
+**Why `top_trends_count: 20` is optimal**: Cast VERY wide statistically (since broad topics are now general), let quality filter narrow to 8-12, let LLM pick the best 3-5 for deep dive. With general broad topics, you need more statistical candidates to ensure signal isn't lost.
 
 ### Signal Strength
 - **HIGH**: Genuinely unusual, potential market-moving (1-2x/month)

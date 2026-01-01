@@ -296,6 +296,7 @@ KEEP terms that are:
 - Economic indicators (e.g., "Inventories", "Payrolls", "CPI")
 - Specific companies or sectors experiencing notable activity
 - Market sentiment indicators that reveal crowd mood (e.g., "Risk", "Demand", "Buyers", "Selloff", "Panic", "Euphoria")
+- Supply chain / infrastructure developments (e.g., "Shortage", "Allocation", "Orders", "Production", "Capacity") - these signal pricing power shifts
 
 REJECT terms that are:
 - Generic words with no financial meaning (e.g., "Things", "World", "Experience", "Crowd")
@@ -311,7 +312,7 @@ If none are worth keeping, respond with: []"""
     try:
         response = await llm.generate(
             prompt=prompt,
-            system_prompt="You are a financial signal filter. Be ruthless - only keep terms that a trader could actually act on. Respond with ONLY a JSON array, no explanation.",
+            system_prompt="You are a financial signal filter. Keep terms that indicate market developments, sentiment shifts, or supply/demand changes - these drive future price action even if not directly tradeable today. Respond with ONLY a JSON array, no explanation.",
             temperature=0.3,  # Low temp for consistency
             max_tokens=200,
         )

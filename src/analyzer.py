@@ -134,8 +134,9 @@ NOISE_TERMS = {
     "inc", "corp", "llc", "ltd", "co", "company", "companies", "corporation",
     "ceo", "cfo", "coo", "executive", "management", "board", "director",
 
-    # Overused tech buzzwords
-    "ai", "artificial intelligence", "chatgpt", "openai", "gpt", "machine learning",
+    # Overused tech buzzwords (REDUCED - these ARE relevant when spiking alongside hardware/supply discussion)
+    # Removed: "ai", "openai" - now conditionally allowed if high financial context
+    "chatgpt", "gpt", "machine learning",
 
     # Crypto (unless specifically wanted - can be toggled)
     "bitcoin", "btc", "ethereum", "eth", "crypto", "cryptocurrency", "blockchain",
@@ -160,6 +161,12 @@ FINANCIAL_CONTEXT_TERMS = {
     "breakout", "support", "resistance", "volume", "volatility", "etf",
     "portfolio", "hedge", "risk", "sector", "index", "dow", "nasdaq", "s&p",
     "gold", "silver", "oil", "copper", "wheat", "corn", "lumber",
+
+    # Supply chain / hardware infrastructure (critical for AI/tech shocks)
+    "supply", "demand", "shortage", "surplus", "allocation", "backlog",
+    "production", "capacity", "capex", "margin", "margins", "gross margin",
+    "shipments", "deliveries", "orders", "inventory", "stockpile",
+    "foundry", "wafer", "chip", "semiconductor", "gpu", "hardware",
 }
 
 
@@ -236,13 +243,13 @@ class DiscoveredTrend:
 
         return base_score * context_multiplier * cooccurrence_bonus
 
-    def passes_quality_threshold(self, min_authors: int = 10, min_context: float = 0.85) -> bool:
+    def passes_quality_threshold(self, min_authors: int = 10, min_context: float = 0.65) -> bool:
         """
         Check if this trend passes minimum quality requirements for deep dive.
 
         Requirements:
         - At least min_authors unique authors (default 10)
-        - At least min_context financial context ratio (default 85%)
+        - At least min_context financial context ratio (default 65% - lowered from 85% to catch hardware/infrastructure trends)
         - For non-cashtags: should have SOME cashtag co-occurrence (proves financial relevance)
         """
         # Basic thresholds
