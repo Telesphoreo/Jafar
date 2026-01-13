@@ -8,8 +8,9 @@ They charge god-knows-what per month for sentiment tools (they won't publish pri
 contractors blush). You have a mass-produced Roth IRA from Fidelity and a dream. Let's
 fucking go.
 
-A system for discovering emerging market trends from Twitter/X before they hit mainstream news. Uses statistical
-analysis, NLP, real-time market data verification, and LLM-powered summarization with semantic memory.
+Scrapes Twitter, finds what's actually trending in the consumer economy (not just fintwit), then unleashes an LLM
+with tools to verify if people are lying. The LLM can check real stock prices, search the web, and dig through
+historical data. When some Pepe avatar screams "SILVER MOONING!!!" and it's up 0.3%, we expose the grift.
 
 **Key Philosophy**: Most days are boring. This system is calibrated to tell you when something *actually* matters, not
 to manufacture urgency like Jim Cramer speed-running his thirteenth margin call of the week.
@@ -30,18 +31,39 @@ get back to you sometime between "never" and "heat death of the universe."
 
 ## Features
 
-- **Dynamic Discovery**: Finds trends you didn't know to look for (not just keyword matching like a 2008 RSS feed)
-- **Real-Time Fact Checking**: When some anonymous account with a Pepe avatar screams "SILVER IS MOONING!!!" and it's up
-  0.3%, we expose the grift
-- **Vector Memory**: Semantic search finds historical parallels - unlike fintwit influencers who recycle the same thread
-  every 6 months hoping you forgot
-- **Skeptical Analysis**: LLM is explicitly instructed to say "nothing notable today" - a concept that would bankrupt
-  CNBC and make BlackRock's [55.8% underperforming funds](https://www.yodelar.com/insights/blackrock-review) look even
-  worse
-- **Checkpoint System**: Got rate limited by Elon's clown show? Just run it again
-- **SOCKS5 Proxy Support**: For completely legitimate research purposes, officer
-- **Background Runner**: Start it, forget it, check logs whenever - like that Mandarin Duolingo streak you started after
-  your fifth Renaissance Technologies rejection letter
+- **Agentic Grift Detection**: LLM sees "SILVER MOONING!!!", calls `get_market_data("SI=F")`, discovers silver is up
+  0.3%, and writes "EXAGGERATED" in the report. Someone needs to protect you from Crypto Twitter.
+- **Deep Research**: Vague "uranium shortage" vibes? LLM searches the web for actual news. You get receipts.
+- **Consumer Economy Scout**: Finds trends you didn't know to look for. RTX 5090 price hikes are economic signals
+  even if CNBC isn't covering them yet.
+- **Vector Memory**: Finds historical parallels. Catches fintwit grifters recycling the same thread every 6 months.
+- **Skeptical by Default**: Explicitly instructed to say "nothing notable today". This would bankrupt CNBC.
+- **Checkpoint System**: Got rate limited by Elon's clown show? Just run it again.
+- **SOCKS5 Proxy Support**: For completely legitimate research purposes, officer.
+- **Background Runner**: Start it, forget it, check logs whenever - like your Mandarin Duolingo streak.
+
+## How It Works
+
+1. **Scout** - Scrapes 30+ topics from Twitter. Not just fintwit bullshit. Consumer economy: "too expensive", "sold out", "can't afford". Because an RTX 5090 price hike tells you more about inflation than any CPI print.
+
+2. **Investigator** - spaCy NLP extracts what people are actually talking about. Scores by engagement velocity and cashtag co-occurrence. Filters out the noise with a brutally honest LLM pre-filter that rejects "Christmas" and "Books" but keeps "$NVDA" and "shortage".
+
+3. **Deep Dive** - Targeted scraping for the 2-4 trends that actually matter. Not 15. Not whatever has the most likes. The ones that pass the bullshit filter.
+
+4. **The Agent** - Here's where it gets good. The LLM has tools:
+
+   | Tool | What It Does |
+   |------|--------------|
+   | `get_market_data(symbols)` | Checks real prices. Exposes the "MOONING" liars. |
+   | `search_web(query)` | Deep web research. Turns Twitter vibes into actual intelligence. |
+   | `search_historical_parallels(query)` | "This feels familiar" → finds the receipts |
+   | `get_trend_timeline(trend)` | Is this new or recycled cope from last month? |
+
+   The agent sees a claim, gets suspicious, calls the tool. If someone says silver is crashing and it's down 0.5%, that's marked EXAGGERATED. If uranium is spiking and nobody knows why, it searches the web. Maximum 5 tool calls because we're not trying to burn $50 in API costs on some nobody's pump-and-dump.
+
+5. **Reporter** - Emails you a digest so you can pretend you're a Bloomberg terminal owner without paying $24k/year.
+
+6. **Memory** - Stores everything for future parallels. Next time someone tries the same grift, we remember.
 
 ## Installation
 
@@ -104,39 +126,6 @@ at random hours, instead of a cron job that screams "I'M A BOT" at 2 PM every da
 cloudflared into oblivion. Includes automatic admin diagnostics emails so you know when your Twitter accounts get banned before
 you wonder why you haven't gotten a digest in 3 days. Because unlike Aladdin's monitoring dashboard (which probably costs
 $50k/month and requires a PhD to understand), we just email you when shit breaks.
-
-## How It Works
-
-1. **Scout** - Scrapes 30+ financial topics from Twitter
-2. **Investigator** - Extracts trending entities via spaCy NLP, scores by engagement + cashtag co-occurrence
-3. **Quality Filter** - Three-stage funnel: statistical → quality threshold → LLM validation. Because "Risk" and "Demand"
-   are not actionable signals, they're just words that appear in financial tweets
-4. **Deep Dive** - Targeted scraping for *validated* trends only (typically 2-4, not 15)
-5. **Fact Checker** - Fetches real prices from Yahoo Finance. Exposes the liars.
-6. **Analyst** - LLM generates skeptical summary with signal strength
-7. **Reporter** - Emails you a digest so you can pretend you're a Bloomberg terminal owner without paying $24k/year
-8. **Memory** - Stores everything for future historical parallel detection
-
-### The Quality Filter (Why This Matters)
-
-Most sentiment tools would deep-dive on whatever has the highest engagement. That's how you end up analyzing "Christmas"
-and "Crowd" instead of actual market signals.
-
-```
-top_trends_count: 15  →  Quality Threshold  →  LLM Filter  →  Deep Dive
-     (cast wide)            (5-7 pass)         (2-4 best)     (focused)
-```
-
-- **Statistical**: Requires minimum authors, financial context ratio, cashtag co-occurrence
-- **Quality Threshold**: 10+ authors, 85%+ financial context, cashtag co-occurrence for n-grams
-- **LLM Pre-Filter**: ~500 tokens asking "actionable signals OR sentiment indicators?"
-  - Keeps: Silver, Risk, Demand, Bearish (sentiment matters!)
-  - Rejects: Christmas, Books, Fiction, Crowd (actual noise)
-
-**Philosophy**: This is *sentiment* analysis. If everyone's suddenly bearish, that matters even if you can't trade
-"bearish" directly. The truth is often between Twitter doom and actual reality.
-
-Set `top_trends_count: 15` to cast wide, let the LLM pick the best 2-4
 
 ## Signal Strength
 
@@ -219,9 +208,10 @@ cookies.
 
 | Feature                                                          | This Project         | Aladdin                                                                                                                                                                                                     | Bloomberg               |
 |------------------------------------------------------------------|----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------|
-| Cost                                                             | ~$10/mo in API calls | More than your rent (they won't say how much because shame is a foreign concept)                                                                                                                            | $24,000/year            |
-| Twitter Sentiment                                                | Yes                  | Probably, buried under 47 layers of enterprise middleware                                                                                                                                                   | Kinda, if you squint    |
-| Will tell you "nothing matters today"                            | **Yes**              | Absolutely not. Gotta manufacture urgency to justify the invoice.                                                                                                                                           | Have you met Jim Cramer |
+| Cost                                                             | ~$10/mo in API calls | More than your rent                                                                                                                                                                                         | $24,000/year            |
+| Twitter Sentiment                                                | Yes                  | Buried under 47 layers of enterprise middleware                                                                                                                                                             | Kinda, if you squint    |
+| Will tell you "nothing matters today"                            | **Yes**              | No. Gotta manufacture urgency to justify the invoice.                                                                                                                                                       | Have you met Jim Cramer |
+| LLM that checks if people are lying                              | **Yes**              | Probably a guy named Dave who went to Wharton                                                                                                                                                               | Still using RSS         |
 | Open Source                                                      | Yes                  | Lmao                                                                                                                                                                                                        | That's adorable         |
 | Actually makes you a quant                                       | No                   | Also no, but it costs more so you can pretend                                                                                                                                                               | Still no                |
 | Got no-bid Fed contracts to buy its own ETFs with taxpayer money | No                   | [Yes](https://wallstreetonparade.com/2020/06/blackrock-is-bailing-out-its-etfs-with-fed-money-and-taxpayers-eating-losses-its-also-the-sole-manager-for-335-billion-of-federal-employees-retirement-funds/) | No                      |
