@@ -48,41 +48,60 @@ class OpenAIProvider(LLMProvider):
 
     async def generate(
         self,
-        prompt: str,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         """
         Generate a response using OpenAI's API.
 
         Args:
-            prompt: The user prompt/question.
+            prompt: The user prompt/question (string).
+            messages: List of conversation messages (alternate to prompt).
             system_prompt: Optional system prompt to set context.
             temperature: Creativity setting (0.0-1.0).
             max_tokens: Maximum tokens in response.
+            tools: Optional list of tool definitions (JSON schema).
 
         Returns:
             LLMResponse containing the generated content.
         """
         client = self._get_client()
 
-        messages: list[dict[str, str]] = []
+        if messages is None:
+            messages = []
+            if prompt:
+                messages.append({"role": "user", "content": prompt})
+
+        # Prepend system prompt if provided and not already present
         if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+            has_system = any(m.get("role") == "system" for m in messages)
+            if not has_system:
+                messages.insert(0, {"role": "system", "content": system_prompt})
 
         logger.debug(f"Sending request to OpenAI ({self._model})")
 
         try:
-            response = await client.chat.completions.create(
-                model=self._model,
-                messages=messages,  # type: ignore
-                temperature=temperature,
-                max_tokens=max_tokens,
-            )
+            kwargs = {
+                "model": self._model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
 
-            content = response.choices[0].message.content or ""
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+
+            response = await client.chat.completions.create(**kwargs)
+
+            message = response.choices[0].message
+            content = message.content or ""
+            tool_calls = message.tool_calls
+
             usage = None
             if response.usage:
                 usage = {
@@ -97,6 +116,7 @@ class OpenAIProvider(LLMProvider):
                 content=content,
                 model=response.model,
                 usage=usage,
+                tool_calls=tool_calls,
                 raw_response=response,
             )
 

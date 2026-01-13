@@ -46,19 +46,23 @@ class GoogleProvider(LLMProvider):
 
     async def generate(
         self,
-        prompt: str,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         """
         Generate a response using Google's Generative AI API.
 
         Args:
-            prompt: The user prompt/question.
+            prompt: The user prompt/question (string).
+            messages: List of conversation messages (alternate to prompt).
             system_prompt: Optional system prompt to set context.
             temperature: Creativity setting (0.0-1.0).
             max_tokens: Maximum tokens in response.
+            tools: Optional list of tool definitions.
 
         Returns:
             LLMResponse containing the generated content.
@@ -66,14 +70,58 @@ class GoogleProvider(LLMProvider):
         logger.debug(f"Sending request to Google ({self._model})")
 
         try:
-            # Build contents with system instruction if provided
-            contents = prompt
+            # Build contents
+            contents = []
+            
+            # If prompt provided, use it (simplest case)
+            if prompt and not messages:
+                contents = prompt
+            
+            # If messages provided, convert to Google format
+            elif messages:
+                # Extract system prompt if present in messages but not explicitly passed
+                for msg in messages:
+                    if msg["role"] == "system" and not system_prompt:
+                        system_prompt = msg["content"]
+                        # Don't add system message to contents for Google (it uses config)
+                        continue
+                        
+                    role = msg["role"]
+                    content = msg["content"]
+                    
+                    # Map generic roles to Google roles
+                    if role == "user":
+                        google_role = "user"
+                    elif role == "assistant":
+                        google_role = "model"
+                    elif role == "tool":
+                        google_role = "function"
+                    else:
+                        google_role = "user" # Fallback
+                        
+                    # Handle tool outputs
+                    if role == "tool":
+                        # For simplicity in this adaptation, pass as simple string if needed
+                        # But Google ideally wants specific FunctionResponse parts.
+                        # Given we are refactoring mainly for OpenAI compatibility first, and Google SDK is complex,
+                        # we'll use text injection for tool outputs in this specific "string-based" flow if needed,
+                        # OR valid types.Part object.
+                        # For now, let's treat tool output as user (or function) text message.
+                        contents.append({"role": "user", "parts": [{"text": f"Tool Output: {str(content)}"}]})
+                    else:
+                        contents.append({"role": google_role, "parts": [{"text": str(content)}]})
 
-            config = types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                system_instruction=system_prompt if system_prompt else None,
-            )
+            # Hand tools
+            config_kwargs = {
+                "temperature": temperature,
+                "max_output_tokens": max_tokens,
+                "system_instruction": system_prompt if system_prompt else None,
+            }
+            
+            if tools:
+                config_kwargs["tools"] = tools
+
+            config = types.GenerateContentConfig(**config_kwargs)
 
             # Use async generation
             response = await self._client.aio.models.generate_content(
@@ -83,6 +131,21 @@ class GoogleProvider(LLMProvider):
             )
 
             content = response.text if response.text else ""
+            
+            # Extract tool calls if present
+            tool_calls = None
+            if response.function_calls:
+                 # Standardize to resemble OpenAI's format for easier consumption
+                 tool_calls = []
+                 for fc in response.function_calls:
+                     tool_calls.append({
+                         "function": {
+                             "name": fc.name,
+                             "arguments": fc.args
+                         },
+                         "id": "call_" + fc.name, # Google doesn't provide call IDs in the same way, synthesize one
+                         "type": "function"
+                     })
 
             # Extract usage metadata if available
             usage = None
@@ -99,6 +162,7 @@ class GoogleProvider(LLMProvider):
                 content=content,
                 model=self._model,
                 usage=usage,
+                tool_calls=tool_calls,
                 raw_response=response,
             )
 

@@ -16,6 +16,7 @@ class LLMResponse:
     content: str
     model: str
     usage: dict[str, int] | None = None
+    tool_calls: list[Any] | None = None
     raw_response: Any = None
 
     @property
@@ -48,19 +49,23 @@ class LLMProvider(ABC):
     @abstractmethod
     async def generate(
         self,
-        prompt: str,
+        prompt: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
         system_prompt: str | None = None,
         temperature: float = 0.7,
         max_tokens: int = 2000,
+        tools: list[dict] | None = None,
     ) -> LLMResponse:
         """
         Generate a response from the LLM.
 
         Args:
-            prompt: The user prompt/question.
+            prompt: The user prompt/question (string).
+            messages: List of conversation messages (alternate to prompt).
             system_prompt: Optional system prompt to set context.
             temperature: Creativity setting (0.0-1.0).
             max_tokens: Maximum tokens in response.
+            tools: Optional list of tool definitions (schema depends on provider).
 
         Returns:
             LLMResponse containing the generated content.

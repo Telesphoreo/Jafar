@@ -37,6 +37,7 @@ from .checkpoint import CheckpointManager
 from .fact_checker import MarketFactChecker
 from .temporal_analyzer import TemporalTrendAnalyzer, TrendTimeline
 from .diagnostics import DiagnosticsCollector, rotate_logs, should_send_admin_alert
+from .tools import ToolRegistry
 import time
 
 logger = logging.getLogger("jafar.main")
@@ -179,40 +180,50 @@ async def analyze_with_llm(
         llm: LLMProvider,
         trend_tweets: dict[str, list[ScrapedTweet]],
         historical_context: str = "",
-        parallel_context: str = "",
-        fact_check_context: str = "",
         temporal_context: str = "",
         top_engagement: float = 0,
+        fact_checker: MarketFactChecker | None = None,
+        memory: MemoryManager | None = None,
+        temporal_analyzer: TemporalTrendAnalyzer | None = None,
+        timelines: dict[str, TrendTimeline] | None = None,
 ) -> tuple[str, str, bool, int]:
     """
-    Use the LLM to generate a CALIBRATED sentiment analysis.
-
-    Args:
-        llm: The LLM provider to use.
-        trend_tweets: Dictionary mapping trends to their tweets.
-        historical_context: Formatted string of recent digest history.
-        parallel_context: Historical parallels from vector search.
-        fact_check_context: Real market data for fact-checking claims.
-        temporal_context: Trend timeline analysis (consecutive days, gaps).
-        top_engagement: Highest engagement score from today's trends.
-
-    Returns:
-        Tuple of (analysis_text, signal_strength, is_notable, token_count).
+    Use the LLM to generate a CALIBRATED sentiment analysis using an agentic loop.
     """
     logger.info(f"Generating analysis with {llm.provider_name} ({llm.model_name})")
 
+    # Initialize generic tools
+    tools_registry = ToolRegistry(
+        fact_checker=fact_checker,
+        memory=memory,
+        temporal_analyzer=temporal_analyzer,
+        trend_timelines=timelines,
+        enable_web_search=True, # Enable Deep Research
+    )
+    tools = tools_registry.get_definitions()
+
     # Format the data for the LLM
     data_prompt = format_tweets_for_llm(trend_tweets)
+
+    system_prompt = ANALYST_SYSTEM_PROMPT + """
+
+TOOL USE & RESEARCH INSTRUCTIONS:
+- You have access to tools to fetch REAL market data, historical parallels, and SEARCH THE WEB.
+- **Verification**: ALWAYS check `get_market_data` if tweets make specific price/volume claims.
+- **Deep Research**: Use `search_web` to verify breaking news, find reasons for trends, or check details not in the tweets.
+    - Example: "uranium shortage" -> `search_web("uranium supply deficit 2025 news")`
+- **SAFEGUARDS (CRITICAL)**:
+    - **NO RABBIT HOLES**: Do not search endlessly. If 1-2 searches don't yield results, stop and report "Unverified".
+    - **Context Limit**: Keep your query specific. Don't ask generic questions like "what is happening around the world".
+    - **Stop Condition**: You have a maximum of 5 turns. Use them wisely.
+- Compare sentiment to real data. If sentiment says "CRASHING" but data says -0.5%, that's an exaggeration.
+"""
 
     user_prompt = f"""Analyze the following Twitter/X data. Be SKEPTICAL - most days are boring.
 
 {historical_context}
 
 {temporal_context}
-
-{parallel_context}
-
-{fact_check_context}
 
 ## Today's Data
 Top engagement score: {top_engagement:.0f}
@@ -241,35 +252,84 @@ OR "No meaningful historical parallels identified" - this is a valid and often c
 
 Remember: Your job is to FILTER, not to HYPE. A good analyst knows when to say "pass"."""
 
-    try:
-        response = await llm.generate(
-            prompt=user_prompt,
-            system_prompt=ANALYST_SYSTEM_PROMPT,
-            temperature=0.7,
-            max_tokens=2000,
-        )
-        logger.info(f"Analysis generated ({response.token_count} tokens used)")
+    messages = [{"role": "user", "content": user_prompt}]
+    
+    total_tokens = 0
+    max_turns = 5
+    
+    for turn in range(max_turns):
+        try:
+            logger.info(f"LLM Agent Turn {turn + 1}/{max_turns}")
+            response = await llm.generate(
+                messages=messages,
+                system_prompt=system_prompt,
+                temperature=0.7,
+                max_tokens=2000,
+                tools=tools,
+            )
+            
+            total_tokens += response.token_count
+            
+            # Append assistant response to history
+            messages.append({"role": "assistant", "content": response.content})
+            
+            # Handle tool calls
+            if response.tool_calls:
+                # Add tool calls to messages (OpenAI requires this if we want to reply with tool outputs)
+                if hasattr(response, 'tool_calls') and response.tool_calls:
+                     messages[-1]["tool_calls"] = response.tool_calls
+                
+                for tool_call in response.tool_calls:
+                     # Parse function call
+                     function_name = tool_call.function.name
+                     arguments = {}
+                     try:
+                         import json
+                         arguments = json.loads(tool_call.function.arguments)
+                     except Exception:
+                         pass
+                     
+                     call_id = tool_call.id
+                     
+                     # Execute tool
+                     tool_output = await tools_registry.execute(function_name, arguments)
+                     
+                     # Append tool output to messages
+                     messages.append({
+                         "role": "tool", 
+                         "content": tool_output,
+                         "tool_call_id": call_id,
+                         "name": function_name
+                     })
+                
+                # Continue loop to let LLM process tool outputs
+                continue
+            
+            # If no tool calls, this is the final answer
+            content = response.content
+            
+            # Parse signal strength
+            signal_strength = "low"  # default
+            is_notable = False
 
-        # Parse signal strength from response
-        content = response.content
-        signal_strength = "low"  # default
-        is_notable = False
+            content_upper = content.upper()
+            if "**SIGNAL STRENGTH**: HIGH" in content_upper or "SIGNAL STRENGTH: HIGH" in content_upper:
+                signal_strength = "high"
+                is_notable = True
+            elif "**SIGNAL STRENGTH**: MEDIUM" in content_upper or "SIGNAL STRENGTH: MEDIUM" in content_upper:
+                signal_strength = "medium"
+            elif "**SIGNAL STRENGTH**: NONE" in content_upper or "SIGNAL STRENGTH: NONE" in content_upper:
+                signal_strength = "none"
 
-        content_upper = content.upper()
-        if "**SIGNAL STRENGTH**: HIGH" in content_upper or "SIGNAL STRENGTH: HIGH" in content_upper:
-            signal_strength = "high"
-            is_notable = True
-        elif "**SIGNAL STRENGTH**: MEDIUM" in content_upper or "SIGNAL STRENGTH: MEDIUM" in content_upper:
-            signal_strength = "medium"
-        elif "**SIGNAL STRENGTH**: NONE" in content_upper or "SIGNAL STRENGTH: NONE" in content_upper:
-            signal_strength = "none"
+            logger.info(f"Signal strength: {signal_strength.upper()}, Notable: {is_notable}")
+            return content, signal_strength, is_notable, total_tokens
+            
+        except Exception as e:
+            logger.error(f"LLM agent loop failed: {e}")
+            raise
 
-        logger.info(f"Signal strength: {signal_strength.upper()}, Notable: {is_notable}")
-        return content, signal_strength, is_notable, response.token_count
-
-    except Exception as e:
-        logger.error(f"LLM analysis failed: {e}")
-        raise
+    # If loop exhausted without final answer (should be rare)
+    return "Analysis incomplete due to step limit.", "low", False, total_tokens
 
 
 async def llm_filter_trends(
@@ -630,33 +690,15 @@ async def run_pipeline() -> bool:
         logger.info(f"Total trend tweets: {total_tweets}")
 
         # ============================================================
-        # STEP 3.5: THE FACT CHECKER - Market Data Verification
+        # STEP 3.5: THE FACT CHECKER - INIT ONLY (Tool Usage)
         # ============================================================
-        fact_check_context = ""
+        fact_checker = None
         if config.fact_checker.enabled:
-            logger.info("\n[STEP 3.5] THE FACT CHECKER: Verifying market claims...")
-            try:
-                fact_checker = MarketFactChecker(
-                    cache_ttl_minutes=config.fact_checker.cache_ttl_minutes,
-                    price_tolerance_pct=config.fact_checker.price_tolerance_pct,
-                )
-
-                # Extract symbols from discovered trends
-                symbols = fact_checker.extract_symbols_from_trends(trends)
-                logger.info(f"Extracted {len(symbols)} market symbols from trends")
-
-                # Fetch real market data
-                market_data = await fact_checker.fetch_market_data(symbols)
-                logger.info(f"Fetched market data for {len(market_data)} symbols")
-
-                diagnostics.diagnostics.fact_checks_performed = len(market_data)
-
-                # Format for LLM context
-                fact_check_context = fact_checker.format_for_llm(market_data, trends)
-
-            except Exception as e:
-                logger.warning(f"Fact checking failed (continuing without): {e}")
-                diagnostics.diagnostics.add_warning(f"Fact checking failed: {e}")
+            logger.info("\n[STEP 3.5] THE FACT CHECKER: Initializing for LLM tool use...")
+            fact_checker = MarketFactChecker(
+                cache_ttl_minutes=config.fact_checker.cache_ttl_minutes,
+                price_tolerance_pct=config.fact_checker.price_tolerance_pct,
+            )
 
         # ============================================================
         # STEP 3.75: TEMPORAL ANALYSIS - Track trend continuity
@@ -720,34 +762,16 @@ async def run_pipeline() -> bool:
 
             logger.info(f"Top engagement: {top_engagement:.0f} (avg: {baseline.get('avg_top_engagement', 0):.0f})")
 
-            # Search for historical parallels
-            parallel_context = ""
-            if memory:
-                try:
-                    parallels = await memory.find_parallels(
-                        trends=trends,
-                        themes=trends,
-                        sentiment="unknown",
-                        signal_strength="unknown",
-                        limit=5,
-                        min_similarity=config.memory.min_similarity,
-                    )
-                    if parallels:
-                        logger.info(f"Found {len(parallels)} historical parallels")
-                        diagnostics.diagnostics.vector_memories_searched = len(parallels)
-                        parallel_context = await memory.format_parallels_for_llm(parallels)
-                except Exception as e:
-                    logger.warning(f"Error searching parallels: {e}")
-                    diagnostics.diagnostics.add_warning(f"Error searching parallels: {e}")
-
             analysis, signal_strength, is_notable, tokens_used = await analyze_with_llm(
                 llm,
                 trend_tweets,
                 historical_context=historical_context,
-                parallel_context=parallel_context,
-                fact_check_context=fact_check_context,
                 temporal_context=temporal_context,
                 top_engagement=top_engagement,
+                fact_checker=fact_checker,
+                memory=memory,
+                temporal_analyzer=temporal_analyzer,
+                timelines=timelines,
             )
 
             diagnostics.diagnostics.llm_calls_made += 1  # Main analysis call
