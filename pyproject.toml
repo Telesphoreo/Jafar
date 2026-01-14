@@ -16,7 +16,7 @@ dependencies = [
     "socksio",
     "asyncpg",
     "yfinance",
-    "duckduckgo-search",
+    "ddgs",
 ]
 
 [project.optional-dependencies]
