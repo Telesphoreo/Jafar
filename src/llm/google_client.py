@@ -119,7 +119,23 @@ class GoogleProvider(LLMProvider):
             }
             
             if tools:
-                config_kwargs["tools"] = tools
+                # Transform OpenAI-style tools to Google GenAI format
+                google_tools = []
+                function_declarations = []
+                
+                for tool in tools:
+                    if tool.get("type") == "function":
+                        func_def = tool.get("function", {})
+                        # Ensure parameters are present even if empty, as Google might strictly require valid schema
+                        if "parameters" not in func_def:
+                            func_def["parameters"] = {"type": "object", "properties": {}}
+                        function_declarations.append(func_def)
+                
+                if function_declarations:
+                    # Google GenAI expects a list of Tool objects (or dicts), 
+                    # where one Tool can contain multiple function declarations.
+                    google_tools.append({"function_declarations": function_declarations})
+                    config_kwargs["tools"] = google_tools
 
             config = types.GenerateContentConfig(**config_kwargs)
 
