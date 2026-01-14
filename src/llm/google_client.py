@@ -152,16 +152,24 @@ class GoogleProvider(LLMProvider):
             tool_calls = None
             if response.function_calls:
                  # Standardize to resemble OpenAI's format for easier consumption
+                 from types import SimpleNamespace
+                 import json
+                 
                  tool_calls = []
                  for fc in response.function_calls:
-                     tool_calls.append({
-                         "function": {
-                             "name": fc.name,
-                             "arguments": fc.args
-                         },
-                         "id": "call_" + fc.name, # Google doesn't provide call IDs in the same way, synthesize one
-                         "type": "function"
-                     })
+                     # parsed arguments are usually a dict in google-genai, but main.py expects a JSON string
+                     args_str = json.dumps(fc.args) if fc.args else "{}"
+                     
+                     function_obj = SimpleNamespace(
+                         name=fc.name,
+                         arguments=args_str
+                     )
+                     
+                     tool_calls.append(SimpleNamespace(
+                         function=function_obj,
+                         id="call_" + fc.name, # Google doesn't provide call IDs in the same way, synthesize one
+                         type="function"
+                     ))
 
             # Extract usage metadata if available
             usage = None
