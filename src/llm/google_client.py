@@ -4,6 +4,7 @@ Google Generative AI (Gemini) LLM Provider Implementation.
 Uses the new google-genai package (replaces deprecated google-generativeai).
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -13,6 +14,29 @@ from google.genai import types
 from .base import LLMProvider, LLMResponse
 
 logger = logging.getLogger("jafar.llm.google")
+
+# Retry configuration for transient errors
+MAX_RETRIES = 5
+BASE_DELAY = 2.0  # seconds
+MAX_DELAY = 60.0  # seconds
+
+
+def _is_retryable_error(error: Exception) -> bool:
+    """Check if an error is transient and worth retrying."""
+    error_str = str(error).lower()
+    # Check for common transient error patterns
+    retryable_patterns = [
+        "503",
+        "overloaded",
+        "unavailable",
+        "resource exhausted",
+        "rate limit",
+        "quota exceeded",
+        "timeout",
+        "connection",
+        "temporarily",
+    ]
+    return any(pattern in error_str for pattern in retryable_patterns)
 
 
 class GoogleProvider(LLMProvider):
@@ -79,37 +103,77 @@ class GoogleProvider(LLMProvider):
             
             # If messages provided, convert to Google format
             elif messages:
-                # Extract system prompt if present in messages but not explicitly passed
+                # Collect function responses to batch them after the model message
+                pending_function_responses = []
+
                 for msg in messages:
                     if msg["role"] == "system" and not system_prompt:
                         system_prompt = msg["content"]
-                        # Don't add system message to contents for Google (it uses config)
                         continue
-                        
+
                     role = msg["role"]
                     content = msg["content"]
-                    
-                    # Map generic roles to Google roles
+
                     if role == "user":
-                        google_role = "user"
+                        # Flush any pending function responses first
+                        if pending_function_responses:
+                            contents.append({
+                                "role": "user",
+                                "parts": pending_function_responses
+                            })
+                            pending_function_responses = []
+                        contents.append({"role": "user", "parts": [{"text": str(content)}]})
+
                     elif role == "assistant":
-                        google_role = "model"
+                        # Flush any pending function responses first
+                        if pending_function_responses:
+                            contents.append({
+                                "role": "user",
+                                "parts": pending_function_responses
+                            })
+                            pending_function_responses = []
+
+                        # Build model message parts
+                        parts = []
+
+                        # Add text content if present (may be empty when model only calls tools)
+                        if content:
+                            parts.append({"text": str(content)})
+
+                        # Add function calls if present
+                        if "tool_calls" in msg and msg["tool_calls"]:
+                            for tc in msg["tool_calls"]:
+                                import json
+                                args = tc.function.arguments
+                                if isinstance(args, str):
+                                    args = json.loads(args) if args else {}
+                                parts.append({
+                                    "function_call": {
+                                        "name": tc.function.name,
+                                        "args": args
+                                    }
+                                })
+
+                        # Only add if we have parts
+                        if parts:
+                            contents.append({"role": "model", "parts": parts})
+
                     elif role == "tool":
-                        google_role = "function"
-                    else:
-                        google_role = "user" # Fallback
-                        
-                    # Handle tool outputs
-                    if role == "tool":
-                        # For simplicity in this adaptation, pass as simple string if needed
-                        # But Google ideally wants specific FunctionResponse parts.
-                        # Given we are refactoring mainly for OpenAI compatibility first, and Google SDK is complex,
-                        # we'll use text injection for tool outputs in this specific "string-based" flow if needed,
-                        # OR valid types.Part object.
-                        # For now, let's treat tool output as user (or function) text message.
-                        contents.append({"role": "user", "parts": [{"text": f"Tool Output: {str(content)}"}]})
-                    else:
-                        contents.append({"role": google_role, "parts": [{"text": str(content)}]})
+                        # Accumulate function responses - they must be in a single "user" message
+                        func_name = msg.get("name", "unknown")
+                        pending_function_responses.append({
+                            "function_response": {
+                                "name": func_name,
+                                "response": {"result": str(content)}
+                            }
+                        })
+
+                # Flush any remaining function responses
+                if pending_function_responses:
+                    contents.append({
+                        "role": "user",
+                        "parts": pending_function_responses
+                    })
 
             # Hand tools
             config_kwargs = {
@@ -139,12 +203,44 @@ class GoogleProvider(LLMProvider):
 
             config = types.GenerateContentConfig(**config_kwargs)
 
-            # Use async generation
-            response = await self._client.aio.models.generate_content(
-                model=self._model,
-                contents=contents,
-                config=config,
-            )
+            # Use async generation with retry logic for transient errors
+            response = None
+            last_error = None
+
+            for attempt in range(MAX_RETRIES):
+                try:
+                    response = await self._client.aio.models.generate_content(
+                        model=self._model,
+                        contents=contents,
+                        config=config,
+                    )
+                    break  # Success, exit retry loop
+
+                except Exception as e:
+                    last_error = e
+
+                    if not _is_retryable_error(e):
+                        # Non-retryable error, raise immediately
+                        logger.error(f"Google API error (non-retryable): {e}")
+                        raise
+
+                    if attempt < MAX_RETRIES - 1:
+                        # Calculate delay with exponential backoff + jitter
+                        delay = min(BASE_DELAY * (2 ** attempt), MAX_DELAY)
+                        logger.warning(
+                            f"Google API transient error (attempt {attempt + 1}/{MAX_RETRIES}): {e}. "
+                            f"Retrying in {delay:.1f}s..."
+                        )
+                        await asyncio.sleep(delay)
+                    else:
+                        # Final attempt failed
+                        logger.error(
+                            f"Google API error after {MAX_RETRIES} attempts: {e}"
+                        )
+                        raise
+
+            if response is None:
+                raise last_error or RuntimeError("No response received from Google API")
 
             content = response.text if response.text else ""
             
@@ -154,20 +250,24 @@ class GoogleProvider(LLMProvider):
                  # Standardize to resemble OpenAI's format for easier consumption
                  from types import SimpleNamespace
                  import json
-                 
+                 import uuid
+
                  tool_calls = []
                  for fc in response.function_calls:
                      # parsed arguments are usually a dict in google-genai, but main.py expects a JSON string
                      args_str = json.dumps(fc.args) if fc.args else "{}"
-                     
+
                      function_obj = SimpleNamespace(
                          name=fc.name,
                          arguments=args_str
                      )
-                     
+
+                     # Generate unique ID to avoid collisions when same function is called multiple times
+                     call_id = f"call_{fc.name}_{uuid.uuid4().hex[:8]}"
+
                      tool_calls.append(SimpleNamespace(
                          function=function_obj,
-                         id="call_" + fc.name, # Google doesn't provide call IDs in the same way, synthesize one
+                         id=call_id,
                          type="function"
                      ))
 
