@@ -43,12 +43,14 @@ class TestToolRegistry:
         assert registry.temporal_analyzer is mock_temporal
         assert "$NVDA" in registry.trend_timelines
 
-    def test_get_definitions_empty(self):
-        """Test getting tool definitions with no dependencies."""
+    def test_get_definitions_minimal(self):
+        """Test getting tool definitions with no dependencies (only weather available)."""
         registry = ToolRegistry(enable_web_search=False)
         definitions = registry.get_definitions()
 
-        assert definitions == []
+        # Weather tool is always available
+        assert len(definitions) == 1
+        assert definitions[0]["function"]["name"] == "get_weather_forecast"
 
     def test_get_definitions_with_web_search(self):
         """Test that web search tool is included when available."""
@@ -311,3 +313,181 @@ class TestToolDefinitionSchemas:
 
         assert timeline is not None
         assert "trend" in timeline["function"]["parameters"]["properties"]
+
+    def test_weather_forecast_schema(self):
+        """Test weather forecast tool schema."""
+        registry = ToolRegistry(enable_web_search=False)
+
+        definitions = registry.get_definitions()
+        weather = next(
+            (t for t in definitions if t["function"]["name"] == "get_weather_forecast"),
+            None,
+        )
+
+        assert weather is not None
+        assert weather["type"] == "function"
+        assert "cities" in weather["function"]["parameters"]["properties"]
+        assert weather["function"]["parameters"]["properties"]["cities"]["type"] == "array"
+        assert "cities" in weather["function"]["parameters"]["required"]
+
+
+class TestWeatherTool:
+    """Tests for weather forecast tool."""
+
+    def test_weather_tool_always_available(self):
+        """Test that weather tool is always included in definitions."""
+        registry = ToolRegistry(enable_web_search=False)
+        definitions = registry.get_definitions()
+
+        tool_names = [t["function"]["name"] for t in definitions]
+        assert "get_weather_forecast" in tool_names
+
+    @pytest.mark.asyncio
+    async def test_execute_weather_no_cities(self):
+        """Test weather tool with no cities."""
+        registry = ToolRegistry(enable_web_search=False)
+        result = await registry.execute("get_weather_forecast", {"cities": []})
+
+        assert "No cities" in result
+
+    @pytest.mark.asyncio
+    async def test_execute_weather_success(self):
+        """Test weather tool with mocked API response."""
+        registry = ToolRegistry(enable_web_search=False)
+
+        # Mock the aiohttp session
+        with patch("src.tools.aiohttp.ClientSession") as mock_session_class:
+            # Create mock responses
+            geo_data = {
+                "results": [{
+                    "name": "Houston",
+                    "admin1": "Texas",
+                    "country": "United States",
+                    "latitude": 29.76,
+                    "longitude": -95.36,
+                }]
+            }
+            weather_data = {
+                "current": {
+                    "temperature_2m": 32,
+                    "apparent_temperature": 25,
+                    "weather_code": 75,
+                    "wind_speed_10m": 15,
+                    "wind_gusts_10m": 25,
+                    "relative_humidity_2m": 85,
+                },
+                "daily": {
+                    "time": ["2024-01-26", "2024-01-27"],
+                    "weather_code": [75, 71],
+                    "temperature_2m_max": [35, 40],
+                    "temperature_2m_min": [28, 32],
+                    "precipitation_sum": [2.5, 0.5],
+                    "precipitation_probability_max": [90, 40],
+                }
+            }
+
+            # Create async context manager mock for responses
+            call_count = [0]
+
+            class MockResponse:
+                def __init__(self, data):
+                    self.status = 200
+                    self._data = data
+
+                async def json(self):
+                    return self._data
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            class MockSession:
+                def get(self, url, params=None):
+                    if "geocoding" in url:
+                        return MockResponse(geo_data)
+                    else:
+                        return MockResponse(weather_data)
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            mock_session_class.return_value = MockSession()
+
+            result = await registry.execute("get_weather_forecast", {"cities": ["Houston"]})
+
+            assert "Weather Forecast" in result
+            assert "Houston" in result
+            assert "Texas" in result
+            assert "Heavy snow" in result  # Weather code 75
+
+    @pytest.mark.asyncio
+    async def test_execute_weather_city_not_found(self):
+        """Test weather tool with unknown city."""
+        registry = ToolRegistry(enable_web_search=False)
+
+        with patch("src.tools.aiohttp.ClientSession") as mock_session_class:
+            class MockResponse:
+                def __init__(self):
+                    self.status = 200
+
+                async def json(self):
+                    return {"results": []}
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            class MockSession:
+                def get(self, url, params=None):
+                    return MockResponse()
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            mock_session_class.return_value = MockSession()
+
+            result = await registry.execute("get_weather_forecast", {"cities": ["FakeCity123"]})
+
+            assert "not found" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_weather_api_error(self):
+        """Test weather tool handles API errors gracefully."""
+        registry = ToolRegistry(enable_web_search=False)
+
+        with patch("src.tools.aiohttp.ClientSession") as mock_session_class:
+            class MockResponse:
+                def __init__(self):
+                    self.status = 500
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            class MockSession:
+                def get(self, url, params=None):
+                    return MockResponse()
+
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *args):
+                    pass
+
+            mock_session_class.return_value = MockSession()
+
+            result = await registry.execute("get_weather_forecast", {"cities": ["Houston"]})
+
+            assert "Could not geocode" in result or "Could not fetch" in result

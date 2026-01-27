@@ -14,9 +14,8 @@ Jafar is a **Consumer Economy Scout** that discovers emerging economic signals f
 ## Quick Start
 
 ```bash
-# 1. Install Dependencies
+# 1. Install Dependencies (includes spaCy model)
 uv sync
-uv run python -m spacy download en_core_web_sm
 
 # 2. Add Twitter Account
 uv run add_account.py <username> cookies.json
@@ -37,6 +36,7 @@ The system runs a **Discovery → Agentic Analysis** pipeline:
 3.  **The Agentic Loop**: The LLM Analyst reviews the top trends.
     *   *Self-Correction*: If a tweet says "Silver crashing!", the Agent calls `get_market_data("SI=F")`. If silver is -0.5%, it marks the claim as "Exaggerated".
     *   *Deep Research*: If a trend is vague ("Uranium spikes"), the Agent calls `search_web("uranium spot price news")` to find the cause.
+    *   *Weather Context*: If tweets mention panic buying or supply disruptions, the Agent calls `get_weather_forecast()` to check for storms driving behavior.
     *   *History*: If a setup looks familiar, it calls `search_historical_parallels()` to find precedents.
 4.  **Reporting**: Sends a calibrated HTML digest.
 
@@ -47,6 +47,7 @@ The Agent has access to the following tools in `src/tools.py`:
 *   `search_web(query)`: Deep research via DuckDuckGo.
 *   `search_historical_parallels(query)`: Semantic search over past digests.
 *   `get_trend_timeline(trend)`: Checks if a trend is new or recurring.
+*   `get_weather_forecast(cities)`: Current conditions and 7-day forecast via Open-Meteo (free, no API key).
 
 ## Configuration
 

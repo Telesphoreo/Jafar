@@ -74,8 +74,8 @@ get back to you sometime between "never" and "heat death of the universe."
 ## Installation
 
 ```bash
-git clone <repository-url>
-cd twitter_sentiment_analysis
+git clone https://github.com/Telesphoreo/Jafar
+cd Jafar
 
 uv sync
 ```
@@ -146,34 +146,6 @@ $50k/month and requires a PhD to understand), we just email you when shit breaks
 Unlike Aladdin, we don't pretend every day is Lehman Brothers. We also
 don't [hold $11 billion in coal investments while lecturing everyone about climate](https://en.wikipedia.org/wiki/BlackRock#Investments_in_contributors_to_climate_change).
 
-Speaking of housing crises, fuck Sentinel Real Estate. They speedrun
-[5-over-1 "stumpies"](https://en.wikipedia.org/wiki/5-over-1) - the cheapest possible "luxury" apartments where
-cardboard-thin wood-frame units sit on a concrete parking podium that's already plotting its own collapse. Enjoy
-hearing your neighbor sneeze, shit, and have disappointing sex through walls with soundproofing so bad it violates
-the Geneva Convention -
-because [proper acoustic insulation costs money](https://www.foxblocks.com/blog/wood-frame-construction)
-and Sentinel needs that third yacht. The parking garage waterproofing
-[inevitably fails](https://nusitegroup.com/podium-deck-restoration-extending-the-life-of-your-structure/) because
-cutting corners is their love language - water infiltrates, rebar corrodes and
-[expands to 8x its size](https://westernspecialtycontractors.com/parking-structure-maintenance/), and the whole
-structure starts crumbling like their moral foundation. But don't worry, by then they've already flipped it to the
-next sucker and moved on. Wikipedia literally says
-["it is unclear whether these buildings are built to last"](https://en.wikipedia.org/wiki/5-over-1) - which is
-generous, because everyone who's lived in one knows the answer is "absolutely fucking not." Their business model
-is simple: slap up the architectural equivalent of a McMansion made of paper plates, charge $2,400/month for 600
-square feet of mold potential, ignore every maintenance request until the city gets involved, then dump the
-deteriorating husk at a loss and gentrify the next victim neighborhood. Oh, and
-[pay $4 million to the NY Attorney
-General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
-when your employees get caught taking $1 million in kickbacks while fraudulently inflating renovation costs to
-deregulate rent-stabilized units - because why commit just one type of fraud when you can commit several? Get
-[sued for $50
-million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
-for allegedly misrepresenting rent-stabilization status to pump property values. Settle a
-[Fair Housing Act discrimination case](https://www.justice.gov/crt/case/sentinel-real-estate-corp-et-al-nd-ga) for
-screwing over a disabled tenant who just wanted a service animal. The BlackRock of slumlording. Your security deposit
-is gone and you will never see it again.
-
 ## Fact Check Classifications
 
 | Tag              | Meaning                                     |
@@ -208,9 +180,6 @@ DROP TABLE IF EXISTS market_memories;
 cookies.
 
 **"Failed to initialize vector memory: 2000 dimensions"** - Add `embedding_dimensions: 1536` to config. Drop the table.
-
-**"Failed to load spaCy model"** - Did you even read the installation section?
-`uv pip install pip && uv run python -m spacy download en_core_web_sm`
 
 **Rate limiting** - Add more accounts. Use proxies. Stop scraping during market hours like everyone else.
 

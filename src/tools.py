@@ -6,7 +6,9 @@ historical parallels, and other context on demand.
 """
 
 import logging
-from typing import Any, Callable
+from typing import Any
+
+import aiohttp
 
 from .fact_checker import MarketFactChecker
 from .memory import MemoryManager
@@ -132,6 +134,26 @@ class ToolRegistry:
                 }
             })
 
+        # Weather tool is always available (uses free Open-Meteo API)
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": "get_weather_forecast",
+                "description": "Get current weather and 7-day forecast for cities. Use this to understand weather-driven consumer behavior (panic buying, supply disruptions, travel impacts).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "cities": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "List of city names (e.g. ['Houston', 'Dallas', 'New York City'])"
+                        }
+                    },
+                    "required": ["cities"]
+                }
+            }
+        })
+
         return tools
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
@@ -191,6 +213,12 @@ class ToolRegistry:
                     return self.temporal_analyzer.format_context_for_llm(timelines_dict)
                 return f"No timeline data found for trend: {trend}"
 
+            elif tool_name == "get_weather_forecast":
+                cities = arguments.get("cities", [])
+                if not cities:
+                    return "No cities provided."
+                return await self._get_weather_forecast(cities)
+
             else:
                 return f"Tool {tool_name} not found or dependency missing."
 
@@ -232,3 +260,105 @@ class ToolRegistry:
         except Exception as e:
             logger.error(f"Web search failed: {e}")
             return f"Error performing web search: {e}"
+
+    async def _get_weather_forecast(self, cities: list[str]) -> str:
+        """
+        Get weather forecast for multiple cities using Open-Meteo API (free, no key needed).
+        """
+        # Weather code descriptions for interpretation
+        weather_codes = {
+            0: "Clear sky",
+            1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+            45: "Foggy", 48: "Depositing rime fog",
+            51: "Light drizzle", 53: "Moderate drizzle", 55: "Dense drizzle",
+            56: "Light freezing drizzle", 57: "Dense freezing drizzle",
+            61: "Slight rain", 63: "Moderate rain", 65: "Heavy rain",
+            66: "Light freezing rain", 67: "Heavy freezing rain",
+            71: "Slight snow", 73: "Moderate snow", 75: "Heavy snow",
+            77: "Snow grains",
+            80: "Slight rain showers", 81: "Moderate rain showers", 82: "Violent rain showers",
+            85: "Slight snow showers", 86: "Heavy snow showers",
+            95: "Thunderstorm", 96: "Thunderstorm with slight hail", 99: "Thunderstorm with heavy hail",
+        }
+
+        results = []
+
+        async with aiohttp.ClientSession() as session:
+            for city in cities[:5]:  # Limit to 5 cities
+                try:
+                    # Step 1: Geocode city name to coordinates
+                    geo_url = "https://geocoding-api.open-meteo.com/v1/search"
+                    async with session.get(geo_url, params={"name": city, "count": 1}) as resp:
+                        if resp.status != 200:
+                            results.append(f"**{city}**: Could not geocode city")
+                            continue
+                        geo_data = await resp.json()
+
+                    if not geo_data.get("results"):
+                        results.append(f"**{city}**: City not found")
+                        continue
+
+                    location = geo_data["results"][0]
+                    lat, lon = location["latitude"], location["longitude"]
+                    display_name = f"{location.get('name', city)}, {location.get('admin1', '')}, {location.get('country', '')}"
+
+                    # Step 2: Get weather forecast
+                    weather_url = "https://api.open-meteo.com/v1/forecast"
+                    weather_params = {
+                        "latitude": lat,
+                        "longitude": lon,
+                        "current": "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m",
+                        "daily": "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max",
+                        "temperature_unit": "fahrenheit",
+                        "wind_speed_unit": "mph",
+                        "precipitation_unit": "inch",
+                        "timezone": "auto",
+                        "forecast_days": 7,
+                    }
+
+                    async with session.get(weather_url, params=weather_params) as resp:
+                        if resp.status != 200:
+                            results.append(f"**{display_name}**: Could not fetch weather")
+                            continue
+                        weather = await resp.json()
+
+                    # Format current conditions
+                    current = weather.get("current", {})
+                    current_code = current.get("weather_code", 0)
+                    current_desc = weather_codes.get(current_code, "Unknown")
+
+                    city_result = f"**{display_name}**\n"
+                    city_result += f"  Current: {current_desc}, {current.get('temperature_2m', 'N/A')}°F "
+                    city_result += f"(feels like {current.get('apparent_temperature', 'N/A')}°F)\n"
+                    city_result += f"  Wind: {current.get('wind_speed_10m', 'N/A')} mph, "
+                    city_result += f"Gusts: {current.get('wind_gusts_10m', 'N/A')} mph\n"
+                    city_result += f"  Humidity: {current.get('relative_humidity_2m', 'N/A')}%\n"
+
+                    # Format 7-day forecast
+                    daily = weather.get("daily", {})
+                    dates = daily.get("time", [])
+                    city_result += "  7-Day Forecast:\n"
+
+                    for i, date in enumerate(dates):
+                        code = daily.get("weather_code", [])[i] if i < len(daily.get("weather_code", [])) else 0
+                        desc = weather_codes.get(code, "Unknown")
+                        high = daily.get("temperature_2m_max", [])[i] if i < len(daily.get("temperature_2m_max", [])) else "N/A"
+                        low = daily.get("temperature_2m_min", [])[i] if i < len(daily.get("temperature_2m_min", [])) else "N/A"
+                        precip = daily.get("precipitation_sum", [])[i] if i < len(daily.get("precipitation_sum", [])) else 0
+                        precip_prob = daily.get("precipitation_probability_max", [])[i] if i < len(daily.get("precipitation_probability_max", [])) else 0
+
+                        city_result += f"    {date}: {desc}, {low}°F-{high}°F"
+                        if precip > 0 or precip_prob > 30:
+                            city_result += f", Precip: {precip}\" ({precip_prob}% chance)"
+                        city_result += "\n"
+
+                    results.append(city_result)
+
+                except Exception as e:
+                    logger.error(f"Weather fetch failed for {city}: {e}")
+                    results.append(f"**{city}**: Error fetching weather: {e}")
+
+        if not results:
+            return "Could not fetch weather for any cities."
+
+        return "Weather Forecast:\n\n" + "\n".join(results)
