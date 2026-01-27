@@ -355,18 +355,18 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
 
                      # Handle submit_report specially - this is the final output
                      if function_name == "submit_report":
-                         subject_line = arguments.get("subject_line", "Jafar Market Digest")
-                         signal_strength = arguments.get("signal_strength", "low").lower()
+                         subject_line = arguments.get("subject_line") or "Jafar Market Digest"
+                         signal_strength = (arguments.get("signal_strength") or "low").lower()
                          is_notable = signal_strength == "high"
 
-                         # Extract structured sections
-                         assessment = arguments.get("assessment", "")
-                         trends_observed = arguments.get("trends_observed", "")
-                         fact_check = arguments.get("fact_check", "")
-                         actionability = arguments.get("actionability", "")
-                         actionability_reason = arguments.get("actionability_reason", "")
-                         historical_parallel = arguments.get("historical_parallel", "")
-                         bottom_line = arguments.get("bottom_line", "")
+                         # Extract structured sections (handle None values)
+                         assessment = arguments.get("assessment") or ""
+                         trends_observed = arguments.get("trends_observed") or ""
+                         fact_check = arguments.get("fact_check") or ""
+                         actionability = arguments.get("actionability") or ""
+                         actionability_reason = arguments.get("actionability_reason") or ""
+                         historical_parallel = arguments.get("historical_parallel") or ""
+                         bottom_line = arguments.get("bottom_line") or ""
 
                          # Format body with Title Case headers
                          body_parts = []

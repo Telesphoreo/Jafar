@@ -341,6 +341,51 @@ class TestToolDefinitionSchemas:
         assert weather["function"]["parameters"]["properties"]["cities"]["type"] == "array"
         assert "cities" in weather["function"]["parameters"]["required"]
 
+    def test_submit_report_schema(self):
+        """Test submit_report tool schema has all required fields."""
+        registry = ToolRegistry(enable_web_search=False)
+
+        definitions = registry.get_definitions()
+        submit_report = next(
+            (t for t in definitions if t["function"]["name"] == "submit_report"),
+            None,
+        )
+
+        assert submit_report is not None
+        assert submit_report["type"] == "function"
+
+        props = submit_report["function"]["parameters"]["properties"]
+        required = submit_report["function"]["parameters"]["required"]
+
+        # Check all expected properties exist
+        expected_props = [
+            "subject_line", "signal_strength", "assessment", "trends_observed",
+            "fact_check", "actionability", "actionability_reason",
+            "historical_parallel", "bottom_line"
+        ]
+        for prop in expected_props:
+            assert prop in props, f"Missing property: {prop}"
+
+        # Check required fields
+        expected_required = [
+            "subject_line", "signal_strength", "assessment", "trends_observed",
+            "actionability", "actionability_reason", "bottom_line"
+        ]
+        for req in expected_required:
+            assert req in required, f"Missing required field: {req}"
+
+        # fact_check and historical_parallel should be optional
+        assert "fact_check" not in required
+        assert "historical_parallel" not in required
+
+        # Check enum values for signal_strength
+        assert props["signal_strength"]["enum"] == ["high", "medium", "low", "none"]
+
+        # Check enum values for actionability
+        assert props["actionability"]["enum"] == [
+            "not actionable", "monitor only", "worth researching", "warrants attention"
+        ]
+
 
 class TestWeatherTool:
     """Tests for weather forecast tool."""

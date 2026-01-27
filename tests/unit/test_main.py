@@ -487,3 +487,54 @@ Should still parse correctly."""
         assert signal == "low"
         assert is_notable is False
         assert body == "No analysis provided."
+
+    @pytest.mark.asyncio
+    async def test_submit_report_handles_null_values(self, mock_llm, mock_trend_tweets):
+        """Test that submit_report handles null/None values without crashing."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_report"
+        # Simulate LLM sending null for optional fields
+        mock_tool_call.function.arguments = '''{
+            "subject_line": null,
+            "signal_strength": null,
+            "assessment": "Some assessment",
+            "trends_observed": "- Trends",
+            "fact_check": null,
+            "actionability": null,
+            "actionability_reason": null,
+            "historical_parallel": null,
+            "bottom_line": "Bottom line"
+        }'''
+        mock_tool_call.id = "call_null"
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 20
+        mock_response.raw_content = None
+
+        mock_llm.generate.return_value = mock_response
+
+        with patch('src.main.ToolRegistry') as MockRegistry:
+            mock_registry = MagicMock()
+            mock_registry.get_definitions.return_value = []
+            MockRegistry.return_value = mock_registry
+
+            # Should not raise an exception
+            body, signal, is_notable, tokens, subject = await analyze_with_llm(
+                llm=mock_llm,
+                trend_tweets=mock_trend_tweets,
+            )
+
+        # Should use defaults for null values
+        assert subject == "Jafar Market Digest"
+        assert signal == "low"
+        assert is_notable is False
+        # Sections with null values should be omitted
+        assert "**Fact Check:**" not in body
+        assert "**Actionability:**" not in body
+        assert "**Historical Parallel:**" not in body
+        # Non-null sections should appear
+        assert "**Assessment:**" in body
+        assert "**Trends Observed:**" in body
+        assert "**Bottom Line:**" in body
