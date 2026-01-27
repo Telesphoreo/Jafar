@@ -43,6 +43,15 @@ class TestToolRegistry:
         assert registry.temporal_analyzer is mock_temporal
         assert "$NVDA" in registry.trend_timelines
 
+    def test_ddgs_import_works(self):
+        """Test that the ddgs package can be imported correctly.
+
+        This catches issues where the import path doesn't match the installed package.
+        """
+        # This should not raise ImportError
+        from ddgs import DDGS
+        assert DDGS is not None
+
     def test_get_definitions_minimal(self):
         """Test getting tool definitions with no dependencies (only weather available)."""
         registry = ToolRegistry(enable_web_search=False)
@@ -54,8 +63,8 @@ class TestToolRegistry:
 
     def test_get_definitions_with_web_search(self):
         """Test that web search tool is included when available."""
-        with patch.dict("sys.modules", {"duckduckgo_search": MagicMock()}):
-            with patch("duckduckgo_search.DDGS") as mock_ddgs_class:
+        with patch.dict("sys.modules", {"ddgs": MagicMock()}):
+            with patch("ddgs.DDGS") as mock_ddgs_class:
                 mock_ddgs_class.return_value = MagicMock()
 
                 # Create registry with web search enabled

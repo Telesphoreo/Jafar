@@ -292,33 +292,26 @@ Disclaimer: Not financial advice.
         msg.attach(part1)
         msg.attach(part2)
 
-        logger.info(f"Sending email to {len(self.config.email_to)} recipient(s) via BCC")
-        logger.info(f"SMTP Server: {self.config.host}:{self.config.port} (TLS: {self.config.use_tls})")
-        logger.info(f"From: {msg['From']}")
-        logger.info(f"To (Visible): {msg['To']}")
-        logger.info(f"Subject: {subject}")
+        logger.info(f"Sending email: {subject}")
+        logger.debug(f"Recipients: {len(self.config.email_to)} via BCC")
+        logger.debug(f"SMTP: {self.config.host}:{self.config.port} (TLS: {self.config.use_tls})")
 
         try:
             # Connect to SMTP server with timeout protection
             timeout = 30  # 30 seconds for all SMTP operations
 
-            logger.info("Step 1: Connecting to SMTP server...")
+            logger.debug("Connecting to SMTP server...")
             if self.config.use_tls:
                 server = smtplib.SMTP(self.config.host, self.config.port, timeout=timeout)
-                server.set_debuglevel(1)  # Enable SMTP protocol debugging
-                logger.info("Step 2: Starting TLS...")
+                logger.debug("Starting TLS...")
                 server.starttls()
-                logger.info("TLS started successfully")
             else:
                 server = smtplib.SMTP_SSL(self.config.host, self.config.port, timeout=timeout)
-                server.set_debuglevel(1)  # Enable SMTP protocol debugging
-                logger.info("SSL connection established")
 
-            logger.info(f"Step 3: Logging in as {self.config.username}...")
+            logger.debug(f"Logging in as {self.config.username}...")
             server.login(self.config.username, self.config.password)
-            logger.info("Login successful")
 
-            logger.info("Step 4: Sending email...")
+            logger.debug("Sending email...")
             # to_addrs should include all recipients (To + BCC)
             all_recipients = self.config.email_to
             server.sendmail(
@@ -326,10 +319,9 @@ Disclaimer: Not financial advice.
                 all_recipients,
                 msg.as_string(),
             )
-            logger.info("Email sent, closing connection...")
 
             server.quit()
-            logger.info("✓ Email sent successfully")
+            logger.info("Email sent successfully")
             return True
 
         except smtplib.SMTPAuthenticationError as e:

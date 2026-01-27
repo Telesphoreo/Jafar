@@ -274,7 +274,7 @@ def mock_twscrape_api():
 @pytest.fixture
 def mock_ddgs():
     """Mock DuckDuckGo search for web search tests."""
-    with patch("duckduckgo_search.DDGS") as mock_ddgs_class:
+    with patch("ddgs.DDGS") as mock_ddgs_class:
         mock_ddgs = MagicMock()
 
         # Mock text search results

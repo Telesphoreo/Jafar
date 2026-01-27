@@ -42,10 +42,10 @@ class ToolRegistry:
         # Initialize DuckDuckGo search if enabled
         if self.enable_web_search:
             try:
-                from duckduckgo_search import DDGS
+                from ddgs import DDGS
                 self.ddgs = DDGS()
             except ImportError:
-                logger.warning("duckduckgo-search not installed. Web search tool disabled.")
+                logger.warning("ddgs not installed. Web search tool disabled.")
                 self.enable_web_search = False
             except Exception as e:
                 logger.warning(f"Failed to initialize DuckDuckGo search: {e}")
