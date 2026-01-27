@@ -49,6 +49,29 @@ The Agent has access to the following tools in `src/tools.py`:
 *   `get_trend_timeline(trend)`: Checks if a trend is new or recurring.
 *   `get_weather_forecast(cities)`: Current conditions and 7-day forecast via Open-Meteo (free, no API key).
 
+## Testing
+
+This project has comprehensive test coverage. **Always run tests before committing changes.**
+
+```bash
+# Run all tests
+uv run pytest tests/ -v
+
+# Run with coverage
+uv run pytest tests/ --cov=src --cov-report=html
+
+# Run fast tests only (skip slow/integration)
+uv run pytest tests/ -m "not slow"
+```
+
+**When making changes:**
+- Run the full test suite to catch regressions
+- Update existing tests if behavior changes intentionally
+- Add new tests for new functionality
+- Tests are in `tests/unit/` - check there first for examples
+
+The test suite uses mocks for external dependencies (Twitter API, LLM providers, yfinance, etc.) so tests run fast and don't require API keys.
+
 ## Configuration
 
 *   **`config.yaml`**: App settings (LLM provider, thresholds).
