@@ -109,7 +109,7 @@ class GoogleProvider(LLMProvider):
 
                 contents.append(types.Content(
                     role="user",
-                    parts=[types.Part.from_text(str(content) if content else "")]
+                    parts=[types.Part(text=str(content) if content else "")]
                 ))
 
             elif role == "assistant":
@@ -122,20 +122,21 @@ class GoogleProvider(LLMProvider):
                     pending_function_responses = []
 
                 # Check if we have raw_content preserved from the original response
-                # This preserves thought_signature automatically
+                # This preserves thought_signature automatically (recommended approach)
                 if "raw_content" in msg and msg["raw_content"] is not None:
                     contents.append(msg["raw_content"])
                 else:
                     # Fallback: Build model message parts manually
+                    # For Gemini 3, we must include thought_signature on function calls
                     parts: list[types.Part] = []
 
                     # Add text content if present (may be empty when model only calls tools)
                     if content:
-                        parts.append(types.Part.from_text(str(content)))
+                        parts.append(types.Part(text=str(content)))
 
-                    # Add function calls if present
+                    # Add function calls if present, preserving thought_signature
                     if "tool_calls" in msg and msg["tool_calls"]:
-                        for tc in msg["tool_calls"]:
+                        for i, tc in enumerate(msg["tool_calls"]):
                             args = tc.function.arguments
                             if isinstance(args, str):
                                 args = json.loads(args) if args else {}
@@ -144,7 +145,14 @@ class GoogleProvider(LLMProvider):
                                 name=tc.function.name,
                                 args=args
                             )
-                            parts.append(types.Part(function_call=fc))
+
+                            # Include thought_signature if available (required for Gemini 3)
+                            # The signature is only on the first function call in parallel calls
+                            thought_sig = getattr(tc, 'thought_signature', None)
+                            if thought_sig:
+                                parts.append(types.Part(function_call=fc, thought_signature=thought_sig))
+                            else:
+                                parts.append(types.Part(function_call=fc))
 
                     # Only add if we have parts
                     if parts:
@@ -169,13 +177,26 @@ class GoogleProvider(LLMProvider):
         return contents, system_prompt
 
     def _extract_tool_calls(self, response) -> list | None:
-        """Extract tool calls from response."""
+        """
+        Extract tool calls from response, including thought signatures.
+
+        For Gemini 3 models, thought signatures are mandatory for function calls.
+        The signature is included on the first function call part in the response.
+        """
         if not response.function_calls:
             return None
 
         tool_calls = []
 
-        for fc in response.function_calls:
+        # Get the raw parts to extract thought_signature
+        # The thought_signature is on the Part, not the FunctionCall
+        parts_with_fc = []
+        if response.candidates and response.candidates[0].content:
+            for part in response.candidates[0].content.parts:
+                if hasattr(part, 'function_call') and part.function_call:
+                    parts_with_fc.append(part)
+
+        for i, fc in enumerate(response.function_calls):
             args_str = json.dumps(fc.args) if fc.args else "{}"
 
             function_obj = SimpleNamespace(
@@ -186,11 +207,21 @@ class GoogleProvider(LLMProvider):
             # Generate unique ID
             call_id = f"call_{fc.name}_{uuid.uuid4().hex[:8]}"
 
-            tool_calls.append(SimpleNamespace(
+            # Extract thought_signature if available (Gemini 3 requirement)
+            # Only the first function call in a response has the signature
+            thought_signature = None
+            if i < len(parts_with_fc):
+                part = parts_with_fc[i]
+                if hasattr(part, 'thought_signature') and part.thought_signature:
+                    thought_signature = part.thought_signature
+
+            tool_call = SimpleNamespace(
                 function=function_obj,
                 id=call_id,
-                type="function"
-            ))
+                type="function",
+                thought_signature=thought_signature  # Preserve for Gemini 3
+            )
+            tool_calls.append(tool_call)
 
         return tool_calls
 

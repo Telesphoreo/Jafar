@@ -1,6 +1,6 @@
 [project]
 name = "jafar"
-version = "1.0.0"
+version = "1.1.0"
 description = "The villain to BlackRock's Aladdin. Twitter/X market sentiment analysis for people who can't afford $25k/month."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,5 +27,24 @@ local-embeddings = ["sentence-transformers"]
 
 [dependency-groups]
 dev = [
-    "pylint>=4.0.4",
+    "pylint",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-mock",
+    "pytest-cov",
+    "pytest-timeout",
+    "freezegun",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+]
+timeout = 60
+
+[tool.coverage.run]
+source = ["src"]

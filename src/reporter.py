@@ -185,11 +185,8 @@ class EmailReporter:
                 </tr>
                 <tr>
                     <td style="border-top: 1px solid #ddd; padding-top: 20px;">
-                        <p style="margin: 0 0 15px 0; font-style: italic; font-size: 14px; color: #000;">
-                            "The only thing BlackRock manages better than assets is their conflict of interest."
-                        </p>
                         <p style="margin: 0; font-family: monospace; font-size: 11px; color: #999; letter-spacing: 1px;">
-                            Engine: {provider_info} | Not financial advice | {today}
+                            Not financial advice | {today}
                         </p>
                     </td>
                 </tr>
@@ -238,7 +235,6 @@ Topics: {trends_str}
 {report_content}
 
 --------------------------------------------------------------------------------
-"The only thing BlackRock manages better than assets is their conflict of interest."
 
 Disclaimer: Not financial advice.
 """
