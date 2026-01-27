@@ -154,6 +154,34 @@ class ToolRegistry:
             }
         })
 
+        # Submit report tool - always available, used to finalize the analysis
+        tools.append({
+            "type": "function",
+            "function": {
+                "name": "submit_report",
+                "description": "Submit your final analysis report. You MUST call this tool when you are done analyzing to deliver your findings.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "subject_line": {
+                            "type": "string",
+                            "description": "A punchy email subject (5-10 words). Reference the top trend. Can be witty but informative."
+                        },
+                        "signal_strength": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low", "none"],
+                            "description": "HIGH=rare actionable signal, MEDIUM=worth monitoring, LOW=noise, NONE=nothing happening"
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "The full email body with your analysis. Use markdown formatting."
+                        }
+                    },
+                    "required": ["subject_line", "signal_strength", "body"]
+                }
+            }
+        })
+
         return tools
 
     async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:

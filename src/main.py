@@ -283,38 +283,39 @@ TOOL USE & RESEARCH INSTRUCTIONS:
 Top engagement score: {top_engagement:.0f}
 {data_prompt}
 
-## Required Output Format
+## How to Submit Your Analysis
 
-**SUBJECT LINE**: [A punchy email subject - 5-10 words max. MUST reference the actual top trend or finding. Can be witty or sardonic but should tell the reader what the email is about. Examples:
-- "Silver's Having A Moment (Actually Verified This Time)"
-- "RTX 5090 Pricing: NVIDIA Discovers Infinite Money Glitch"
-- "Uranium Chatter Spikes - Fintwit Discovers Nuclear Energy"
-- "Semiconductor Shortage Round 47: The Sequelening"
-- "Consumer Sentiment: Everyone's Broke Again"
-- "Nothing Burger with a Side of Nothing" (for truly quiet days)
-The subject should give a hint of what's inside, not be generic clickbait. Save humor for market hype, not genuine consumer struggles.]
+When you are done analyzing, you MUST call the `submit_report` tool with:
 
-**SIGNAL STRENGTH**: [HIGH / MEDIUM / LOW / NONE]
-(Be honest - HIGH should be rare. If you're rating HIGH more than twice a month, recalibrate your excitement.)
+1. **subject_line**: A punchy email subject (5-10 words max). MUST reference the actual top trend or finding. Can be witty or sardonic but should tell the reader what the email is about. Examples:
+   - "Silver's Having A Moment (Actually Verified This Time)"
+   - "RTX 5090 Pricing: NVIDIA Discovers Infinite Money Glitch"
+   - "Uranium Chatter Spikes - Fintwit Discovers Nuclear Energy"
+   - "Nothing Burger with a Side of Nothing" (for truly quiet days)
+
+2. **signal_strength**: One of: "high", "medium", "low", "none"
+   - HIGH should be rare. If you're rating HIGH more than twice a month, recalibrate.
+   - Be honest - most days are LOW or NONE.
+
+3. **body**: Your full analysis in markdown format, structured as:
 
 **ASSESSMENT**:
-[2-3 sentences with your characteristic dry wit. If signal is LOW/NONE, don't be afraid to say "Another day of fintwit being fintwit. Nothing here moves the needle."]
+[2-3 sentences with your characteristic dry wit. If signal is LOW/NONE, say "Another day of fintwit being fintwit. Nothing here moves the needle."]
 
 **TRENDS OBSERVED**:
-[Bullet points of what's being discussed - factual, not hyped. Feel free to note when claims don't match reality.]
+[Bullet points of what's being discussed - factual, not hyped.]
 
-**FACT CHECK** (if market data was provided):
-[Call out any EXAGGERATED or FALSE claims you caught. This is your moment to shine.]
+**FACT CHECK** (if you fetched market data):
+[Call out any EXAGGERATED or FALSE claims you caught.]
 
 **ACTIONABILITY**: [NOT ACTIONABLE / MONITOR ONLY / WORTH RESEARCHING / WARRANTS ATTENTION]
-[1 sentence explaining why - be direct]
+[1 sentence explaining why]
 
 **HISTORICAL PARALLEL**:
-[ONLY if genuinely meaningful - "History rhymes: [specific parallel with what happened after]"
-OR "No meaningful historical parallels - and that's fine, not everything needs a historical precedent."]
+[ONLY if genuinely meaningful, otherwise say "No meaningful historical parallels."]
 
 **BOTTOM LINE**:
-[1 sentence. Be direct, be memorable. "Save your attention for another day" is a perfectly valid conclusion.]
+[1 sentence. Be direct, be memorable. "Save your attention for another day" is valid.]
 
 Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. It takes wisdom to say "pass." Be that wisdom."""
 
@@ -348,7 +349,7 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
                 # Add tool calls to messages (OpenAI requires this if we want to reply with tool outputs)
                 if hasattr(response, 'tool_calls') and response.tool_calls:
                      messages[-1]["tool_calls"] = response.tool_calls
-                
+
                 for tool_call in response.tool_calls:
                      # Parse function call
                      function_name = tool_call.function.name
@@ -358,46 +359,61 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
                          arguments = json.loads(tool_call.function.arguments)
                      except Exception:
                          pass
-                     
+
                      call_id = tool_call.id
-                     
-                     # Execute tool
+
+                     # Handle submit_report specially - this is the final output
+                     if function_name == "submit_report":
+                         subject_line = arguments.get("subject_line", "Jafar Market Digest")
+                         signal_strength = arguments.get("signal_strength", "low").lower()
+                         body = arguments.get("body", "No analysis provided.")
+                         is_notable = signal_strength == "high"
+
+                         logger.info(f"Report submitted - Signal: {signal_strength.upper()}, Subject: {subject_line}")
+                         return body, signal_strength, is_notable, total_tokens, subject_line
+
+                     # Execute other tools
                      tool_output = await tools_registry.execute(function_name, arguments)
-                     
+
                      # Append tool output to messages
                      messages.append({
-                         "role": "tool", 
+                         "role": "tool",
                          "content": tool_output,
                          "tool_call_id": call_id,
                          "name": function_name
                      })
-                
+
                 # Continue loop to let LLM process tool outputs
                 continue
-            
-            # If no tool calls, this is the final answer
-            content = response.content
 
-            # Parse subject line
+            # If no tool calls and no submit_report, the LLM gave a text response
+            # This is a fallback - ideally the LLM should always use submit_report
+            content = response.content
+            logger.warning("LLM returned text instead of calling submit_report - using fallback parsing")
+
+            # Fallback: try to parse from text (legacy format)
             subject_line = None
             subject_match = re.search(r'\*\*SUBJECT LINE\*\*:\s*["\']?([^"\'\n]+)["\']?', content)
             if subject_match:
                 subject_line = subject_match.group(1).strip().strip('"\'')
 
-            # Parse signal strength
-            signal_strength = "low"  # default
+            signal_strength = "low"
             is_notable = False
-
             content_upper = content.upper()
-            if "**SIGNAL STRENGTH**: HIGH" in content_upper or "SIGNAL STRENGTH: HIGH" in content_upper:
+            if "HIGH" in content_upper and "SIGNAL" in content_upper:
                 signal_strength = "high"
                 is_notable = True
-            elif "**SIGNAL STRENGTH**: MEDIUM" in content_upper or "SIGNAL STRENGTH: MEDIUM" in content_upper:
+            elif "MEDIUM" in content_upper and "SIGNAL" in content_upper:
                 signal_strength = "medium"
-            elif "**SIGNAL STRENGTH**: NONE" in content_upper or "SIGNAL STRENGTH: NONE" in content_upper:
+            elif "NONE" in content_upper and "SIGNAL" in content_upper:
                 signal_strength = "none"
 
-            logger.info(f"Signal strength: {signal_strength.upper()}, Notable: {is_notable}, Subject: {subject_line}")
+            # Strip metadata lines from body content
+            content = re.sub(r'\*\*SUBJECT LINE\*\*:\s*[^\n]*\n*', '', content)
+            content = re.sub(r'\*\*SIGNAL STRENGTH\*\*:\s*[^\n]*\n*', '', content, flags=re.IGNORECASE)
+            content = content.strip()
+
+            logger.info(f"Fallback parse - Signal: {signal_strength.upper()}, Subject: {subject_line}")
             return content, signal_strength, is_notable, total_tokens, subject_line
             
         except Exception as e:

@@ -53,13 +53,15 @@ class TestToolRegistry:
         assert DDGS is not None
 
     def test_get_definitions_minimal(self):
-        """Test getting tool definitions with no dependencies (only weather available)."""
+        """Test getting tool definitions with no dependencies (weather + submit_report always available)."""
         registry = ToolRegistry(enable_web_search=False)
         definitions = registry.get_definitions()
 
-        # Weather tool is always available
-        assert len(definitions) == 1
-        assert definitions[0]["function"]["name"] == "get_weather_forecast"
+        # Weather and submit_report tools are always available
+        assert len(definitions) == 2
+        tool_names = [d["function"]["name"] for d in definitions]
+        assert "get_weather_forecast" in tool_names
+        assert "submit_report" in tool_names
 
     def test_get_definitions_with_web_search(self):
         """Test that web search tool is included when available."""
