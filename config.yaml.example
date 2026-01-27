@@ -1,16 +1,16 @@
-# Twitter Sentiment Analysis - Application Configuration
+# Jafar - Application Configuration
 # Copy this file to config.yaml and customize as needed.
 # Secrets (API keys, passwords) should go in .env file, not here.
 
 # Application Settings
 app:
   # spaCy NLP model for entity extraction
-  # Options:
-  #   - en_core_web_sm: Small, fast, less accurate (default)
-  #   - en_core_web_lg: Large, more accurate
-  #   - en_core_web_trf: Transformer-based, most accurate (slowest, requires GPU recommended)
-  # IMPORTANT: You must download the model first: python -m spacy download <model_name>
-  spacy_model: en_core_web_sm
+  # The default model (en_core_web_lg) is bundled with the package.
+  # To use a different model, install it and change this value:
+  #   - en_core_web_sm: Small, fast, less accurate
+  #   - en_core_web_lg: Large, more accurate (default, bundled)
+  #   - en_core_web_trf: Transformer-based, most accurate (slowest, requires GPU)
+  spacy_model: en_core_web_lg
 
 # Twitter/twscrape Settings
 twitter:
@@ -28,9 +28,11 @@ twitter:
 # LLM Provider Settings
 llm:
   # Provider: "openai" or "google"
-  provider: openai
+  provider: google
 
   # Model names (API keys go in .env)
+  # OpenAI: gpt-4o, gpt-4o-mini, gpt-4-turbo, etc.
+  # Google: gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash, etc.
   openai_model: gpt-4o
   google_model: gemini-2.0-flash
 
@@ -98,24 +100,29 @@ scraping:
   search_timeout: 120
 
 # Broad Search Topics
+# These topics cast a wide net to discover trending financial content.
+# The analyzer then extracts specific entities from the results.
+# Use OR for alternatives within a topic.
 broad_topics:
   # Financial Twitter (traditional signals)
   - fintwit
   - markets
-  - economy
 
-  # CONSUMER PRICE SIGNALS (critical for inflation, spending, margins)
+  # PRICE SIGNALS (direct inflation indicators)
   - price increase OR price hike
-  - raising prices OR price change
   - too expensive OR can't afford
-  - pricing out OR priced out
-  - new pricing OR launch price
+  - shrinkflation OR smaller portions
 
   # SUPPLY/AVAILABILITY (shortages = pricing power)
   - shortage OR sold out
   - wait list OR backorder
   - supply OR allocation
   - in stock OR restocked
+
+  # SUPPLY CHAIN (disruption signals)
+  - supply chain OR shipping delays
+  - chip shortage OR semiconductor
+  - port congestion OR freight
 
   # BREAKING ECONOMIC NEWS (general discovery)
   - breaking
@@ -128,16 +135,38 @@ broad_topics:
   - splurging OR treating myself
   - worth it OR not worth it
 
+  # CREDIT/DEBT (recession leading indicator)
+  - credit card debt OR maxed out
+  - can't pay bills OR late payment
+  - bankruptcy OR foreclosure
+
   # EMPLOYMENT/WAGES (income side of economy)
   - hiring OR layoffs
   - pay cut OR pay raise
   - wage OR salary
+
+  # SMALL BUSINESS HEALTH (leading indicator)
+  - small business closing OR going out of business
+  - store closing OR shutting down
 
   # COST OF LIVING (broad inflation signals)
   - inflation OR cost of living
   - groceries OR grocery prices
   - gas prices OR energy costs
   - rent OR housing costs
+
+  # INSURANCE/HEALTHCARE (hidden inflation)
+  - insurance rates OR premium increase
+  - medical bills OR healthcare costs
+
+  # DISCRETIONARY SPENDING (consumer confidence)
+  - canceling subscription OR cutting streaming
+  - flight prices OR airfare
+  - vacation cost OR travel expensive
+
+  # TARIFFS/TRADE (policy-driven price changes)
+  - tariff OR tariffs
+  - import prices
 
   # PRODUCT LAUNCHES (reveals pricing trends, demand)
   - launched OR released

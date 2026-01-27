@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "jafar"
 version = "1.1.0"
@@ -19,6 +23,9 @@ dependencies = [
     "yfinance",
     "ddgs",
 ]
+
+[project.scripts]
+jafar = "src.main:main"
 
 [project.optional-dependencies]
 # For production pgvector support
@@ -49,3 +56,9 @@ timeout = 60
 
 [tool.coverage.run]
 source = ["src"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

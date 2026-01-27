@@ -57,11 +57,12 @@ get back to you sometime between "never" and "heat death of the universe."
 4. **The Agent** - Here's where it gets good. The LLM has tools:
 
    | Tool                                 | What It Does                                                     |
-                                             |--------------------------------------|------------------------------------------------------------------|
+   |--------------------------------------|------------------------------------------------------------------|
    | `get_market_data(symbols)`           | Checks real prices. Exposes the "MOONING" liars.                 |
    | `search_web(query)`                  | Deep web research. Turns Twitter vibes into actual intelligence. |
    | `search_historical_parallels(query)` | "This feels familiar" → finds the receipts                       |
    | `get_trend_timeline(trend)`          | Is this new or recycled cope from last month?                    |
+   | `get_weather_forecast(cities)`       | Panic buying in Houston? Checks if there's a storm coming.       |
 
    The agent sees a claim, gets suspicious, calls the tool. If someone says silver is crashing and it's down 0.5%,
    that's marked EXAGGERATED. If uranium is spiking and nobody knows why, it searches the web. Maximum 5 tool calls
