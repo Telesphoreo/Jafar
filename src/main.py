@@ -271,8 +271,12 @@ Remember: Your job is to FILTER, not to HYPE. A good analyst knows when to say "
             total_tokens += response.token_count
             
             # Append assistant response to history
-            messages.append({"role": "assistant", "content": response.content})
-            
+            assistant_msg = {"role": "assistant", "content": response.content}
+            # Preserve raw_content for Google's thought_signature support
+            if hasattr(response, 'raw_content') and response.raw_content is not None:
+                assistant_msg["raw_content"] = response.raw_content
+            messages.append(assistant_msg)
+
             # Handle tool calls
             if response.tool_calls:
                 # Add tool calls to messages (OpenAI requires this if we want to reply with tool outputs)

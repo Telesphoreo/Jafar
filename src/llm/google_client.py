@@ -5,7 +5,10 @@ Uses the new google-genai package (replaces deprecated google-generativeai).
 """
 
 import asyncio
+import json
 import logging
+import uuid
+from types import SimpleNamespace
 from typing import Any
 
 from google import genai
@@ -68,6 +71,129 @@ class GoogleProvider(LLMProvider):
     def is_configured(self) -> bool:
         return self._client is not None and bool(self._api_key)
 
+    def _build_contents(
+        self, prompt: str | None, messages: list[dict[str, Any]] | None, system_prompt: str | None
+    ) -> tuple[list[types.Content] | str, str | None]:
+        """
+        Build contents list from prompt or messages.
+
+        Returns:
+            Tuple of (contents, system_prompt)
+        """
+        # If prompt provided, use it (simplest case)
+        if prompt and not messages:
+            return prompt, system_prompt
+
+        if not messages:
+            return [], system_prompt
+
+        contents: list[types.Content] = []
+        pending_function_responses: list[types.Part] = []
+
+        for msg in messages:
+            if msg["role"] == "system" and not system_prompt:
+                system_prompt = msg["content"]
+                continue
+
+            role = msg["role"]
+            content = msg.get("content")
+
+            if role == "user":
+                # Flush any pending function responses first
+                if pending_function_responses:
+                    contents.append(types.Content(
+                        role="user",
+                        parts=pending_function_responses
+                    ))
+                    pending_function_responses = []
+
+                contents.append(types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(str(content) if content else "")]
+                ))
+
+            elif role == "assistant":
+                # Flush any pending function responses first
+                if pending_function_responses:
+                    contents.append(types.Content(
+                        role="user",
+                        parts=pending_function_responses
+                    ))
+                    pending_function_responses = []
+
+                # Check if we have raw_content preserved from the original response
+                # This preserves thought_signature automatically
+                if "raw_content" in msg and msg["raw_content"] is not None:
+                    contents.append(msg["raw_content"])
+                else:
+                    # Fallback: Build model message parts manually
+                    parts: list[types.Part] = []
+
+                    # Add text content if present (may be empty when model only calls tools)
+                    if content:
+                        parts.append(types.Part.from_text(str(content)))
+
+                    # Add function calls if present
+                    if "tool_calls" in msg and msg["tool_calls"]:
+                        for tc in msg["tool_calls"]:
+                            args = tc.function.arguments
+                            if isinstance(args, str):
+                                args = json.loads(args) if args else {}
+
+                            fc = types.FunctionCall(
+                                name=tc.function.name,
+                                args=args
+                            )
+                            parts.append(types.Part(function_call=fc))
+
+                    # Only add if we have parts
+                    if parts:
+                        contents.append(types.Content(role="model", parts=parts))
+
+            elif role == "tool":
+                # Accumulate function responses - they must be in a single "user" message
+                func_name = msg.get("name", "unknown")
+                func_response = types.FunctionResponse(
+                    name=func_name,
+                    response={"result": str(content) if content else ""}
+                )
+                pending_function_responses.append(types.Part(function_response=func_response))
+
+        # Flush any remaining function responses
+        if pending_function_responses:
+            contents.append(types.Content(
+                role="user",
+                parts=pending_function_responses
+            ))
+
+        return contents, system_prompt
+
+    def _extract_tool_calls(self, response) -> list | None:
+        """Extract tool calls from response."""
+        if not response.function_calls:
+            return None
+
+        tool_calls = []
+
+        for fc in response.function_calls:
+            args_str = json.dumps(fc.args) if fc.args else "{}"
+
+            function_obj = SimpleNamespace(
+                name=fc.name,
+                arguments=args_str
+            )
+
+            # Generate unique ID
+            call_id = f"call_{fc.name}_{uuid.uuid4().hex[:8]}"
+
+            tool_calls.append(SimpleNamespace(
+                function=function_obj,
+                id=call_id,
+                type="function"
+            ))
+
+        return tool_calls
+
     async def generate(
         self,
         prompt: str | None = None,
@@ -95,115 +221,31 @@ class GoogleProvider(LLMProvider):
 
         try:
             # Build contents
-            contents = []
-            
-            # If prompt provided, use it (simplest case)
-            if prompt and not messages:
-                contents = prompt
-            
-            # If messages provided, convert to Google format
-            elif messages:
-                # Collect function responses to batch them after the model message
-                pending_function_responses = []
+            contents, system_prompt = self._build_contents(prompt, messages, system_prompt)
 
-                for msg in messages:
-                    if msg["role"] == "system" and not system_prompt:
-                        system_prompt = msg["content"]
-                        continue
-
-                    role = msg["role"]
-                    content = msg["content"]
-
-                    if role == "user":
-                        # Flush any pending function responses first
-                        if pending_function_responses:
-                            contents.append({
-                                "role": "user",
-                                "parts": pending_function_responses
-                            })
-                            pending_function_responses = []
-                        contents.append({"role": "user", "parts": [{"text": str(content)}]})
-
-                    elif role == "assistant":
-                        # Flush any pending function responses first
-                        if pending_function_responses:
-                            contents.append({
-                                "role": "user",
-                                "parts": pending_function_responses
-                            })
-                            pending_function_responses = []
-
-                        # Build model message parts
-                        parts = []
-
-                        # Add text content if present (may be empty when model only calls tools)
-                        if content:
-                            parts.append({"text": str(content)})
-
-                        # Add function calls if present
-                        if "tool_calls" in msg and msg["tool_calls"]:
-                            for tc in msg["tool_calls"]:
-                                import json
-                                args = tc.function.arguments
-                                if isinstance(args, str):
-                                    args = json.loads(args) if args else {}
-                                fc_part = {
-                                    "function_call": {
-                                        "name": tc.function.name,
-                                        "args": args
-                                    }
-                                }
-                                # Include thought_signature if present (required for thinking models)
-                                if hasattr(tc, "thought_signature") and tc.thought_signature:
-                                    fc_part["function_call"]["thought_signature"] = tc.thought_signature
-                                parts.append(fc_part)
-
-                        # Only add if we have parts
-                        if parts:
-                            contents.append({"role": "model", "parts": parts})
-
-                    elif role == "tool":
-                        # Accumulate function responses - they must be in a single "user" message
-                        func_name = msg.get("name", "unknown")
-                        pending_function_responses.append({
-                            "function_response": {
-                                "name": func_name,
-                                "response": {"result": str(content)}
-                            }
-                        })
-
-                # Flush any remaining function responses
-                if pending_function_responses:
-                    contents.append({
-                        "role": "user",
-                        "parts": pending_function_responses
-                    })
-
-            # Hand tools
+            # Build config
             config_kwargs = {
                 "temperature": temperature,
                 "max_output_tokens": max_tokens,
-                "system_instruction": system_prompt if system_prompt else None,
             }
-            
+
+            if system_prompt:
+                config_kwargs["system_instruction"] = system_prompt
+
             if tools:
                 # Transform OpenAI-style tools to Google GenAI format
-                google_tools = []
                 function_declarations = []
-                
+
                 for tool in tools:
                     if tool.get("type") == "function":
                         func_def = tool.get("function", {})
-                        # Ensure parameters are present even if empty, as Google might strictly require valid schema
+                        # Ensure parameters are present even if empty
                         if "parameters" not in func_def:
                             func_def["parameters"] = {"type": "object", "properties": {}}
                         function_declarations.append(func_def)
-                
+
                 if function_declarations:
-                    # Google GenAI expects a list of Tool objects (or dicts), 
-                    # where one Tool can contain multiple function declarations.
-                    google_tools.append({"function_declarations": function_declarations})
-                    config_kwargs["tools"] = google_tools
+                    config_kwargs["tools"] = [{"function_declarations": function_declarations}]
 
             config = types.GenerateContentConfig(**config_kwargs)
 
@@ -247,50 +289,15 @@ class GoogleProvider(LLMProvider):
                 raise last_error or RuntimeError("No response received from Google API")
 
             content = response.text if response.text else ""
-            
+
             # Extract tool calls if present
-            tool_calls = None
-            if response.function_calls:
-                 # Standardize to resemble OpenAI's format for easier consumption
-                 from types import SimpleNamespace
-                 import json
-                 import uuid
+            tool_calls = self._extract_tool_calls(response)
 
-                 tool_calls = []
-
-                 # Build a map of function call names to their thought_signatures from raw parts
-                 # Some models return thought_signature at the Part level, not the FunctionCall level
-                 thought_sig_map = {}
-                 if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
-                     for part in response.candidates[0].content.parts:
-                         if hasattr(part, "function_call") and part.function_call:
-                             fc_part = part.function_call
-                             sig = getattr(part, "thought_signature", None) or getattr(fc_part, "thought_signature", None)
-                             if sig and hasattr(fc_part, "name"):
-                                 thought_sig_map[fc_part.name] = sig
-
-                 for fc in response.function_calls:
-                     # parsed arguments are usually a dict in google-genai, but main.py expects a JSON string
-                     args_str = json.dumps(fc.args) if fc.args else "{}"
-
-                     function_obj = SimpleNamespace(
-                         name=fc.name,
-                         arguments=args_str
-                     )
-
-                     # Generate unique ID to avoid collisions when same function is called multiple times
-                     call_id = f"call_{fc.name}_{uuid.uuid4().hex[:8]}"
-
-                     # Capture thought_signature if present (required for thinking models)
-                     # Check both the function call object and our map from raw parts
-                     thought_sig = getattr(fc, "thought_signature", None) or thought_sig_map.get(fc.name)
-
-                     tool_calls.append(SimpleNamespace(
-                         function=function_obj,
-                         id=call_id,
-                         type="function",
-                         thought_signature=thought_sig
-                     ))
+            # Extract the raw Content object to preserve thought_signature
+            # This should be stored and passed back in subsequent requests
+            raw_content = None
+            if response.candidates and response.candidates[0].content:
+                raw_content = response.candidates[0].content
 
             # Extract usage metadata if available
             usage = None
@@ -309,6 +316,7 @@ class GoogleProvider(LLMProvider):
                 usage=usage,
                 tool_calls=tool_calls,
                 raw_response=response,
+                raw_content=raw_content,  # Preserve the Content object with thought_signature
             )
 
         except Exception as e:
