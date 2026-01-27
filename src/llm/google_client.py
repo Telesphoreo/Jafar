@@ -147,12 +147,16 @@ class GoogleProvider(LLMProvider):
                                 args = tc.function.arguments
                                 if isinstance(args, str):
                                     args = json.loads(args) if args else {}
-                                parts.append({
+                                fc_part = {
                                     "function_call": {
                                         "name": tc.function.name,
                                         "args": args
                                     }
-                                })
+                                }
+                                # Include thought_signature if present (required for thinking models)
+                                if hasattr(tc, "thought_signature") and tc.thought_signature:
+                                    fc_part["function_call"]["thought_signature"] = tc.thought_signature
+                                parts.append(fc_part)
 
                         # Only add if we have parts
                         if parts:
@@ -253,6 +257,18 @@ class GoogleProvider(LLMProvider):
                  import uuid
 
                  tool_calls = []
+
+                 # Build a map of function call names to their thought_signatures from raw parts
+                 # Some models return thought_signature at the Part level, not the FunctionCall level
+                 thought_sig_map = {}
+                 if response.candidates and response.candidates[0].content and response.candidates[0].content.parts:
+                     for part in response.candidates[0].content.parts:
+                         if hasattr(part, "function_call") and part.function_call:
+                             fc_part = part.function_call
+                             sig = getattr(part, "thought_signature", None) or getattr(fc_part, "thought_signature", None)
+                             if sig and hasattr(fc_part, "name"):
+                                 thought_sig_map[fc_part.name] = sig
+
                  for fc in response.function_calls:
                      # parsed arguments are usually a dict in google-genai, but main.py expects a JSON string
                      args_str = json.dumps(fc.args) if fc.args else "{}"
@@ -265,10 +281,15 @@ class GoogleProvider(LLMProvider):
                      # Generate unique ID to avoid collisions when same function is called multiple times
                      call_id = f"call_{fc.name}_{uuid.uuid4().hex[:8]}"
 
+                     # Capture thought_signature if present (required for thinking models)
+                     # Check both the function call object and our map from raw parts
+                     thought_sig = getattr(fc, "thought_signature", None) or thought_sig_map.get(fc.name)
+
                      tool_calls.append(SimpleNamespace(
                          function=function_obj,
                          id=call_id,
-                         type="function"
+                         type="function",
+                         thought_signature=thought_sig
                      ))
 
             # Extract usage metadata if available
