@@ -44,22 +44,28 @@ get back to you sometime between "never" and "heat death of the universe."
 
 ## How It Works
 
-1. **Scout** - Scrapes 30+ topics from Twitter. Not just fintwit bullshit. Consumer economy: "too expensive", "sold out", "can't afford". Because an RTX 5090 price hike tells you more about inflation than any CPI print.
+1. **Scout** - Scrapes 30+ topics from Twitter. Not just fintwit bullshit. Consumer economy: "too expensive", "sold
+   out", "can't afford". Because an RTX 5090 price hike tells you more about inflation than any CPI print.
 
-2. **Investigator** - spaCy NLP extracts what people are actually talking about. Scores by engagement velocity and cashtag co-occurrence. Filters out the noise with a brutally honest LLM pre-filter that rejects "Christmas" and "Books" but keeps "$NVDA" and "shortage".
+2. **Investigator** - spaCy NLP extracts what people are actually talking about. Scores by engagement velocity and
+   cashtag co-occurrence. Filters out the noise with a brutally honest LLM pre-filter that rejects "Christmas" and "
+   Books" but keeps "$NVDA" and "shortage".
 
-3. **Deep Dive** - Targeted scraping for the 2-4 trends that actually matter. Not 15. Not whatever has the most likes. The ones that pass the bullshit filter.
+3. **Deep Dive** - Targeted scraping for the 2-4 trends that actually matter. Not 15. Not whatever has the most likes.
+   The ones that pass the bullshit filter.
 
 4. **The Agent** - Here's where it gets good. The LLM has tools:
 
-   | Tool | What It Does |
-   |------|--------------|
-   | `get_market_data(symbols)` | Checks real prices. Exposes the "MOONING" liars. |
-   | `search_web(query)` | Deep web research. Turns Twitter vibes into actual intelligence. |
-   | `search_historical_parallels(query)` | "This feels familiar" → finds the receipts |
-   | `get_trend_timeline(trend)` | Is this new or recycled cope from last month? |
+   | Tool                                 | What It Does                                                     |
+                                             |--------------------------------------|------------------------------------------------------------------|
+   | `get_market_data(symbols)`           | Checks real prices. Exposes the "MOONING" liars.                 |
+   | `search_web(query)`                  | Deep web research. Turns Twitter vibes into actual intelligence. |
+   | `search_historical_parallels(query)` | "This feels familiar" → finds the receipts                       |
+   | `get_trend_timeline(trend)`          | Is this new or recycled cope from last month?                    |
 
-   The agent sees a claim, gets suspicious, calls the tool. If someone says silver is crashing and it's down 0.5%, that's marked EXAGGERATED. If uranium is spiking and nobody knows why, it searches the web. Maximum 5 tool calls because we're not trying to burn $50 in API costs on some nobody's pump-and-dump.
+   The agent sees a claim, gets suspicious, calls the tool. If someone says silver is crashing and it's down 0.5%,
+   that's marked EXAGGERATED. If uranium is spiking and nobody knows why, it searches the web. Maximum 5 tool calls
+   because we're not trying to burn $50 in API costs on some nobody's pump-and-dump.
 
 5. **Reporter** - Emails you a digest so you can pretend you're a Bloomberg terminal owner without paying $24k/year.
 
@@ -75,7 +81,7 @@ uv sync
 
 # spaCy needs this for reasons nobody can explain
 uv pip install pip
-uv run python -m spacy download en_core_web_sm
+uv run python -m spacy download en_core_web_lg
 ```
 
 ## Configuration
@@ -115,16 +121,21 @@ uv run test_email.py   # Verify SMTP settings and send test email
 
 ## Production Deployment (The Daemon Manifesto)
 
-Running this on a VPS and don't want to babysit it like Larry Fink babysits his relationship with the Fed? Need it to run
+Running this on a VPS and don't want to babysit it like Larry Fink babysits his relationship with the Fed? Need it to
+run
 automatically without Cloudflare detecting your traffic pattern faster than BlackRock detects a new bailout opportunity?
 
 **[Read DAEMONIZING.md](DAEMONIZING.md)** for the full systemd setup with randomized timing.
 
-**TL;DR**: systemd timers with `RandomizedDelaySec` make your traffic look like a normal person with insomnia checking fintwit
-at random hours, instead of a cron job that screams "I'M A BOT" at 2 PM every day. Twice-daily randomized runs (7am-12pm,
+**TL;DR**: systemd timers with `RandomizedDelaySec` make your traffic look like a normal person with insomnia checking
+fintwit
+at random hours, instead of a cron job that screams "I'M A BOT" at 2 PM every day. Twice-daily randomized runs (
+7am-12pm,
 5pm-11pm windows) ensure you never wake up to a "Silver up 40%" Reuters alert like the normies while also not getting
-cloudflared into oblivion. Includes automatic admin diagnostics emails so you know when your Twitter accounts get banned before
-you wonder why you haven't gotten a digest in 3 days. Because unlike Aladdin's monitoring dashboard (which probably costs
+cloudflared into oblivion. Includes automatic admin diagnostics emails so you know when your Twitter accounts get banned
+before
+you wonder why you haven't gotten a digest in 3 days. Because unlike Aladdin's monitoring dashboard (which probably
+costs
 $50k/month and requires a PhD to understand), we just email you when shit breaks.
 
 ## Signal Strength
@@ -143,7 +154,8 @@ Speaking of housing crises, fuck Sentinel Real Estate. They speedrun
 [5-over-1 "stumpies"](https://en.wikipedia.org/wiki/5-over-1) - the cheapest possible "luxury" apartments where
 cardboard-thin wood-frame units sit on a concrete parking podium that's already plotting its own collapse. Enjoy
 hearing your neighbor sneeze, shit, and have disappointing sex through walls with soundproofing so bad it violates
-the Geneva Convention - because [proper acoustic insulation costs money](https://www.foxblocks.com/blog/wood-frame-construction)
+the Geneva Convention -
+because [proper acoustic insulation costs money](https://www.foxblocks.com/blog/wood-frame-construction)
 and Sentinel needs that third yacht. The parking garage waterproofing
 [inevitably fails](https://nusitegroup.com/podium-deck-restoration-extending-the-life-of-your-structure/) because
 cutting corners is their love language - water infiltrates, rebar corrodes and
@@ -155,10 +167,12 @@ generous, because everyone who's lived in one knows the answer is "absolutely fu
 is simple: slap up the architectural equivalent of a McMansion made of paper plates, charge $2,400/month for 600
 square feet of mold potential, ignore every maintenance request until the city gets involved, then dump the
 deteriorating husk at a loss and gentrify the next victim neighborhood. Oh, and
-[pay $4 million to the NY Attorney General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
+[pay $4 million to the NY Attorney
+General](https://ag.ny.gov/press-release/2022/attorney-general-james-secures-4-million-landlords-after-uncovering-illegal)
 when your employees get caught taking $1 million in kickbacks while fraudulently inflating renovation costs to
 deregulate rent-stabilized units - because why commit just one type of fraud when you can commit several? Get
-[sued for $50 million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
+[sued for $50
+million](https://therealdeal.com/new-york/2025/08/29/landlord-fights-sentinel-over-alleged-rent-regulation-fraud/)
 for allegedly misrepresenting rent-stabilization status to pump property values. Settle a
 [Fair Housing Act discrimination case](https://www.justice.gov/crt/case/sentinel-real-estate-corp-et-al-nd-ga) for
 screwing over a disabled tenant who just wanted a service animal. The BlackRock of slumlording. Your security deposit
