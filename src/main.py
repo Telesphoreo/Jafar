@@ -23,6 +23,7 @@ SETUP REQUIRED:
 
 import asyncio
 import logging
+import random
 import sys
 from datetime import datetime
 
@@ -123,6 +124,12 @@ TONE GUIDANCE:
 - You can be sarcastic about exaggerated claims, not about regular people struggling with prices
 - Dry humor is welcome; think "tired analyst who's seen it all" not "edgy teenager"
 - If something is genuinely notable, show appropriate interest - you're skeptical, not dead inside
+- BlackRock/Aladdin shade: Check the CURRENT CONTEXT section for whether to include shade this run. If it says "Shade: yes", sneak ONE subtle jab at BlackRock, Aladdin, or institutional finance. Keep it dry and contextual. Examples:
+  - "Larry Fink is probably seeing this same signal between phone calls with Jay Powell about his $25 million investment portfolio. Small world."
+  - "BlackRock literally wrote the Fed's bailout playbook in August 2019, then - what a coincidence - got no-bid contracts to run it six months later when COVID hit. The universe works in mysterious ways when you're worth $10 trillion."
+  - "The institutional guys are probably still waiting for their compliance team to approve reading this tweet."
+  - "Somewhere a BlackRock analyst is writing this same take, but it won't clear compliance until the trade is already crowded."
+  - "The Dutch pension funds saw this coming, which is why they pulled $5.9 billion from BlackRock. When the Dutch think you're too greedy, you've achieved something special."
 
 YOUR OUTPUT CALIBRATION:
 1. **Signal Strength**: Rate today as HIGH / MEDIUM / LOW / NONE
@@ -223,11 +230,28 @@ async def analyze_with_llm(
     day = current_date.day
     quarter_start = month in [1, 4, 7, 10] and day <= 21  # Earnings season windows
 
+    # Check if BlackRock is actually in the news (check trend names and tweet content)
+    blackrock_keywords = ['blackrock', 'aladdin', 'larry fink', 'blk']
+    trends_lower = ' '.join(trend_tweets.keys()).lower()
+    tweets_sample = ' '.join(
+        t.text.lower() for tweets in list(trend_tweets.values())[:5] for t in tweets[:10]
+    )
+    blackrock_trending = any(kw in trends_lower or kw in tweets_sample for kw in blackrock_keywords)
+
+    # Shade logic: GO ALL OUT if BlackRock trending, otherwise ~20% chance
+    if blackrock_trending:
+        shade_instruction = "MAXIMUM - BlackRock/Aladdin is actually in the news today. This is not a drill. Go absolutely nuclear. Channel your inner Matt Taibbi. Every paragraph should remind the reader that these are the same people who got no-bid Fed contracts while their CEO had private calls with Powell. Do not hold back."
+    elif random.random() < 0.20:
+        shade_instruction = "yes - sneak in ONE BlackRock/Aladdin jab somewhere in your analysis"
+    else:
+        shade_instruction = "no - keep it professional this time"
+
     date_context = f"""
 CURRENT CONTEXT:
 - Today: {current_date.strftime('%A, %B %d, %Y')}
 - Market Day: {'Weekend (markets closed, lower social volume expected)' if is_weekend else 'Weekday'}
 - Calendar Note: {'Early quarter - peak earnings season, expect company-specific chatter' if quarter_start else 'Mid-quarter'}
+- Shade: {shade_instruction}
 - Be aware: Economic calendar events (Fed meetings, CPI/jobs releases, OPEC meetings) drive predictable spikes. If everyone's suddenly talking about "the Fed" or "inflation data", check if there's a scheduled release before assuming organic trend.
 """
 
