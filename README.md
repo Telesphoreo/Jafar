@@ -78,10 +78,6 @@ git clone <repository-url>
 cd twitter_sentiment_analysis
 
 uv sync
-
-# spaCy needs this for reasons nobody can explain
-uv pip install pip
-uv run python -m spacy download en_core_web_lg
 ```
 
 ## Configuration
