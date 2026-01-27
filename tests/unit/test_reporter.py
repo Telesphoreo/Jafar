@@ -210,8 +210,8 @@ class TestEmailReporter:
 
         assert result is False
 
-    def test_send_email_subject_includes_signal(self, reporter):
-        """Test that email subject reflects signal strength."""
+    def test_send_email_with_custom_subject(self, reporter):
+        """Test that custom subject line is used when provided."""
         with patch("smtplib.SMTP") as mock_smtp_class:
             mock_smtp = MagicMock()
             mock_smtp_class.return_value = mock_smtp
@@ -222,12 +222,33 @@ class TestEmailReporter:
                 tweet_count=500,
                 provider_info="Test",
                 signal_strength="high",
+                subject_line="Silver Actually Did Something For Once",
             )
 
-            # Check sendmail was called with subject containing signal
+            # Check sendmail was called with custom subject
             call_args = mock_smtp.sendmail.call_args
             message = call_args[0][2]  # Third arg is the message
-            assert "[High signal]" in message
+            assert "Silver Actually Did Something For Once" in message
+
+    def test_send_email_fallback_subject(self, reporter):
+        """Test that fallback subject is used when no custom subject provided."""
+        with patch("smtplib.SMTP") as mock_smtp_class:
+            mock_smtp = MagicMock()
+            mock_smtp_class.return_value = mock_smtp
+
+            reporter.send_email(
+                report_content="Test.",
+                trends=["$NVDA"],
+                tweet_count=500,
+                provider_info="Test",
+                signal_strength="high",
+                subject_line=None,
+            )
+
+            # Check sendmail was called with fallback subject
+            call_args = mock_smtp.sendmail.call_args
+            message = call_args[0][2]  # Third arg is the message
+            assert "Jafar Market Digest" in message
 
     def test_generate_admin_html_report(self, reporter, sample_diagnostics):
         """Test admin diagnostics HTML generation."""

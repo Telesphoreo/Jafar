@@ -247,6 +247,7 @@ Disclaimer: Not financial advice.
         provider_info: str = "AI",
         signal_strength: str = "low",
         timelines: dict = None,
+        subject_line: str = None,
     ) -> bool:
         """
         Send the economic digest via email.
@@ -258,21 +259,19 @@ Disclaimer: Not financial advice.
             provider_info: Description of LLM used.
             signal_strength: Signal strength rating (high/medium/low/none).
             timelines: Dict of {trend: TrendTimeline} for temporal badges.
+            subject_line: Optional custom subject line from LLM.
 
         Returns:
             True if email was sent successfully.
         """
         today = datetime.now().strftime("%B %d, %Y")
 
-        # Subject line reflects signal strength
-        signal_prefix = {
-            "high": "[High signal]",
-            "medium": "[Medium]",
-            "low": "",
-            "none": "[Quiet day]",
-        }.get(signal_strength, "")
-
-        subject = f"{signal_prefix} Jafar Market Digest - {today}".strip()
+        # Use LLM-generated subject if provided, otherwise fallback
+        if subject_line:
+            subject = f"{subject_line} - {today}"
+        else:
+            # Fallback subject
+            subject = f"Jafar Market Digest - {today}"
 
         # Create message container
         msg = MIMEMultipart("alternative")

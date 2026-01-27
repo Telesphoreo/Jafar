@@ -24,6 +24,7 @@ SETUP REQUIRED:
 import asyncio
 import logging
 import random
+import re
 import sys
 from datetime import datetime
 
@@ -201,9 +202,12 @@ async def analyze_with_llm(
         memory: MemoryManager | None = None,
         temporal_analyzer: TemporalTrendAnalyzer | None = None,
         timelines: dict[str, TrendTimeline] | None = None,
-) -> tuple[str, str, bool, int]:
+) -> tuple[str, str, bool, int, str | None]:
     """
     Use the LLM to generate a CALIBRATED sentiment analysis using an agentic loop.
+
+    Returns:
+        Tuple of (analysis_content, signal_strength, is_notable, tokens_used, subject_line)
     """
     logger.info(f"Generating analysis with {llm.provider_name} ({llm.model_name})")
 
@@ -280,6 +284,15 @@ Top engagement score: {top_engagement:.0f}
 {data_prompt}
 
 ## Required Output Format
+
+**SUBJECT LINE**: [A punchy email subject - 5-10 words max. MUST reference the actual top trend or finding. Can be witty or sardonic but should tell the reader what the email is about. Examples:
+- "Silver's Having A Moment (Actually Verified This Time)"
+- "RTX 5090 Pricing: NVIDIA Discovers Infinite Money Glitch"
+- "Uranium Chatter Spikes - Fintwit Discovers Nuclear Energy"
+- "Semiconductor Shortage Round 47: The Sequelening"
+- "Consumer Sentiment: Everyone's Broke Again"
+- "Nothing Burger with a Side of Nothing" (for truly quiet days)
+The subject should give a hint of what's inside, not be generic clickbait. Save humor for market hype, not genuine consumer struggles.]
 
 **SIGNAL STRENGTH**: [HIGH / MEDIUM / LOW / NONE]
 (Be honest - HIGH should be rare. If you're rating HIGH more than twice a month, recalibrate your excitement.)
@@ -364,7 +377,13 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
             
             # If no tool calls, this is the final answer
             content = response.content
-            
+
+            # Parse subject line
+            subject_line = None
+            subject_match = re.search(r'\*\*SUBJECT LINE\*\*:\s*["\']?([^"\'\n]+)["\']?', content)
+            if subject_match:
+                subject_line = subject_match.group(1).strip().strip('"\'')
+
             # Parse signal strength
             signal_strength = "low"  # default
             is_notable = False
@@ -378,15 +397,15 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
             elif "**SIGNAL STRENGTH**: NONE" in content_upper or "SIGNAL STRENGTH: NONE" in content_upper:
                 signal_strength = "none"
 
-            logger.info(f"Signal strength: {signal_strength.upper()}, Notable: {is_notable}")
-            return content, signal_strength, is_notable, total_tokens
+            logger.info(f"Signal strength: {signal_strength.upper()}, Notable: {is_notable}, Subject: {subject_line}")
+            return content, signal_strength, is_notable, total_tokens, subject_line
             
         except Exception as e:
             logger.error(f"LLM agent loop failed: {e}")
             raise
 
     # If loop exhausted without final answer (should be rare)
-    return "Analysis incomplete due to step limit.", "low", False, total_tokens
+    return "Analysis incomplete due to step limit.", "low", False, total_tokens, None
 
 
 async def llm_filter_trends(
@@ -819,7 +838,7 @@ async def run_pipeline() -> bool:
 
             logger.info(f"Top engagement: {top_engagement:.0f} (avg: {baseline.get('avg_top_engagement', 0):.0f})")
 
-            analysis, signal_strength, is_notable, tokens_used = await analyze_with_llm(
+            analysis, signal_strength, is_notable, tokens_used, subject_line = await analyze_with_llm(
                 llm,
                 trend_tweets,
                 historical_context=historical_context,
@@ -847,6 +866,7 @@ async def run_pipeline() -> bool:
             signal_strength = state.signal_strength
             is_notable = state.is_notable
             top_engagement = state.top_engagement
+            subject_line = None  # Will use fallback in reporter
 
         diagnostics.diagnostics.time_step4_llm = time.time() - step4_start
         diagnostics.diagnostics.signal_strength = signal_strength
@@ -869,6 +889,7 @@ async def run_pipeline() -> bool:
                 provider_info=provider_info,
                 signal_strength=signal_strength,
                 timelines=timelines,
+                subject_line=subject_line,
             )
 
             diagnostics.diagnostics.email_sent = success
