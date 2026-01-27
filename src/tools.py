@@ -172,12 +172,37 @@ class ToolRegistry:
                             "enum": ["high", "medium", "low", "none"],
                             "description": "HIGH=rare actionable signal, MEDIUM=worth monitoring, LOW=noise, NONE=nothing happening"
                         },
-                        "body": {
+                        "assessment": {
                             "type": "string",
-                            "description": "The full email body with your analysis. Use markdown formatting."
+                            "description": "2-3 sentences with dry wit. If LOW/NONE signal, say 'Another day of fintwit being fintwit.'"
+                        },
+                        "trends_observed": {
+                            "type": "string",
+                            "description": "Bullet points of what's being discussed - factual, not hyped."
+                        },
+                        "fact_check": {
+                            "type": "string",
+                            "description": "Call out EXAGGERATED or FALSE claims you caught. Leave empty if no fact checking was done."
+                        },
+                        "actionability": {
+                            "type": "string",
+                            "enum": ["not actionable", "monitor only", "worth researching", "warrants attention"],
+                            "description": "How actionable is this information?"
+                        },
+                        "actionability_reason": {
+                            "type": "string",
+                            "description": "1 sentence explaining the actionability rating."
+                        },
+                        "historical_parallel": {
+                            "type": "string",
+                            "description": "If meaningful: 'History rhymes: [parallel]'. Otherwise: 'No meaningful historical parallels.'"
+                        },
+                        "bottom_line": {
+                            "type": "string",
+                            "description": "1 sentence. Be direct, be memorable. 'Save your attention for another day' is valid."
                         }
                     },
-                    "required": ["subject_line", "signal_strength", "body"]
+                    "required": ["subject_line", "signal_strength", "assessment", "trends_observed", "actionability", "actionability_reason", "bottom_line"]
                 }
             }
         })

@@ -285,37 +285,28 @@ Top engagement score: {top_engagement:.0f}
 
 ## How to Submit Your Analysis
 
-When you are done analyzing, you MUST call the `submit_report` tool with:
+When you are done analyzing, you MUST call the `submit_report` tool with these fields:
 
-1. **subject_line**: A punchy email subject (5-10 words max). MUST reference the actual top trend or finding. Can be witty or sardonic but should tell the reader what the email is about. Examples:
-   - "Silver's Having A Moment (Actually Verified This Time)"
-   - "RTX 5090 Pricing: NVIDIA Discovers Infinite Money Glitch"
-   - "Uranium Chatter Spikes - Fintwit Discovers Nuclear Energy"
-   - "Nothing Burger with a Side of Nothing" (for truly quiet days)
+- **subject_line**: A punchy email subject (5-10 words max). MUST reference the actual top trend or finding. Can be witty or sardonic. Examples:
+  - "Silver's Having A Moment (Actually Verified This Time)"
+  - "RTX 5090 Pricing: NVIDIA Discovers Infinite Money Glitch"
+  - "Nothing Burger with a Side of Nothing" (for truly quiet days)
 
-2. **signal_strength**: One of: "high", "medium", "low", "none"
-   - HIGH should be rare. If you're rating HIGH more than twice a month, recalibrate.
-   - Be honest - most days are LOW or NONE.
+- **signal_strength**: One of "high", "medium", "low", "none". HIGH should be rare - most days are LOW or NONE.
 
-3. **body**: Your full analysis in markdown format, structured as:
+- **assessment**: 2-3 sentences with your characteristic dry wit. If LOW/NONE, say "Another day of fintwit being fintwit."
 
-**ASSESSMENT**:
-[2-3 sentences with your characteristic dry wit. If signal is LOW/NONE, say "Another day of fintwit being fintwit. Nothing here moves the needle."]
+- **trends_observed**: Bullet points of what's being discussed - factual, not hyped.
 
-**TRENDS OBSERVED**:
-[Bullet points of what's being discussed - factual, not hyped.]
+- **fact_check**: Call out EXAGGERATED or FALSE claims you caught. Leave empty string if you didn't fetch market data.
 
-**FACT CHECK** (if you fetched market data):
-[Call out any EXAGGERATED or FALSE claims you caught.]
+- **actionability**: One of "not actionable", "monitor only", "worth researching", "warrants attention"
 
-**ACTIONABILITY**: [NOT ACTIONABLE / MONITOR ONLY / WORTH RESEARCHING / WARRANTS ATTENTION]
-[1 sentence explaining why]
+- **actionability_reason**: 1 sentence explaining the actionability rating.
 
-**HISTORICAL PARALLEL**:
-[ONLY if genuinely meaningful, otherwise say "No meaningful historical parallels."]
+- **historical_parallel**: If meaningful: "History rhymes: [parallel]". Otherwise: "No meaningful historical parallels."
 
-**BOTTOM LINE**:
-[1 sentence. Be direct, be memorable. "Save your attention for another day" is valid.]
+- **bottom_line**: 1 sentence. Be direct, be memorable. "Save your attention for another day" is valid.
 
 Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. It takes wisdom to say "pass." Be that wisdom."""
 
@@ -366,8 +357,36 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
                      if function_name == "submit_report":
                          subject_line = arguments.get("subject_line", "Jafar Market Digest")
                          signal_strength = arguments.get("signal_strength", "low").lower()
-                         body = arguments.get("body", "No analysis provided.")
                          is_notable = signal_strength == "high"
+
+                         # Extract structured sections
+                         assessment = arguments.get("assessment", "")
+                         trends_observed = arguments.get("trends_observed", "")
+                         fact_check = arguments.get("fact_check", "")
+                         actionability = arguments.get("actionability", "")
+                         actionability_reason = arguments.get("actionability_reason", "")
+                         historical_parallel = arguments.get("historical_parallel", "")
+                         bottom_line = arguments.get("bottom_line", "")
+
+                         # Format body with Title Case headers
+                         body_parts = []
+                         if assessment:
+                             body_parts.append(f"**Assessment:**\n{assessment}")
+                         if trends_observed:
+                             body_parts.append(f"**Trends Observed:**\n{trends_observed}")
+                         if fact_check:
+                             body_parts.append(f"**Fact Check:**\n{fact_check}")
+                         if actionability:
+                             actionability_line = f"**Actionability:** {actionability.title()}"
+                             if actionability_reason:
+                                 actionability_line += f"\n{actionability_reason}"
+                             body_parts.append(actionability_line)
+                         if historical_parallel:
+                             body_parts.append(f"**Historical Parallel:**\n{historical_parallel}")
+                         if bottom_line:
+                             body_parts.append(f"**Bottom Line:**\n{bottom_line}")
+
+                         body = "\n\n".join(body_parts) if body_parts else "No analysis provided."
 
                          logger.info(f"Report submitted - Signal: {signal_strength.upper()}, Subject: {subject_line}")
                          return body, signal_strength, is_notable, total_tokens, subject_line
@@ -392,8 +411,9 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
             logger.warning("LLM returned text instead of calling submit_report - using fallback parsing")
 
             # Fallback: try to parse from text (legacy format)
+            # Handle both UPPERCASE and Title Case variants
             subject_line = None
-            subject_match = re.search(r'\*\*SUBJECT LINE\*\*:\s*["\']?([^"\'\n]+)["\']?', content)
+            subject_match = re.search(r'\*\*(?:SUBJECT LINE|Subject Line)\*\*:\s*["\']?([^"\'\n]+)["\']?', content, re.IGNORECASE)
             if subject_match:
                 subject_line = subject_match.group(1).strip().strip('"\'')
 
@@ -408,9 +428,9 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
             elif "NONE" in content_upper and "SIGNAL" in content_upper:
                 signal_strength = "none"
 
-            # Strip metadata lines from body content
-            content = re.sub(r'\*\*SUBJECT LINE\*\*:\s*[^\n]*\n*', '', content)
-            content = re.sub(r'\*\*SIGNAL STRENGTH\*\*:\s*[^\n]*\n*', '', content, flags=re.IGNORECASE)
+            # Strip metadata lines from body content (case-insensitive)
+            content = re.sub(r'\*\*(?:SUBJECT LINE|Subject Line)\*\*:\s*[^\n]*\n*', '', content, flags=re.IGNORECASE)
+            content = re.sub(r'\*\*(?:SIGNAL STRENGTH|Signal Strength)\*\*:\s*[^\n]*\n*', '', content, flags=re.IGNORECASE)
             content = content.strip()
 
             logger.info(f"Fallback parse - Signal: {signal_strength.upper()}, Subject: {subject_line}")
