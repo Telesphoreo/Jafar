@@ -310,8 +310,8 @@ class TestMarketFactChecker:
         )
 
         notes = checker._get_notes(data)
-        assert "52w HIGH" in notes
-        assert "HIGH VOLUME" in notes
+        assert "52w High" in notes
+        assert "High Volume" in notes
 
     def test_commodity_map_completeness(self):
         """Test that common commodities are mapped."""

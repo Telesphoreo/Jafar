@@ -178,11 +178,11 @@ class ToolRegistry:
                         },
                         "trends_observed": {
                             "type": "string",
-                            "description": "Bullet points of what's being discussed - factual, not hyped."
+                            "description": "Bullet points of what's being discussed - factual, not hyped. Use '•' character for each bullet point (e.g., '• Gold up 4.6%\\n• Silver breaking out')."
                         },
                         "fact_check": {
                             "type": "string",
-                            "description": "Call out EXAGGERATED or FALSE claims you caught. Leave empty if no fact checking was done."
+                            "description": "Categorized fact-check results using '•' bullets. Group by category with each on its own line, using bold Title Case labels:\\n• **Verified:** [claims that match market data]\\n• **Exaggerated:** [directionally correct but overstated]\\n• **False:** [claims contradicting data]\\n• **Unverified:** [claims without data to check]\\nLeave empty if no fact checking was done."
                         },
                         "actionability": {
                             "type": "string",

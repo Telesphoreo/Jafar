@@ -474,9 +474,9 @@ class MarketFactChecker:
         """Generate notes for a data point."""
         notes = []
         if data.is_near_52w_high:
-            notes.append("Near 52w HIGH")
+            notes.append("Near 52w High")
         if data.is_near_52w_low:
-            notes.append("Near 52w LOW")
+            notes.append("Near 52w Low")
         if data.is_unusual_volume:
-            notes.append("HIGH VOLUME")
+            notes.append("High Volume")
         return ", ".join(notes) if notes else "-"
