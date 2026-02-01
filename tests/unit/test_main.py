@@ -538,3 +538,69 @@ Should still parse correctly."""
         assert "**Assessment:**" in body
         assert "**Trends Observed:**" in body
         assert "**Bottom Line:**" in body
+
+
+class TestSanitizeLLMOutput:
+    """Tests for the sanitize_llm_output function."""
+
+    def test_replaces_literal_backslash_n_with_newline(self):
+        """Test that literal \\n strings become actual newlines."""
+        from src.main import sanitize_llm_output
+
+        text = "• First bullet\\n• Second bullet\\n• Third bullet"
+        result = sanitize_llm_output(text)
+        assert result == "• First bullet\n• Second bullet\n• Third bullet"
+
+    def test_replaces_box_drawing_characters_with_spaces(self):
+        """Test that box-drawing horizontal lines become spaces."""
+        from src.main import sanitize_llm_output
+
+        text = "•─Kevin─Warsh─nominated─for─Fed─Chair"
+        result = sanitize_llm_output(text)
+        assert "─" not in result
+        assert "Kevin Warsh nominated for Fed Chair" in result
+
+    def test_fixes_bullet_points_not_on_own_line(self):
+        """Test that bullet points get their own line."""
+        from src.main import sanitize_llm_output
+
+        text = "Some text• Bullet one• Bullet two"
+        result = sanitize_llm_output(text)
+        assert "text\n•" in result
+        assert "one\n•" in result
+
+    def test_handles_empty_string(self):
+        """Test that empty strings are handled gracefully."""
+        from src.main import sanitize_llm_output
+
+        assert sanitize_llm_output("") == ""
+        assert sanitize_llm_output(None) is None
+
+    def test_handles_already_clean_text(self):
+        """Test that clean text passes through unchanged."""
+        from src.main import sanitize_llm_output
+
+        text = "• First bullet\n• Second bullet\n• Third bullet"
+        result = sanitize_llm_output(text)
+        assert result == text
+
+    def test_cleans_multiple_spaces(self):
+        """Test that multiple consecutive spaces are collapsed."""
+        from src.main import sanitize_llm_output
+
+        text = "Too    many   spaces   here"
+        result = sanitize_llm_output(text)
+        assert "  " not in result
+        assert result == "Too many spaces here"
+
+    def test_realistic_malformed_output(self):
+        """Test with realistic malformed LLM output."""
+        from src.main import sanitize_llm_output
+
+        malformed = "• Verified: Kevin Warsh nominated for Fed Chair\\n• Exaggerated: Silver dropping 20%\\n• False: Dollar crashing"
+        result = sanitize_llm_output(malformed)
+        lines = result.split("\n")
+        assert len(lines) == 3
+        assert lines[0] == "• Verified: Kevin Warsh nominated for Fed Chair"
+        assert lines[1] == "• Exaggerated: Silver dropping 20%"
+        assert lines[2] == "• False: Dollar crashing"

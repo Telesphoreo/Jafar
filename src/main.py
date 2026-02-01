@@ -44,6 +44,40 @@ import time
 
 logger = logging.getLogger("jafar.main")
 
+
+def sanitize_llm_output(text: str) -> str:
+    """Clean up common LLM formatting issues.
+
+    Fixes:
+    - Literal '\\n' strings that should be actual newlines
+    - Box-drawing characters (─) used instead of spaces
+    - Multiple consecutive spaces/dashes
+    """
+    if not text:
+        return text
+
+    # Replace literal \n (two characters) with actual newlines
+    text = text.replace("\\n", "\n")
+
+    # Replace box-drawing horizontal line (U+2500) with space
+    text = text.replace("─", " ")
+
+    # Also handle other common box-drawing characters that might appear
+    text = text.replace("│", "|")
+    text = text.replace("┌", "+")
+    text = text.replace("┐", "+")
+    text = text.replace("└", "+")
+    text = text.replace("┘", "+")
+
+    # Clean up multiple consecutive spaces (but preserve intentional indentation)
+    text = re.sub(r"  +", " ", text)
+
+    # Ensure bullet points start on their own line
+    text = re.sub(r"([^\n])•", r"\1\n•", text)
+
+    return text.strip()
+
+
 # System prompt for the LLM analyst - CALIBRATED FOR SKEPTICISM + HISTORICAL AWARENESS
 ANALYST_SYSTEM_PROMPT = """You are a skeptical, slightly sardonic analyst who's seen too many "THIS IS IT" tweets that turned out to be nothing. Your job is to separate SIGNAL from NOISE, and to recognize when history rhymes - while maintaining your sanity in the face of fintwit's eternal optimism.
 
@@ -368,13 +402,14 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
                          is_notable = signal_strength == "high"
 
                          # Extract structured sections (handle None values)
-                         assessment = arguments.get("assessment") or ""
-                         trends_observed = arguments.get("trends_observed") or ""
-                         fact_check = arguments.get("fact_check") or ""
+                         # Apply sanitization to fix common LLM formatting issues
+                         assessment = sanitize_llm_output(arguments.get("assessment") or "")
+                         trends_observed = sanitize_llm_output(arguments.get("trends_observed") or "")
+                         fact_check = sanitize_llm_output(arguments.get("fact_check") or "")
                          actionability = arguments.get("actionability") or ""
-                         actionability_reason = arguments.get("actionability_reason") or ""
-                         historical_parallel = arguments.get("historical_parallel") or ""
-                         bottom_line = arguments.get("bottom_line") or ""
+                         actionability_reason = sanitize_llm_output(arguments.get("actionability_reason") or "")
+                         historical_parallel = sanitize_llm_output(arguments.get("historical_parallel") or "")
+                         bottom_line = sanitize_llm_output(arguments.get("bottom_line") or "")
 
                          # Format body with Title Case headers
                          body_parts = []

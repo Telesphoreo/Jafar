@@ -4,8 +4,12 @@ Documentation=https://github.com/Telesphoreo/Jafar
 After=network-online.target
 Wants=network-online.target
 
+# Stop restarting after 5 failures within 30 minutes
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
 [Service]
-Type=oneshot
+Type=simple
 User=yourusername
 Group=yourusername
 WorkingDirectory=/home/yourusername/Jafar
@@ -13,7 +17,7 @@ WorkingDirectory=/home/yourusername/Jafar
 # Use uv to run the pipeline
 ExecStart=/home/yourusername/.local/bin/uv run python -m src.main
 
-# Restart on failure (but not on success since this is oneshot)
+# Restart on failure
 Restart=on-failure
 RestartSec=300
 
@@ -21,8 +25,9 @@ RestartSec=300
 MemoryMax=2G
 CPUQuota=80%
 
-# Timeout (10 minutes should be enough for the pipeline)
-TimeoutStartSec=600
+# No startup timeout needed - simple type starts immediately
+TimeoutStartSec=infinity
+TimeoutStopSec=60
 
 # Logging (writes to .run/ directory with log rotation)
 StandardOutput=append:/home/yourusername/Jafar/.run/pipeline.log
