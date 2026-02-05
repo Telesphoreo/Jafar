@@ -30,7 +30,7 @@ from datetime import datetime
 
 from .config import config
 from .scraper import TwitterScraper, ScrapedTweet
-from .analyzer import TrendAnalyzer, DiscoveredTrend
+from .analyzer import TrendAnalyzer, DiscoveredTrend, StatisticalTrendAnalyzer
 from .llm import create_llm_provider, LLMProvider
 from .reporter import create_reporter_from_config
 from .history import DigestHistory, calculate_signal_strength
@@ -487,81 +487,131 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
     return "Analysis incomplete due to step limit.", "low", False, total_tokens, None
 
 
+def _get_filter_tool_definition() -> dict:
+    """Get the tool definition for the trend filter."""
+    return {
+        "type": "function",
+        "function": {
+            "name": "submit_filter_result",
+            "description": "Submit the list of trends to keep for deeper analysis",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "trends_to_keep": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of trend terms to keep (e.g., ['$NVDA', 'Release', 'Layoffs']). Use exact term names from the candidates.",
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "Brief explanation of why these trends were kept and others rejected (1-2 sentences)",
+                    },
+                },
+                "required": ["trends_to_keep", "reasoning"],
+            },
+        },
+    }
+
+
+FILTER_SYSTEM_PROMPT = """You are a context-aware trend filter for a financial intelligence system.
+
+Your job: Read the sample tweets for each trend candidate and decide which represent REAL, SIGNIFICANT developments worth analyzing deeper.
+
+KEEP trends where sample tweets show:
+- Specific market-moving events (earnings, product launches, policy changes)
+- Major news (document releases, legal developments, geopolitical events)
+- AI/Tech developments (model releases, company announcements, chip news)
+- Economic indicators or shifts (inflation data, jobs, consumer behavior)
+- Supply/demand signals (shortages, price changes, availability issues)
+- Company-specific news (layoffs, acquisitions, scandals, product issues)
+
+REJECT trends where sample tweets show:
+- Generic discussion with no specific news hook
+- Entertainment/pop culture unrelated to markets
+- Pure social media noise or memes
+- Recycled/stale narratives with no new information
+
+CRITICAL: Use the sample tweets to understand context. A term like "Release" could be:
+- KEEP: If tweets discuss Epstein files, AI model releases, earnings releases
+- REJECT: If tweets are just generic chatter about music/movies
+
+When ready, call the submit_filter_result tool with your decision."""
+
+
 async def llm_filter_trends(
         llm: LLMProvider,
-        candidates: list[str],
+        candidates: list[DiscoveredTrend],
 ) -> list[str]:
     """
-    Use LLM to filter trend candidates, keeping only actionable financial signals.
+    Use LLM with tool calling to filter trend candidates WITH CONTEXT.
 
-    This is a quick, cheap call (~500 tokens) that leverages LLM judgment to
-    distinguish real market signals from noise that slipped through statistical filters.
+    This passes sample tweets for each trend so the LLM can understand what
+    "Release" actually refers to (Epstein files? Sonnet 5? Product launch?).
 
     Args:
         llm: The LLM provider to use
-        candidates: List of trend term strings to evaluate
+        candidates: List of DiscoveredTrend objects with sample tweets
 
     Returns:
-        Filtered list of trends worth deep-diving
+        Filtered list of trend term strings worth deep-diving
     """
     if not candidates:
         return []
 
-    # Format candidates for the prompt
-    candidates_str = "\n".join(f"- {c}" for c in candidates)
+    # Format candidates WITH their sample tweets for context
+    candidates_parts = []
+    for trend in candidates:
+        # Include 2-3 sample tweets so LLM can see what the trend actually refers to
+        samples = trend.sample_tweets[:3] if trend.sample_tweets else []
+        samples_text = "\n    ".join(f'"{s[:150]}..."' if len(s) > 150 else f'"{s}"' for s in samples)
 
-    prompt = f"""Review these trend candidates. Filter out generic noise while keeping meaningful signals.
+        if samples_text:
+            candidates_parts.append(f"- **{trend.term}** ({trend.mention_count} mentions, {trend.unique_authors} authors)\n    Sample tweets:\n    {samples_text}")
+        else:
+            candidates_parts.append(f"- **{trend.term}** ({trend.mention_count} mentions, {trend.unique_authors} authors)")
+
+    candidates_str = "\n\n".join(candidates_parts)
+
+    prompt = f"""Review these trend candidates. The sample tweets show what people are ACTUALLY discussing.
 
 CANDIDATES:
 {candidates_str}
 
-KEEP terms that are:
-- Specific assets, tickers, or commodities (e.g., "Silver", "$NVDA", "Uranium")
-- Market events (e.g., "Short Squeeze", "Earnings Miss", "Sector Rotation")
-- Economic indicators (e.g., "Inflation", "Wages", "Layoffs", "CPI")
-- Companies/products with notable developments (e.g., "RTX 5090", "iPhone", "Tesla")
-- Price signals (e.g., "Price Increase", "Too Expensive", "Unaffordable")
-- Supply/demand signals (e.g., "Shortage", "Sold Out", "Wait List", "Allocation")
-- Sentiment indicators (e.g., "Risk", "Demand", "Panic", "Can't Afford")
+Analyze each trend's sample tweets to understand the real context, then call submit_filter_result with your decision."""
 
-REJECT terms that are:
-- Generic words with no meaning (e.g., "Things", "World", "Experience")
-- Seasonal/holiday terms (e.g., "Christmas", "Weekend", "Birthday")
-- Common nouns unrelated to economy or markets (e.g., "Books", "Fiction", "Chat")
-
-Respond with ONLY a JSON array of terms to KEEP, like: ["Silver", "$NVDA", "RTX 5090", "Shortage"]
-If none are worth keeping, respond with: []"""
+    tools = [_get_filter_tool_definition()]
 
     try:
         response = await llm.generate(
             prompt=prompt,
-            system_prompt="You are a signal filter. Keep terms that indicate market movements, economic developments, pricing trends, or supply/demand changes. Respond with ONLY a JSON array, no explanation.",
+            system_prompt=FILTER_SYSTEM_PROMPT,
             temperature=0.3,
-            max_tokens=200,
+            max_tokens=500,
+            tools=tools,
         )
 
-        # Parse JSON response
-        import json
-        content = response.content.strip()
+        # Extract result from tool call
+        if response.tool_calls:
+            for tool_call in response.tool_calls:
+                if tool_call.function.name == "submit_filter_result":
+                    import json
+                    args = json.loads(tool_call.function.arguments)
+                    filtered = args.get("trends_to_keep", [])
+                    reasoning = args.get("reasoning", "")
 
-        # Handle potential markdown code blocks
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1] if "\n" in content else content
-            content = content.rsplit("```", 1)[0] if "```" in content else content
-            content = content.strip()
+                    if reasoning:
+                        logger.info(f"LLM filter reasoning: {reasoning}")
 
-        filtered = json.loads(content)
+                    logger.info(f"LLM filter: {len(filtered)}/{len(candidates)} trends passed")
+                    return filtered
 
-        if not isinstance(filtered, list):
-            logger.warning(f"LLM filter returned non-list: {content}")
-            return candidates  # Fall back to original
-
-        logger.info(f"LLM filter: {len(filtered)}/{len(candidates)} trends passed")
-        return filtered
+        # Fallback: try to parse from text if no tool call (shouldn't happen)
+        logger.warning("LLM filter did not use tool call, falling back to all candidates")
+        return [t.term for t in candidates]
 
     except Exception as e:
         logger.warning(f"LLM filter failed, using all candidates: {e}")
-        return candidates  # Fall back to original on error
+        return [t.term for t in candidates]
 
 
 async def run_pipeline() -> bool:
@@ -735,6 +785,7 @@ async def run_pipeline() -> bool:
         else:
             logger.info("\n[STEP 1] Skipping (already complete)")
             broad_tweets = checkpoint.get_broad_tweets()
+            diagnostics.diagnostics.broad_topics_attempted = len(config.app.broad_topics)
             diagnostics.diagnostics.broad_topics_completed = len(config.app.broad_topics)
             diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
 
@@ -751,20 +802,27 @@ async def run_pipeline() -> bool:
         # STEP 2: THE INVESTIGATOR - NER Analysis
         # ============================================================
         step2_start = time.time()
+        trend_objects: list[DiscoveredTrend] = []  # Keep full objects for LLM filter context
+
         if not state.step2_complete:
             logger.info("\n[STEP 2] THE INVESTIGATOR: Extracting trending entities...")
 
-            trends = analyzer.extract_trends(
+            # Use extract_trends_with_details to get full DiscoveredTrend objects
+            # These include sample_tweets which give the LLM filter context
+            trend_objects, _ = analyzer.extract_trends_with_details(
                 tweets=broad_tweets,
                 top_n=config.app.top_trends_count,
                 min_mentions=config.app.min_trend_mentions,
                 min_authors=config.app.min_trend_authors,
+                apply_quality_filter=True,
             )
+            trends = [t.term for t in trend_objects]
 
             if not trends:
                 logger.warning("No trends extracted. Using fallback topics.")
                 diagnostics.diagnostics.add_warning("No trends extracted, using fallback topics")
                 trends = ["Federal Reserve", "Stock Market", "Inflation"]
+                trend_objects = []  # No objects for fallback
 
             diagnostics.diagnostics.trends_discovered = len(trends)
             checkpoint.save_trends(trends)
@@ -773,6 +831,7 @@ async def run_pipeline() -> bool:
             logger.info("\n[STEP 2] Skipping (already complete)")
             trends = state.trends
             diagnostics.diagnostics.trends_discovered = len(trends)
+            # Note: trend_objects will be empty for resumed runs, LLM filter will be skipped
 
         diagnostics.diagnostics.time_step2_analysis = time.time() - step2_start
 
@@ -781,13 +840,15 @@ async def run_pipeline() -> bool:
         # ============================================================
         # STEP 2.5: LLM QUALITY FILTER - Validate candidates before deep dive
         # ============================================================
-        # Only run LLM filter if we haven't started deep dive yet (trends might change)
-        if trends and len(trends) > 0 and not state.step3_complete:
-            logger.info("\n[STEP 2.5] LLM FILTER: Validating trend candidates...")
-            filtered_trends = await llm_filter_trends(llm, trends)
+        # Only run LLM filter if we have trend objects with context (not resumed)
+        # and haven't started deep dive yet
+        if trend_objects and not state.step3_complete:
+            logger.info("\n[STEP 2.5] LLM FILTER: Validating trend candidates with context...")
+            # Pass full DiscoveredTrend objects so LLM can see sample tweets
+            filtered_trends = await llm_filter_trends(llm, trend_objects)
             diagnostics.diagnostics.llm_calls_made += 1  # LLM filter call
 
-            if filtered_trends != trends:
+            if set(filtered_trends) != set(trends):
                 # Save filtered trends to checkpoint
                 trends = filtered_trends
                 checkpoint.save_trends(trends)

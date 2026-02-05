@@ -1,13 +1,15 @@
 """
 Unit tests for src/main.py
 
-Tests the agentic analysis loop, particularly submit_report handling and fallback parsing.
+Tests the agentic analysis loop, submit_report handling, fallback parsing,
+and the LLM trend filter with tool calling.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from src.main import analyze_with_llm
+from src.main import analyze_with_llm, llm_filter_trends, _get_filter_tool_definition
+from src.analyzer import DiscoveredTrend
 
 
 class TestAnalyzeWithLLM:
@@ -604,3 +606,235 @@ class TestSanitizeLLMOutput:
         assert lines[0] == "• Verified: Kevin Warsh nominated for Fed Chair"
         assert lines[1] == "• Exaggerated: Silver dropping 20%"
         assert lines[2] == "• False: Dollar crashing"
+
+
+class TestLLMFilterTrends:
+    """Tests for the llm_filter_trends function with tool calling."""
+
+    @pytest.fixture
+    def mock_llm(self):
+        """Create a mock LLM provider."""
+        llm = MagicMock()
+        llm.provider_name = "TestProvider"
+        llm.model_name = "test-model"
+        llm.generate = AsyncMock()
+        return llm
+
+    @pytest.fixture
+    def sample_trend_candidates(self):
+        """Create sample DiscoveredTrend objects with sample tweets."""
+        return [
+            DiscoveredTrend(
+                term="Release",
+                term_type="ngram",
+                mention_count=15,
+                unique_authors=12,
+                total_engagement=5000,
+                avg_engagement=333,
+                sample_tweets=[
+                    "The Epstein files release is finally happening today",
+                    "Full document release expected within hours",
+                    "This release will expose everything",
+                ],
+                financial_context_count=10,
+            ),
+            DiscoveredTrend(
+                term="$NVDA",
+                term_type="cashtag",
+                mention_count=25,
+                unique_authors=20,
+                total_engagement=8000,
+                avg_engagement=320,
+                sample_tweets=[
+                    "$NVDA earnings beat expectations",
+                    "NVIDIA guidance raised for next quarter",
+                ],
+                financial_context_count=25,
+            ),
+            DiscoveredTrend(
+                term="Music",
+                term_type="ngram",
+                mention_count=10,
+                unique_authors=8,
+                total_engagement=2000,
+                avg_engagement=200,
+                sample_tweets=[
+                    "New Taylor Swift album dropped",
+                    "Best music of 2026 so far",
+                ],
+                financial_context_count=2,
+            ),
+        ]
+
+    def test_get_filter_tool_definition(self):
+        """Test that filter tool definition has correct structure."""
+        tool_def = _get_filter_tool_definition()
+
+        assert tool_def["type"] == "function"
+        assert tool_def["function"]["name"] == "submit_filter_result"
+
+        params = tool_def["function"]["parameters"]
+        assert "trends_to_keep" in params["properties"]
+        assert "reasoning" in params["properties"]
+        assert params["properties"]["trends_to_keep"]["type"] == "array"
+        assert "trends_to_keep" in params["required"]
+        assert "reasoning" in params["required"]
+
+    @pytest.mark.asyncio
+    async def test_filter_keeps_relevant_trends(self, mock_llm, sample_trend_candidates):
+        """Test that filter keeps relevant trends via tool call."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_filter_result"
+        mock_tool_call.function.arguments = '''{
+            "trends_to_keep": ["Release", "$NVDA"],
+            "reasoning": "Kept Release (Epstein files) and $NVDA (earnings). Rejected Music (entertainment)."
+        }'''
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 50
+
+        mock_llm.generate.return_value = mock_response
+
+        result = await llm_filter_trends(mock_llm, sample_trend_candidates)
+
+        assert result == ["Release", "$NVDA"]
+        assert "Music" not in result
+
+    @pytest.mark.asyncio
+    async def test_filter_rejects_all_trends(self, mock_llm, sample_trend_candidates):
+        """Test that filter can reject all trends (quiet day)."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_filter_result"
+        mock_tool_call.function.arguments = '''{
+            "trends_to_keep": [],
+            "reasoning": "No significant market-moving trends identified."
+        }'''
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 30
+
+        mock_llm.generate.return_value = mock_response
+
+        result = await llm_filter_trends(mock_llm, sample_trend_candidates)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_filter_fallback_on_no_tool_call(self, mock_llm, sample_trend_candidates):
+        """Test fallback returns all candidates when LLM doesn't use tool."""
+        mock_response = MagicMock()
+        mock_response.content = "I think Release and NVDA are interesting."
+        mock_response.tool_calls = None
+        mock_response.token_count = 20
+
+        mock_llm.generate.return_value = mock_response
+
+        result = await llm_filter_trends(mock_llm, sample_trend_candidates)
+
+        # Should fall back to returning all candidate terms
+        assert len(result) == 3
+        assert "Release" in result
+        assert "$NVDA" in result
+        assert "Music" in result
+
+    @pytest.mark.asyncio
+    async def test_filter_fallback_on_exception(self, mock_llm, sample_trend_candidates):
+        """Test fallback returns all candidates when exception occurs."""
+        mock_llm.generate.side_effect = Exception("API Error")
+
+        result = await llm_filter_trends(mock_llm, sample_trend_candidates)
+
+        # Should fall back to returning all candidate terms
+        assert len(result) == 3
+        assert "Release" in result
+        assert "$NVDA" in result
+        assert "Music" in result
+
+    @pytest.mark.asyncio
+    async def test_filter_empty_candidates(self, mock_llm):
+        """Test filter handles empty candidate list."""
+        result = await llm_filter_trends(mock_llm, [])
+
+        assert result == []
+        # LLM should not be called for empty list
+        mock_llm.generate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_filter_passes_tools_to_llm(self, mock_llm, sample_trend_candidates):
+        """Test that filter passes correct tool definition to LLM."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_filter_result"
+        mock_tool_call.function.arguments = '{"trends_to_keep": ["Release"], "reasoning": "Test"}'
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 20
+
+        mock_llm.generate.return_value = mock_response
+
+        await llm_filter_trends(mock_llm, sample_trend_candidates)
+
+        # Verify LLM was called with tools
+        call_kwargs = mock_llm.generate.call_args.kwargs
+        assert "tools" in call_kwargs
+        assert len(call_kwargs["tools"]) == 1
+        assert call_kwargs["tools"][0]["function"]["name"] == "submit_filter_result"
+
+    @pytest.mark.asyncio
+    async def test_filter_includes_sample_tweets_in_prompt(self, mock_llm, sample_trend_candidates):
+        """Test that sample tweets are included in the prompt for context."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_filter_result"
+        mock_tool_call.function.arguments = '{"trends_to_keep": ["Release"], "reasoning": "Test"}'
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 20
+
+        mock_llm.generate.return_value = mock_response
+
+        await llm_filter_trends(mock_llm, sample_trend_candidates)
+
+        # Verify prompt contains sample tweets
+        call_kwargs = mock_llm.generate.call_args.kwargs
+        prompt = call_kwargs.get("prompt", "")
+        assert "Epstein files release" in prompt
+        assert "NVDA earnings" in prompt
+        assert "Taylor Swift" in prompt
+
+    @pytest.mark.asyncio
+    async def test_filter_candidates_without_samples(self, mock_llm):
+        """Test filter handles candidates without sample tweets."""
+        candidates = [
+            DiscoveredTrend(
+                term="Silver",
+                term_type="ngram",
+                mention_count=10,
+                unique_authors=8,
+                total_engagement=3000,
+                avg_engagement=300,
+                sample_tweets=[],  # No samples
+                financial_context_count=8,
+            ),
+        ]
+
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_filter_result"
+        mock_tool_call.function.arguments = '{"trends_to_keep": ["Silver"], "reasoning": "Test"}'
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 20
+
+        mock_llm.generate.return_value = mock_response
+
+        result = await llm_filter_trends(mock_llm, candidates)
+
+        assert result == ["Silver"]

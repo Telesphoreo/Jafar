@@ -371,3 +371,24 @@ class TestShouldSendAdminAlert:
 
         assert should_alert is False
         assert "operational" in reason.lower()
+
+    def test_alert_on_memory_storage_failure(self):
+        """Test alert triggered when memory storage fails."""
+        diag = RunDiagnostics(
+            run_id="20240101",
+            start_time=datetime.now(),
+            broad_tweets_scraped=1500,
+            deep_dive_tweets_scraped=500,
+            trends_discovered=10,
+            twitter_accounts_total=5,
+            twitter_accounts_active=4,
+            email_sent=True,
+        )
+        # Add a memory storage failure warning
+        diag.add_warning("Failed to store memory: expected 1536 dimensions, not 3072")
+
+        should_alert, reason = should_send_admin_alert(diag)
+
+        assert should_alert is True
+        assert "WARNING" in reason
+        assert "Memory storage failed" in reason

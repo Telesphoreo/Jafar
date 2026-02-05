@@ -260,6 +260,11 @@ def should_send_admin_alert(diagnostics: RunDiagnostics) -> tuple[bool, str]:
         elif len(diagnostics.errors) > 0:
             return True, f"CRITICAL: {len(diagnostics.errors)} error(s) occurred"
 
+    # Check for memory storage failures (important infrastructure issue)
+    memory_failures = [w for w in diagnostics.warnings if "Failed to store memory" in w]
+    if memory_failures:
+        return True, f"WARNING: Memory storage failed - {len(memory_failures)} failure(s)"
+
     # Warning conditions trigger alert if severe enough
     if diagnostics.total_tweets < 50:
         return True, f"WARNING: Very low tweet count ({diagnostics.total_tweets})"
