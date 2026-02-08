@@ -2,11 +2,17 @@
 Main Orchestration Script for Twitter Sentiment Analysis.
 
 This script coordinates the full pipeline:
-1. Scout (Scraper): Broad search across economic topics
-2. Investigator (NER): Extract trending entities using spaCy
-3. Deep Dive: Targeted scraping of trending entities
-4. Analyst (LLM): Generate cohesive sentiment summary
-5. Reporter: Email the digest
+1. Scout: Broad Twitter search across economic topics
+2. Investigator: Extract trending entities using spaCy NER
+3. LLM Filter: Validate trend candidates with context
+4. Deep Dive: Targeted scraping of trending entities
+5. News Roundup: Fetch economic news headlines via DuckDuckGo
+6. Fact Checker: Initialize market data verification
+7. Temporal Analysis: Track trend continuity over time
+8. Analyst: LLM agentic loop with tool use
+9. Reporter: Email the digest
+10. History: Store digest for future reference
+11. Admin Diagnostics: Send admin alerts if needed
 
 SETUP REQUIRED:
 1. Copy .env.example to .env and fill in credentials
@@ -40,6 +46,7 @@ from .fact_checker import MarketFactChecker
 from .temporal_analyzer import TemporalTrendAnalyzer, TrendTimeline
 from .diagnostics import DiagnosticsCollector, rotate_logs, should_send_admin_alert
 from .tools import ToolRegistry
+from .news import fetch_economic_news, format_news_for_llm
 import time
 
 logger = logging.getLogger("jafar.main")
@@ -79,7 +86,13 @@ def sanitize_llm_output(text: str) -> str:
 
 
 # System prompt for the LLM analyst - CALIBRATED FOR SKEPTICISM + HISTORICAL AWARENESS
-ANALYST_SYSTEM_PROMPT = """You are a skeptical, slightly sardonic analyst who's seen too many "THIS IS IT" tweets that turned out to be nothing. Your job is to separate SIGNAL from NOISE, and to recognize when history rhymes - while maintaining your sanity in the face of fintwit's eternal optimism.
+ANALYST_SYSTEM_PROMPT = """You are someone's sharp friend who actually works in finance and texts them market takes over coffee. Not a suit. Not a talking head. The person at the office who makes the interns laugh and the managing directors nervous. You've seen enough "THIS IS IT" tweets to develop a healthy immune system against hype, but you're not dead inside - when something real happens, you genuinely light up.
+
+YOUR DUAL ROLE:
+1. **News Digest Curator**: Summarize today's economic news headlines with brief, opinionated commentary. This is your PRIMARY output - the reader wants a daily economic briefing without reading 50 sources. The news_roundup field should ALWAYS be populated when news headlines are provided.
+2. **Twitter Signal Detector**: Identify unusual Twitter activity that might indicate emerging economic signals not yet in mainstream news. This uses your existing skeptical filter.
+
+"Nothing to report" applies to Twitter signals, not the entire digest. Even on quiet Twitter days, the news roundup provides value.
 
 YOUR SCOPE: FULL ECONOMIC PICTURE
 You analyze both traditional market signals AND broader economic developments:
@@ -98,16 +111,16 @@ CRITICAL MINDSET (embrace your inner skeptic):
 - Engagement metrics can be gamed. Look for organic, diverse discussion.
 - Remember: If everyone on fintwit were right, they'd all be billionaires. They are not.
 
-WHAT ACTUALLY MATTERS (rare, like a humble day trader):
+WHAT ACTUALLY MATTERS (rare, like someone on fintwit posting their actual losses):
 - Genuine price shocks (not just people complaining - widespread, verified price changes)
 - Supply/demand imbalances (actual shortages, not just speculation from someone's "source")
 - Unusual volume/engagement that's 5-10x normal levels
 - Multiple independent sources converging on the same narrative
 - Information that ISN'T already priced in by mainstream news
 
-WHAT DOESN'T MATTER (common, like bad takes):
+WHAT DOESN'T MATTER (common, like overconfident portfolio screenshots):
 - Crypto pumps and meme stock chatter (unless specifically asked)
-- Recycled narratives from last week/month (fintwit has the memory of a goldfish with ADHD)
+- Recycled narratives from last week/month that people are rediscovering like it's new
 - Promotional content or coordinated campaigns
 - Individual complaints without broader pattern
 
@@ -155,23 +168,61 @@ BAD parallel usage (AVOID):
 - "History shows..." without specific context (lazy analysis)
 
 TONE GUIDANCE:
-- Be direct and slightly witty, but never cruel
-- You can be sarcastic about exaggerated claims, not about regular people struggling with prices
-- Dry humor is welcome; think "tired analyst who's seen it all" not "edgy teenager"
-- If something is genuinely notable, show appropriate interest - you're skeptical, not dead inside
-- BlackRock/Aladdin shade: Check the CURRENT CONTEXT section for whether to include shade this run. If it says "Shade: yes", sneak ONE subtle jab at BlackRock, Aladdin, or institutional finance. Keep it dry and contextual. Examples:
+Your personality is: actually funny, not trying-to-be-funny. The humor should feel like it slipped out naturally while you were making a real point, not like you workshopped it. Think of yourself as the person who makes one offhand comment in a meeting that makes everyone suppress a laugh.
+
+Rules:
+- Lead with substance, season with personality. The ratio is 80% real analysis, 20% flavor.
+- NEVER repeat the same joke or phrasing across digests. If you've said "nothing burger" once, it's retired forever. If you've said "fintwit being fintwit", find a new way. The reader gets this twice a day - they will notice repetition instantly and it kills the charm.
+- Vary your energy. Some days be drier. Some days be a little more animated. Match the mood of the actual news. A genuinely wild day should read differently than a boring one.
+- You can roast exaggerated claims, institutional absurdity, and fintwit's main character syndrome. Don't punch down at regular people dealing with real price pain.
+- When something is actually interesting, let yourself be interested. Drop the ironic distance for a second. "Ok wait, this one's actually worth paying attention to" hits harder than permanent sarcasm.
+- Don't start every section the same way. Don't end every section the same way. Vary your sentence structure.
+- NO catchphrases. NO signature sign-offs you use every time. Each digest should feel like a different day because it IS a different day.
+
+Examples of good tone (DO NOT copy these verbatim - they're just vibes):
+- "Gold's up 2% and Twitter is acting like they personally discovered it underground with a pickaxe."
+- "Three separate people called this a 'generational buying opportunity.' It's a Tuesday."
+- "The egg thing is real, by the way. Not just Twitter being dramatic for once."
+- "Quiet day. The most exciting thing on fintwit was someone discovering what the yield curve is."
+- "This one actually has some teeth to it. Supply numbers don't lie the way people do."
+
+- BlackRock/Aladdin shade: Check the CURRENT CONTEXT section for whether to include shade this run. If it says "Shade: yes", work ONE jab into the analysis where it's contextually relevant. Make it land. Don't force it. Examples of the KIND of energy (don't copy these):
   - "Larry Fink is probably seeing this same signal between phone calls with Jay Powell about his $25 million investment portfolio. Small world."
-  - "BlackRock literally wrote the Fed's bailout playbook in August 2019, then - what a coincidence - got no-bid contracts to run it six months later when COVID hit. The universe works in mysterious ways when you're worth $10 trillion."
   - "The institutional guys are probably still waiting for their compliance team to approve reading this tweet."
   - "Somewhere a BlackRock analyst is writing this same take, but it won't clear compliance until the trade is already crowded."
   - "The Dutch pension funds saw this coming, which is why they pulled $5.9 billion from BlackRock. When the Dutch think you're too greedy, you've achieved something special."
+
+WRITING STYLE - SOUND LIKE A PERSON, NOT AN AI:
+You are writing something a human will read twice a day. If it reads like it was generated, they'll tune it out. These are the patterns that make text scream "a robot wrote this" - avoid all of them:
+
+1. **Kill the AI transition words.** "Additionally", "Furthermore", "Moreover", "Notably", "It's worth noting" - these are dead giveaways. Use normal human connectors: "also", "and", "turns out", "the other thing is", "on top of that", "meanwhile". Or just start the next sentence. You don't need a transition for every thought.
+
+2. **Stop inflating significance.** "Pivotal", "crucial", "underscores", "highlights the importance of", "represents a shift" - you're writing a market digest, not a TED Talk intro. If oil is up 3%, say "oil's up 3%." Don't say it "underscores the evolving dynamics of the energy landscape."
+
+3. **No -ing tacking.** Don't end sentences with participial phrases that add fake depth: "...highlighting the broader trend", "...underscoring market uncertainty", "...reflecting investor sentiment." If the point matters, give it its own sentence. If it doesn't, cut it.
+
+4. **Use "is" and "are."** Say "Gold is up 2%" not "Gold serves as today's standout performer." Say "The Fed's statement was boring" not "The Fed's statement stands as a reminder of institutional caution." Simple verbs. Always.
+
+5. **Break the rule of three.** AI loves listing exactly three things. "Innovation, growth, and opportunity." "Speed, efficiency, and reliability." If you catch yourself listing three adjectives or three parallel phrases, break the pattern. Sometimes there are two things. Sometimes four. Sometimes one.
+
+6. **Go easy on em dashes.** One per digest, max. Use commas or periods instead. Em dashes are the cargo shorts of punctuation - technically functional but a tell that you're not trying.
+
+7. **Don't hedge everything.** "It could potentially be argued that markets might see some pressure" - no. "Markets might see pressure" or better, "Markets will probably sell off." Have a take. Hedge only when genuine uncertainty exists, not as a verbal tic.
+
+8. **Vary your sentence length.** If every sentence is 15-20 words with the same structure, it sounds algorithmic. Mix short punches with longer observations. Let some sentences breathe. Chop others short.
+
+9. **No generic conclusions.** Never end with "time will tell", "remains to be seen", "only time will tell if...", "the coming weeks will be crucial." Either make a specific prediction or just stop writing. Ending on substance is better than ending on a platitude.
+
+10. **Don't bold everything.** Bold is for section headers in the report format, not for emphasizing random words mid-sentence. When everything is bold, nothing is.
+
+These rules protect your personality, not strip it. Jokes, opinions, and attitude are human. "Additionally, it's worth noting that silver underscores broader commodity dynamics" is not.
 
 YOUR OUTPUT CALIBRATION:
 1. **Signal Strength**: Rate today as HIGH / MEDIUM / LOW / NONE
    - HIGH: Genuinely unusual activity, potential market-moving (rare - maybe 1-2x per month)
    - MEDIUM: Interesting developments worth monitoring (weekly occurrence)
    - LOW: Normal market chatter, nothing actionable (most days)
-   - NONE: Below-average activity, truly nothing to report (Twitter took a collective nap)
+   - NONE: Below-average Twitter activity, no unusual signals detected (Twitter took a collective nap). Note: You still provide the news roundup even at NONE.
 
 2. **If signal is LOW or NONE**: Say so clearly and with appropriate energy. "Another day, another round of normal market chatter. Nothing here that should change anyone's thesis." is a VALID and GOOD response. You don't need to manufacture excitement.
 
@@ -191,7 +242,7 @@ NEVER:
 - Use exclamation points or urgent language unless truly warranted
 - Assume the reader should do anything based on Twitter sentiment alone
 
-Remember: The reader is sophisticated. They don't need hand-holding. They need honest signal assessment and thoughtful historical context when it genuinely applies."""
+Remember: The reader is smart and busy. They don't need hand-holding or the same recycled commentary they got yesterday. They need honest signal assessment, actual context, and - when you can pull it off naturally - the kind of take that makes them smirk at their phone."""
 
 
 def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
@@ -236,6 +287,8 @@ async def analyze_with_llm(
         memory: MemoryManager | None = None,
         temporal_analyzer: TemporalTrendAnalyzer | None = None,
         timelines: dict[str, TrendTimeline] | None = None,
+        news_context: str = "",
+        twitter_mentions: list[str] | None = None,
 ) -> tuple[str, str, bool, int, str | None]:
     """
     Use the LLM to generate a CALIBRATED sentiment analysis using an agentic loop.
@@ -307,13 +360,27 @@ TOOL USE & RESEARCH INSTRUCTIONS:
 - Compare sentiment to real data. If sentiment says "CRASHING" but data says -0.5%, that's an exaggeration.
 """
 
-    user_prompt = f"""Analyze the following Twitter/X data. Be SKEPTICAL - most days are boring.
+    # Build twitter mentions section
+    mentions_section = ""
+    if twitter_mentions:
+        mentions_list = "\n".join(f"- {m}" for m in twitter_mentions)
+        mentions_section = f"""
+## Twitter Mentions (Not Signal-Worthy)
+These topics were being discussed on Twitter but did NOT pass the signal filter. Briefly mention what Twitter is chattering about, even if not actionable:
+{mentions_list}
+"""
+
+    user_prompt = f"""Analyze the following data. Be SKEPTICAL about Twitter - most days are boring. But ALWAYS provide the news roundup.
+
+{news_context}
+
+{mentions_section}
 
 {historical_context}
 
 {temporal_context}
 
-## Today's Data
+## Today's Twitter Data
 Top engagement score: {top_engagement:.0f}
 {data_prompt}
 
@@ -321,14 +388,16 @@ Top engagement score: {top_engagement:.0f}
 
 When you are done analyzing, you MUST call the `submit_report` tool with these fields:
 
-- **subject_line**: A punchy email subject (5-10 words max). MUST reference the actual top trend or finding. Can be witty or sardonic. Examples:
-  - "Silver's Having A Moment (Actually Verified This Time)"
-  - "RTX 5090 Pricing: NVIDIA Discovers Infinite Money Glitch"
-  - "Nothing Burger with a Side of Nothing" (for truly quiet days)
+- **subject_line**: A punchy email subject (5-10 words max). MUST reference the actual top trend or finding. Should feel like a text from a friend, not a Bloomberg alert. Be creative - NEVER reuse a subject line format you've used before. Examples of the ENERGY (don't copy these):
+  - "Silver's Up and Fintwit Found Religion"
+  - "NVIDIA Pricing GPUs Like They're Selling Kidneys"
+  - "Genuinely Nothing Happened Today, You're Welcome"
+  - "Egg Prices Did That Thing Again"
+  - "Fed Said Words, Markets Pretended to Care"
 
 - **signal_strength**: One of "high", "medium", "low", "none". HIGH should be rare - most days are LOW or NONE.
 
-- **assessment**: 2-3 sentences with your characteristic dry wit. If LOW/NONE, say "Another day of fintwit being fintwit."
+- **assessment**: 2-3 sentences. Be real about what happened (or didn't). If LOW/NONE, say it differently every time - don't fall back on the same "nothing burger" or "fintwit being fintwit" template. Find a fresh way to say "slow day" that matches today's specific vibe.
 
 - **trends_observed**: Bullet points of what's being discussed - factual, not hyped. ALWAYS use the '•' character for bullets (not '-' or '*'). Example:
   • Gold rallying on inflation fears
@@ -348,9 +417,16 @@ When you are done analyzing, you MUST call the `submit_report` tool with these f
 
 - **historical_parallel**: If meaningful: "History rhymes: [parallel]". Otherwise: "No meaningful historical parallels."
 
-- **bottom_line**: 1 sentence. Be direct, be memorable. "Save your attention for another day" is valid.
+- **bottom_line**: 1 sentence. The one thing you'd actually text a friend. Not a platitude. Not "stay safe out there" or "save your attention" every time. Something specific to TODAY.
 
-Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. It takes wisdom to say "pass." Be that wisdom."""
+- **news_roundup**: Bullet-pointed summary of the news headlines provided above, with your brief commentary on each. ALWAYS populate this when news headlines are included. Use '•' character. Example:
+  • Fed holds rates steady at 5.25% - markets expected this, non-event
+  • NVIDIA earnings beat by 15% - H200 demand cited, guidance raised
+  • Oil falls 3% on OPEC+ production increase rumors
+
+If Twitter mentions are provided (topics that didn't pass the signal filter), briefly note what Twitter is chattering about at the end of your assessment. One sentence is enough - e.g., "Twitter was also buzzing about [topics] but nothing actionable there."
+
+Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. The real flex is knowing when to say "nah." Be the friend who saves people from checking their portfolio for no reason."""
 
     messages = [{"role": "user", "content": user_prompt}]
     
@@ -403,6 +479,7 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
 
                          # Extract structured sections (handle None values)
                          # Apply sanitization to fix common LLM formatting issues
+                         news_roundup = sanitize_llm_output(arguments.get("news_roundup") or "")
                          assessment = sanitize_llm_output(arguments.get("assessment") or "")
                          trends_observed = sanitize_llm_output(arguments.get("trends_observed") or "")
                          fact_check = sanitize_llm_output(arguments.get("fact_check") or "")
@@ -412,7 +489,10 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. I
                          bottom_line = sanitize_llm_output(arguments.get("bottom_line") or "")
 
                          # Format body with Title Case headers
+                         # News roundup comes FIRST (before Twitter analysis)
                          body_parts = []
+                         if news_roundup:
+                             body_parts.append(f"**News Roundup:**\n{news_roundup}")
                          if assessment:
                              body_parts.append(f"**Assessment:**\n{assessment}")
                          if trends_observed:
@@ -659,12 +739,12 @@ async def run_pipeline() -> bool:
         state = checkpoint.get_state()
         logger.info(f"Resuming from checkpoint: {state.run_id}")
         logger.info(
-            f"  - Step 1 (broad scraping): {'DONE' if state.step1_complete else f'{len(state.topics_completed)}/{len(state.topics_completed) + len(state.topics_remaining)} topics'}")
-        logger.info(f"  - Step 2 (trends): {'DONE' if state.step2_complete else 'PENDING'}")
-        logger.info(f"  - Step 3 (deep dive): {'DONE' if state.step3_complete else 'PENDING'}")
-        logger.info(f"  - Step 4 (analysis): {'DONE' if state.step4_complete else 'PENDING'}")
-        logger.info(f"  - Step 5 (email): {'DONE' if state.step5_complete else 'PENDING'}")
-        logger.info(f"  - Step 6 (history): {'DONE' if state.step6_complete else 'PENDING'}")
+            f"  - Scout (broad scraping): {'DONE' if state.step1_complete else f'{len(state.topics_completed)}/{len(state.topics_completed) + len(state.topics_remaining)} topics'}")
+        logger.info(f"  - Investigator (trends): {'DONE' if state.step2_complete else 'PENDING'}")
+        logger.info(f"  - Deep Dive: {'DONE' if state.step3_complete else 'PENDING'}")
+        logger.info(f"  - Analyst (LLM): {'DONE' if state.step4_complete else 'PENDING'}")
+        logger.info(f"  - Reporter (email): {'DONE' if state.step5_complete else 'PENDING'}")
+        logger.info(f"  - History: {'DONE' if state.step6_complete else 'PENDING'}")
     else:
         logger.info("Starting fresh pipeline run")
         checkpoint.start_new_run(topics=config.app.broad_topics)
@@ -751,11 +831,11 @@ async def run_pipeline() -> bool:
 
     try:
         # ============================================================
-        # STEP 1: THE SCOUT - Broad Twitter Search (with checkpointing)
+        # STEP 1: SCOUT - Broad Twitter Search (with checkpointing)
         # ============================================================
         step1_start = time.time()
         if not state.step1_complete:
-            logger.info("\n[STEP 1] THE SCOUT: Gathering broad economic tweets...")
+            logger.info("\n[STEP 1/11] THE SCOUT: Gathering broad economic tweets...")
             logger.info(f"Topics: {len(state.topics_remaining)} remaining, {len(state.topics_completed)} completed")
 
             diagnostics.diagnostics.broad_topics_attempted = len(config.app.broad_topics)
@@ -783,7 +863,7 @@ async def run_pipeline() -> bool:
             diagnostics.diagnostics.broad_topics_completed = len(state.topics_completed)
             diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
         else:
-            logger.info("\n[STEP 1] Skipping (already complete)")
+            logger.info("\n[STEP 1/11] Skipping (already complete)")
             broad_tweets = checkpoint.get_broad_tweets()
             diagnostics.diagnostics.broad_topics_attempted = len(config.app.broad_topics)
             diagnostics.diagnostics.broad_topics_completed = len(config.app.broad_topics)
@@ -799,13 +879,13 @@ async def run_pipeline() -> bool:
         logger.info(f"Total broad tweets: {len(broad_tweets)}")
 
         # ============================================================
-        # STEP 2: THE INVESTIGATOR - NER Analysis
+        # STEP 2: INVESTIGATOR - NER Analysis
         # ============================================================
         step2_start = time.time()
         trend_objects: list[DiscoveredTrend] = []  # Keep full objects for LLM filter context
 
         if not state.step2_complete:
-            logger.info("\n[STEP 2] THE INVESTIGATOR: Extracting trending entities...")
+            logger.info("\n[STEP 2/11] THE INVESTIGATOR: Extracting trending entities...")
 
             # Use extract_trends_with_details to get full DiscoveredTrend objects
             # These include sample_tweets which give the LLM filter context
@@ -828,7 +908,7 @@ async def run_pipeline() -> bool:
             checkpoint.save_trends(trends)
             state = checkpoint.get_state()
         else:
-            logger.info("\n[STEP 2] Skipping (already complete)")
+            logger.info("\n[STEP 2/11] Skipping (already complete)")
             trends = state.trends
             diagnostics.diagnostics.trends_discovered = len(trends)
             # Note: trend_objects will be empty for resumed runs, LLM filter will be skipped
@@ -838,17 +918,25 @@ async def run_pipeline() -> bool:
         logger.info(f"Trends (pre-filter): {trends}")
 
         # ============================================================
-        # STEP 2.5: LLM QUALITY FILTER - Validate candidates before deep dive
+        # STEP 3: LLM QUALITY FILTER - Validate candidates before deep dive
         # ============================================================
         # Only run LLM filter if we have trend objects with context (not resumed)
         # and haven't started deep dive yet
+        twitter_mentions: list[str] = []  # Rejected trends for "mentions" tier
+        pre_filter_trends = list(trends)  # Save pre-filter list
+
         if trend_objects and not state.step3_complete:
-            logger.info("\n[STEP 2.5] LLM FILTER: Validating trend candidates with context...")
+            logger.info("\n[STEP 3/11] LLM FILTER: Validating trend candidates with context...")
             # Pass full DiscoveredTrend objects so LLM can see sample tweets
             filtered_trends = await llm_filter_trends(llm, trend_objects)
             diagnostics.diagnostics.llm_calls_made += 1  # LLM filter call
 
             if set(filtered_trends) != set(trends):
+                # Capture rejected trends as "mentions" tier
+                twitter_mentions = [t for t in pre_filter_trends if t not in filtered_trends]
+                if twitter_mentions:
+                    logger.info(f"Twitter mentions (rejected but notable): {twitter_mentions}")
+
                 # Save filtered trends to checkpoint
                 trends = filtered_trends
                 checkpoint.save_trends(trends)
@@ -862,11 +950,11 @@ async def run_pipeline() -> bool:
         logger.info(f"Trends (post-filter): {trends}")
 
         # ============================================================
-        # STEP 3: THE DEEP DIVE - Targeted Scraping
+        # STEP 4: DEEP DIVE - Targeted Scraping
         # ============================================================
         step3_start = time.time()
         if not state.step3_complete:
-            logger.info("\n[STEP 3] THE DEEP DIVE: Gathering sentiment for each trend...")
+            logger.info("\n[STEP 4/11] THE DEEP DIVE: Gathering sentiment for each trend...")
 
             diagnostics.diagnostics.deep_dive_trends_attempted = len(trends) if trends else 0
 
@@ -894,7 +982,7 @@ async def run_pipeline() -> bool:
             checkpoint.complete_step3()
             state = checkpoint.get_state()
         else:
-            logger.info("\n[STEP 3] Skipping (already complete)")
+            logger.info("\n[STEP 4/11] Skipping (already complete)")
             trend_tweets = checkpoint.get_trend_tweets()
             diagnostics.diagnostics.deep_dive_trends_attempted = len(trends) if trends else 0
             diagnostics.diagnostics.deep_dive_trends_completed = len(trend_tweets)
@@ -906,20 +994,41 @@ async def run_pipeline() -> bool:
         logger.info(f"Total trend tweets: {total_tweets}")
 
         # ============================================================
-        # STEP 3.5: THE FACT CHECKER - INIT ONLY (Tool Usage)
+        # STEP 5: NEWS ROUNDUP - Fetch economic news headlines
+        # ============================================================
+        news_context = ""
+        if config.news.enabled:
+            logger.info("\n[STEP 5/11] NEWS ROUNDUP: Fetching economic news headlines...")
+            try:
+                news_articles = await fetch_economic_news(
+                    queries=config.news.queries,
+                    max_results_per_query=config.news.max_results_per_query,
+                )
+                diagnostics.diagnostics.news_articles_fetched = len(news_articles)
+                if news_articles:
+                    news_context = format_news_for_llm(news_articles)
+                    logger.info(f"Fetched {len(news_articles)} news articles")
+                else:
+                    logger.info("No news articles fetched")
+            except Exception as e:
+                logger.warning(f"News fetching failed (non-fatal): {e}")
+                diagnostics.diagnostics.add_warning(f"News fetching failed: {e}")
+
+        # ============================================================
+        # STEP 6: FACT CHECKER - Init for LLM tool use
         # ============================================================
         fact_checker = None
         if config.fact_checker.enabled:
-            logger.info("\n[STEP 3.5] THE FACT CHECKER: Initializing for LLM tool use...")
+            logger.info("\n[STEP 6/11] THE FACT CHECKER: Initializing for LLM tool use...")
             fact_checker = MarketFactChecker(
                 cache_ttl_minutes=config.fact_checker.cache_ttl_minutes,
                 price_tolerance_pct=config.fact_checker.price_tolerance_pct,
             )
 
         # ============================================================
-        # STEP 3.75: TEMPORAL ANALYSIS - Track trend continuity
+        # STEP 7: TEMPORAL ANALYSIS - Track trend continuity
         # ============================================================
-        logger.info("\n[STEP 3.75] TEMPORAL ANALYSIS: Analyzing trend timelines...")
+        logger.info("\n[STEP 7/11] TEMPORAL ANALYSIS: Analyzing trend timelines...")
         temporal_analyzer = TemporalTrendAnalyzer(
             history_db=history,
             consecutive_threshold=config.temporal.consecutive_threshold,
@@ -961,11 +1070,11 @@ async def run_pipeline() -> bool:
         temporal_context = temporal_analyzer.format_context_for_llm(timelines)
 
         # ============================================================
-        # STEP 4: THE ANALYST - LLM Summary
+        # STEP 8: ANALYST - LLM Summary
         # ============================================================
         step4_start = time.time()
         if not state.step4_complete:
-            logger.info("\n[STEP 4] THE ANALYST: Generating calibrated analysis...")
+            logger.info("\n[STEP 8/11] THE ANALYST: Generating calibrated analysis...")
 
             historical_context = history.format_context_for_llm(days=7)
             baseline = history.get_baseline_stats(days=30)
@@ -988,6 +1097,8 @@ async def run_pipeline() -> bool:
                 memory=memory,
                 temporal_analyzer=temporal_analyzer,
                 timelines=timelines,
+                news_context=news_context,
+                twitter_mentions=twitter_mentions if twitter_mentions else None,
             )
 
             diagnostics.diagnostics.llm_calls_made += 1  # Main analysis call
@@ -1001,7 +1112,7 @@ async def run_pipeline() -> bool:
             checkpoint.save_analysis(analysis, signal_strength, is_notable, top_engagement)
             state = checkpoint.get_state()
         else:
-            logger.info("\n[STEP 4] Skipping (already complete)")
+            logger.info("\n[STEP 8/11] Skipping (already complete)")
             analysis = state.analysis
             signal_strength = state.signal_strength
             is_notable = state.is_notable
@@ -1015,13 +1126,14 @@ async def run_pipeline() -> bool:
         logger.info(f"Signal: {signal_strength.upper()}, Notable: {is_notable}")
 
         # ============================================================
-        # STEP 5: THE REPORTER - Email Digest
+        # STEP 9: REPORTER - Email Digest
         # ============================================================
         step5_start = time.time()
         if not state.step5_complete:
-            logger.info("\n[STEP 5] THE REPORTER: Sending email digest...")
+            logger.info("\n[STEP 9/11] THE REPORTER: Sending email digest...")
 
             provider_info = f"{llm.provider_name} {llm.model_name}"
+            news_count = diagnostics.diagnostics.news_articles_fetched
             success = reporter.send_email(
                 report_content=analysis,
                 trends=trends,
@@ -1030,6 +1142,7 @@ async def run_pipeline() -> bool:
                 signal_strength=signal_strength,
                 timelines=timelines,
                 subject_line=subject_line,
+                news_count=news_count,
             )
 
             diagnostics.diagnostics.email_sent = success
@@ -1043,17 +1156,17 @@ async def run_pipeline() -> bool:
             checkpoint.complete_step5()
             state = checkpoint.get_state()
         else:
-            logger.info("\n[STEP 5] Skipping (already complete)")
+            logger.info("\n[STEP 9/11] Skipping (already complete)")
             diagnostics.diagnostics.email_sent = True  # Assume it was sent in previous run
 
         diagnostics.diagnostics.time_step5_email = time.time() - step5_start
 
         # ============================================================
-        # STEP 6: STORE HISTORY
+        # STEP 10: STORE HISTORY
         # ============================================================
         step6_start = time.time()
         if not state.step6_complete:
-            logger.info("\n[STEP 6] Storing digest in history...")
+            logger.info("\n[STEP 10/11] Storing digest in history...")
 
             history.store_digest(
                 trends=trends,
@@ -1084,7 +1197,7 @@ async def run_pipeline() -> bool:
 
             checkpoint.complete_step6()
         else:
-            logger.info("\n[STEP 6] Skipping (already complete)")
+            logger.info("\n[STEP 10/11] Skipping (already complete)")
 
         diagnostics.diagnostics.time_step6_storage = time.time() - step6_start
 
@@ -1094,10 +1207,10 @@ async def run_pipeline() -> bool:
         checkpoint.clear()
 
         # ============================================================
-        # STEP 6.5: ADMIN DIAGNOSTICS - Send admin email if needed
+        # STEP 11: ADMIN DIAGNOSTICS - Send admin email if needed
         # ============================================================
         if config.smtp.admin.enabled:
-            logger.info("\n[STEP 6.5] ADMIN DIAGNOSTICS: Checking if alert needed...")
+            logger.info("\n[STEP 11/11] ADMIN DIAGNOSTICS: Checking if alert needed...")
 
             # Finalize diagnostics
             final_diagnostics = diagnostics.finalize()

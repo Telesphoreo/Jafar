@@ -83,6 +83,21 @@ class TestEmailReporter:
         # Check signal strength indicator
         assert "High" in html or "high" in html.lower()
 
+    def test_generate_html_report_with_news_count(self, reporter):
+        """Test HTML report includes news headline count."""
+        html = reporter._generate_html_report(
+            report_content="Test content with news.",
+            trends=["$NVDA"],
+            tweet_count=500,
+            provider_info="GPT-4o",
+            signal_strength="medium",
+            news_count=15,
+        )
+
+        # Check that the metadata row shows headlines count
+        assert "15" in html
+        assert "headlines" in html
+
     def test_generate_html_report_with_timelines(self, reporter):
         """Test HTML report with temporal badges."""
         mock_timeline = TrendTimeline(
@@ -147,6 +162,17 @@ class TestEmailReporter:
         assert "$NVDA" in text
         assert "Silver" in text
         assert "1000" in text
+
+    def test_generate_plain_text_with_news_count(self, reporter):
+        """Test plain text includes news headline count."""
+        text = reporter._generate_plain_text(
+            report_content="Analysis.",
+            trends=["Test"],
+            tweet_count=100,
+            news_count=12,
+        )
+
+        assert "12 headlines" in text
 
     def test_generate_plain_text_includes_disclaimer(self, reporter):
         """Test that plain text includes disclaimer."""

@@ -295,6 +295,34 @@ def mock_ddgs():
         yield mock_ddgs_class
 
 
+@pytest.fixture
+def mock_ddgs_news():
+    """Mock DuckDuckGo news search for news fetching tests."""
+    with patch("ddgs.DDGS") as mock_ddgs_class:
+        mock_ddgs = MagicMock()
+
+        # Mock news search results
+        mock_ddgs.news.return_value = [
+            {
+                "title": "Fed Holds Rates Steady",
+                "body": "The Federal Reserve kept interest rates unchanged.",
+                "url": "https://example.com/fed-rates",
+                "source": "Reuters",
+                "date": "2024-01-15",
+            },
+            {
+                "title": "NVIDIA Earnings Beat Estimates",
+                "body": "NVIDIA reported Q4 earnings above expectations.",
+                "url": "https://example.com/nvda-earnings",
+                "source": "Bloomberg",
+                "date": "2024-01-15",
+            },
+        ]
+
+        mock_ddgs_class.return_value = mock_ddgs
+        yield mock_ddgs_class
+
+
 # =============================================================================
 # Config Fixtures
 # =============================================================================

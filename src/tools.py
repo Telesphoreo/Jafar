@@ -76,6 +76,25 @@ class ToolRegistry:
                 }
             })
 
+        if self.enable_web_search:
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": "fetch_news",
+                    "description": "Fetch latest news headlines on a specific topic. Use this to drill deeper into a news story or find additional context.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "News search query (e.g. 'Federal Reserve rate decision', 'NVIDIA earnings results')"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            })
+
         if self.fact_checker:
             tools.append({
                 "type": "function",
@@ -200,6 +219,10 @@ class ToolRegistry:
                         "bottom_line": {
                             "type": "string",
                             "description": "1 sentence. Be direct, be memorable. 'Save your attention for another day' is valid."
+                        },
+                        "news_roundup": {
+                            "type": "string",
+                            "description": "Bullet-pointed summary of today's economic news headlines with brief commentary. ALWAYS populate this when news headlines are provided in the prompt. Use '•' bullets. Example: '• Fed holds rates steady - no surprise, markets shrug\\n• NVIDIA earnings beat estimates by 15%'"
                         }
                     },
                     "required": ["subject_line", "signal_strength", "assessment", "trends_observed", "actionability", "actionability_reason", "bottom_line"]
@@ -266,6 +289,9 @@ class ToolRegistry:
                     return self.temporal_analyzer.format_context_for_llm(timelines_dict)
                 return f"No timeline data found for trend: {trend}"
 
+            elif tool_name == "fetch_news":
+                return await self._fetch_news(arguments.get("query", ""))
+
             elif tool_name == "get_weather_forecast":
                 cities = arguments.get("cities", [])
                 if not cities:
@@ -313,6 +339,37 @@ class ToolRegistry:
         except Exception as e:
             logger.error(f"Web search failed: {e}")
             return f"Error performing web search: {e}"
+
+    async def _fetch_news(self, query: str) -> str:
+        """
+        Fetch news headlines via DuckDuckGo news search.
+        """
+        if not self.enable_web_search or not hasattr(self, 'ddgs'):
+            return "News fetching is not enabled or available."
+
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+
+            def run_news_search():
+                return self.ddgs.news(query, max_results=5)
+
+            results = await loop.run_in_executor(None, run_news_search)
+
+            if not results:
+                return f"No news found for query: {query}"
+
+            formatted = f"News Results for '{query}':\n\n"
+            for r in results:
+                formatted += f"- **{r.get('title', 'No Title')}**\n"
+                formatted += f"  {r.get('body', 'No snippet')}\n"
+                formatted += f"  Source: {r.get('source', 'Unknown')} | {r.get('date', '')}\n\n"
+
+            return formatted
+
+        except Exception as e:
+            logger.error(f"News fetch failed: {e}")
+            return f"Error fetching news: {e}"
 
     async def _get_weather_forecast(self, cities: list[str]) -> str:
         """

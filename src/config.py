@@ -260,6 +260,34 @@ class MemoryConfig:
 
 
 @dataclass
+class NewsConfig:
+    """News fetching configuration."""
+    enabled: bool = field(
+        default_factory=lambda: _get_yaml("news", "enabled", True)
+    )
+    queries: list[str] = field(
+        default_factory=lambda: _get_yaml("news", "queries", [
+            "economy news today",
+            "stock market news",
+            "inflation consumer prices",
+            "Federal Reserve monetary policy",
+            "corporate earnings news",
+            "supply chain logistics",
+        ]) or [
+            "economy news today",
+            "stock market news",
+            "inflation consumer prices",
+            "Federal Reserve monetary policy",
+            "corporate earnings news",
+            "supply chain logistics",
+        ]
+    )
+    max_results_per_query: int = field(
+        default_factory=lambda: _get_yaml("news", "max_results_per_query", 5)
+    )
+
+
+@dataclass
 class FactCheckerConfig:
     """Market data fact-checking configuration."""
     enabled: bool = field(
@@ -295,6 +323,7 @@ class Config:
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
     app: AppConfig = field(default_factory=AppConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
+    news: NewsConfig = field(default_factory=NewsConfig)
     fact_checker: FactCheckerConfig = field(default_factory=FactCheckerConfig)
     temporal: TemporalConfig = field(default_factory=TemporalConfig)
 

@@ -542,6 +542,132 @@ Should still parse correctly."""
         assert "**Bottom Line:**" in body
 
 
+    @pytest.mark.asyncio
+    async def test_submit_report_news_roundup_appears_first(self, mock_llm, mock_trend_tweets):
+        """Test that news_roundup appears first in body_parts."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_report"
+        mock_tool_call.function.arguments = '''{
+            "subject_line": "Fed Holds Steady, Twitter Yawns",
+            "signal_strength": "low",
+            "news_roundup": "• Fed holds rates at 5.25% - expected, markets shrug\\n• NVIDIA earnings beat by 15%",
+            "assessment": "Another quiet Twitter day.",
+            "trends_observed": "• Generic market chatter",
+            "actionability": "not actionable",
+            "actionability_reason": "No unusual signals.",
+            "bottom_line": "News was the story today, not Twitter."
+        }'''
+        mock_tool_call.id = "call_news"
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 100
+        mock_response.raw_content = None
+
+        mock_llm.generate.return_value = mock_response
+
+        with patch('src.main.ToolRegistry') as MockRegistry:
+            mock_registry = MagicMock()
+            mock_registry.get_definitions.return_value = []
+            MockRegistry.return_value = mock_registry
+
+            body, signal, is_notable, tokens, subject = await analyze_with_llm(
+                llm=mock_llm,
+                trend_tweets=mock_trend_tweets,
+            )
+
+        # News roundup should appear in the body
+        assert "**News Roundup:**" in body
+        # News roundup should come BEFORE assessment
+        news_pos = body.index("**News Roundup:**")
+        assessment_pos = body.index("**Assessment:**")
+        assert news_pos < assessment_pos
+
+    @pytest.mark.asyncio
+    async def test_news_context_included_in_prompt(self, mock_llm, mock_trend_tweets):
+        """Test that news_context is passed through to the LLM prompt."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_report"
+        mock_tool_call.function.arguments = '''{
+            "subject_line": "Test",
+            "signal_strength": "low",
+            "assessment": "Test",
+            "trends_observed": "• Test",
+            "actionability": "not actionable",
+            "actionability_reason": "Test.",
+            "bottom_line": "Test."
+        }'''
+        mock_tool_call.id = "call_ctx"
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 25
+        mock_response.raw_content = None
+
+        mock_llm.generate.return_value = mock_response
+
+        with patch('src.main.ToolRegistry') as MockRegistry:
+            mock_registry = MagicMock()
+            mock_registry.get_definitions.return_value = []
+            MockRegistry.return_value = mock_registry
+
+            await analyze_with_llm(
+                llm=mock_llm,
+                trend_tweets=mock_trend_tweets,
+                news_context="## Today's Economic News Headlines\n1. Fed holds rates",
+            )
+
+        # Verify the news context was included in the prompt sent to LLM
+        call_args = mock_llm.generate.call_args
+        messages = call_args.kwargs.get("messages", [])
+        user_msg = messages[0]["content"] if messages else ""
+        assert "Economic News Headlines" in user_msg
+
+    @pytest.mark.asyncio
+    async def test_twitter_mentions_included_in_prompt(self, mock_llm, mock_trend_tweets):
+        """Test that twitter_mentions are included in the LLM prompt."""
+        mock_tool_call = MagicMock()
+        mock_tool_call.function.name = "submit_report"
+        mock_tool_call.function.arguments = '''{
+            "subject_line": "Test",
+            "signal_strength": "low",
+            "assessment": "Test",
+            "trends_observed": "• Test",
+            "actionability": "not actionable",
+            "actionability_reason": "Test.",
+            "bottom_line": "Test."
+        }'''
+        mock_tool_call.id = "call_mentions"
+
+        mock_response = MagicMock()
+        mock_response.content = ""
+        mock_response.tool_calls = [mock_tool_call]
+        mock_response.token_count = 25
+        mock_response.raw_content = None
+
+        mock_llm.generate.return_value = mock_response
+
+        with patch('src.main.ToolRegistry') as MockRegistry:
+            mock_registry = MagicMock()
+            mock_registry.get_definitions.return_value = []
+            MockRegistry.return_value = mock_registry
+
+            await analyze_with_llm(
+                llm=mock_llm,
+                trend_tweets=mock_trend_tweets,
+                twitter_mentions=["Bitcoin", "Elon Musk", "Music"],
+            )
+
+        # Verify twitter mentions were included in the prompt
+        call_args = mock_llm.generate.call_args
+        messages = call_args.kwargs.get("messages", [])
+        user_msg = messages[0]["content"] if messages else ""
+        assert "Twitter Mentions" in user_msg
+        assert "Bitcoin" in user_msg
+
+
 class TestSanitizeLLMOutput:
     """Tests for the sanitize_llm_output function."""
 

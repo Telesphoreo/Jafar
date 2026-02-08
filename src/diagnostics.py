@@ -38,6 +38,9 @@ class RunDiagnostics:
     twitter_accounts_active: int = 0
     twitter_accounts_rate_limited: int = 0
 
+    # News statistics
+    news_articles_fetched: int = 0
+
     # Analysis statistics
     llm_calls_made: int = 0
     llm_tokens_used: int = 0

@@ -178,6 +178,23 @@ broad_topics:
   - bullish OR bearish
   - panic OR euphoria
 
+# News Fetching Settings (economic news roundup)
+news:
+  # Enable/disable news fetching for the daily digest
+  enabled: true
+
+  # Search queries for fetching economic news via DuckDuckGo
+  queries:
+    - "economy news today"
+    - "stock market news"
+    - "inflation consumer prices"
+    - "Federal Reserve monetary policy"
+    - "corporate earnings news"
+    - "supply chain logistics"
+
+  # Maximum results per query (more = broader coverage, slower)
+  max_results_per_query: 5
+
 # Vector Memory Settings (for historical parallels)
 memory:
   # Enable/disable semantic memory system

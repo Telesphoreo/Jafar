@@ -56,6 +56,7 @@ class EmailReporter:
         provider_info: str,
         signal_strength: str = "low",
         timelines: dict = None,
+        news_count: int = 0,
     ) -> str:
         """
         Generate a clean, minimalist HTML email.
@@ -67,6 +68,7 @@ class EmailReporter:
             provider_info: LLM provider used for analysis.
             signal_strength: Signal strength rating (high/medium/low/none).
             timelines: Dict of {trend: TrendTimeline} for temporal badges.
+            news_count: Number of news articles fetched.
 
         Returns:
             HTML formatted email body.
@@ -148,7 +150,7 @@ class EmailReporter:
         <!-- Metadata Row -->
         <div style="display: flex; border-bottom: 1px solid #000; font-family: monospace; font-size: 13px; background-color: #fcfcfc;">
             <div style="padding: 15px 40px; border-right: 1px solid #000; flex: 1;">
-                Analyzed: <strong>{tweet_count}</strong> tweets
+                Analyzed: <strong>{tweet_count}</strong> tweets, <strong>{news_count}</strong> headlines
             </div>
             <div style="padding: 15px 40px; flex: 1;">
                 Detected: <strong>{len(trends)}</strong> trends
@@ -206,6 +208,7 @@ class EmailReporter:
         report_content: str,
         trends: list[str],
         tweet_count: int,
+        news_count: int = 0,
     ) -> str:
         """
         Generate a plain text version of the report.
@@ -214,6 +217,7 @@ class EmailReporter:
             report_content: The LLM-generated analysis.
             trends: List of trending topics analyzed.
             tweet_count: Total number of tweets analyzed.
+            news_count: Number of news articles fetched.
 
         Returns:
             Plain text formatted email body.
@@ -227,7 +231,7 @@ Market Digest - {today}
 --------------------------------------------------------------------------------
 
 Signal: Detected
-Inputs: {tweet_count} tweets
+Inputs: {tweet_count} tweets, {news_count} headlines
 Topics: {trends_str}
 
 --------------------------------------------------------------------------------
@@ -248,6 +252,7 @@ Disclaimer: Not financial advice.
         signal_strength: str = "low",
         timelines: dict = None,
         subject_line: str = None,
+        news_count: int = 0,
     ) -> bool:
         """
         Send the economic digest via email.
@@ -260,6 +265,7 @@ Disclaimer: Not financial advice.
             signal_strength: Signal strength rating (high/medium/low/none).
             timelines: Dict of {trend: TrendTimeline} for temporal badges.
             subject_line: Optional custom subject line from LLM.
+            news_count: Number of news articles fetched.
 
         Returns:
             True if email was sent successfully.
@@ -281,9 +287,9 @@ Disclaimer: Not financial advice.
         msg["To"] = self.config.email_from
 
         # Generate both plain text and HTML versions
-        text_content = self._generate_plain_text(report_content, trends, tweet_count)
+        text_content = self._generate_plain_text(report_content, trends, tweet_count, news_count)
         html_content = self._generate_html_report(
-            report_content, trends, tweet_count, provider_info, signal_strength, timelines
+            report_content, trends, tweet_count, provider_info, signal_strength, timelines, news_count
         )
 
         # Attach both versions (email clients will choose the best one)

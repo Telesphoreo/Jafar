@@ -80,6 +80,21 @@ class TestToolRegistry:
                 tool_names = [t["function"]["name"] for t in definitions]
                 assert "search_web" in tool_names
 
+    def test_get_definitions_with_web_search_includes_fetch_news(self):
+        """Test that fetch_news tool is included when web search is available."""
+        with patch.dict("sys.modules", {"ddgs": MagicMock()}):
+            with patch("ddgs.DDGS") as mock_ddgs_class:
+                mock_ddgs_class.return_value = MagicMock()
+
+                registry = ToolRegistry(enable_web_search=True)
+                registry.enable_web_search = True
+                registry.ddgs = MagicMock()
+
+                definitions = registry.get_definitions()
+
+                tool_names = [t["function"]["name"] for t in definitions]
+                assert "fetch_news" in tool_names
+
     def test_get_definitions_with_fact_checker(self, mock_yfinance):
         """Test that market data tool is included with fact checker."""
         from src.fact_checker import MarketFactChecker
@@ -361,7 +376,7 @@ class TestToolDefinitionSchemas:
         expected_props = [
             "subject_line", "signal_strength", "assessment", "trends_observed",
             "fact_check", "actionability", "actionability_reason",
-            "historical_parallel", "bottom_line"
+            "historical_parallel", "bottom_line", "news_roundup"
         ]
         for prop in expected_props:
             assert prop in props, f"Missing property: {prop}"
@@ -374,9 +389,10 @@ class TestToolDefinitionSchemas:
         for req in expected_required:
             assert req in required, f"Missing required field: {req}"
 
-        # fact_check and historical_parallel should be optional
+        # fact_check, historical_parallel, and news_roundup should be optional
         assert "fact_check" not in required
         assert "historical_parallel" not in required
+        assert "news_roundup" not in required
 
         # Check enum values for signal_strength
         assert props["signal_strength"]["enum"] == ["high", "medium", "low", "none"]
@@ -547,3 +563,64 @@ class TestWeatherTool:
             result = await registry.execute("get_weather_forecast", {"cities": ["Houston"]})
 
             assert "Could not geocode" in result or "Could not fetch" in result
+
+
+class TestFetchNewsTool:
+    """Tests for the fetch_news tool."""
+
+    def test_fetch_news_schema(self):
+        """Test fetch_news tool schema."""
+        registry = ToolRegistry(enable_web_search=False)
+        registry.enable_web_search = True
+        registry.ddgs = MagicMock()
+
+        definitions = registry.get_definitions()
+        fetch_news = next(
+            (t for t in definitions if t["function"]["name"] == "fetch_news"),
+            None,
+        )
+
+        assert fetch_news is not None
+        assert fetch_news["type"] == "function"
+        assert "query" in fetch_news["function"]["parameters"]["properties"]
+        assert "query" in fetch_news["function"]["parameters"]["required"]
+
+    @pytest.mark.asyncio
+    async def test_execute_fetch_news(self):
+        """Test executing fetch_news tool."""
+        registry = ToolRegistry(enable_web_search=False)
+        registry.enable_web_search = True
+
+        mock_ddgs = MagicMock()
+        mock_ddgs.news.return_value = [
+            {"title": "Fed News", "body": "Rate decision", "source": "Reuters", "date": "2024-01-15"}
+        ]
+        registry.ddgs = mock_ddgs
+
+        result = await registry.execute("fetch_news", {"query": "Federal Reserve"})
+
+        assert "News Results" in result
+        assert "Federal Reserve" in result
+        assert "Fed News" in result
+
+    @pytest.mark.asyncio
+    async def test_execute_fetch_news_disabled(self):
+        """Test fetch_news when web search is disabled."""
+        registry = ToolRegistry(enable_web_search=False)
+        result = await registry.execute("fetch_news", {"query": "test"})
+
+        assert "not enabled" in result.lower() or "not found" in result.lower() or "missing" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_fetch_news_no_results(self):
+        """Test fetch_news with no results."""
+        registry = ToolRegistry(enable_web_search=False)
+        registry.enable_web_search = True
+
+        mock_ddgs = MagicMock()
+        mock_ddgs.news.return_value = []
+        registry.ddgs = mock_ddgs
+
+        result = await registry.execute("fetch_news", {"query": "obscure topic"})
+
+        assert "No news found" in result
