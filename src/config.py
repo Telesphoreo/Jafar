@@ -273,6 +273,18 @@ class NewsConfig:
             "Federal Reserve monetary policy",
             "corporate earnings news",
             "supply chain logistics",
+            "military strikes news today",
+            "geopolitical conflict news",
+            "war Middle East news",
+            "sanctions news today",
+            "artificial intelligence news today",
+            "AI regulation policy",
+            "tech company news today",
+            "government regulation news today",
+            "Department of Defense news",
+            "oil price OPEC news",
+            "breaking news today",
+            "major news today",
         ]) or [
             "economy news today",
             "stock market news",
@@ -280,10 +292,19 @@ class NewsConfig:
             "Federal Reserve monetary policy",
             "corporate earnings news",
             "supply chain logistics",
+            "military strikes news today",
+            "geopolitical conflict news",
+            "artificial intelligence news today",
+            "AI regulation policy",
+            "breaking news today",
+            "major news today",
         ]
     )
     max_results_per_query: int = field(
         default_factory=lambda: _get_yaml("news", "max_results_per_query", 5)
+    )
+    max_age_hours: float = field(
+        default_factory=lambda: _get_yaml("news", "max_age_hours", 48)
     )
 
 

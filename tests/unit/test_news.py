@@ -4,11 +4,12 @@ Unit tests for src/news.py
 Tests news fetching and formatting with mocked DuckDuckGo API.
 """
 
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.news import NewsArticle, fetch_economic_news, format_news_for_llm
+from src.news import NewsArticle, fetch_economic_news, format_news_for_llm, parse_article_age_hours
 
 
 class TestFetchEconomicNews:
@@ -23,14 +24,14 @@ class TestFetchEconomicNews:
                 "body": "The Federal Reserve kept interest rates unchanged.",
                 "url": "https://example.com/fed-rates",
                 "source": "Reuters",
-                "date": "2024-01-15",
+                "date": datetime.now().isoformat(),
             },
             {
                 "title": "Oil Prices Rise on OPEC Cuts",
                 "body": "Crude oil jumped 3% after OPEC announced production cuts.",
                 "url": "https://example.com/oil-opec",
                 "source": "Bloomberg",
-                "date": "2024-01-15",
+                "date": datetime.now().isoformat(),
             },
         ]
 
@@ -59,7 +60,7 @@ class TestFetchEconomicNews:
                 "body": "Snippet 1",
                 "url": "https://example.com/same-article",
                 "source": "Reuters",
-                "date": "2024-01-15",
+                "date": datetime.now().isoformat(),
             },
         ]
 
@@ -116,7 +117,7 @@ class TestFetchEconomicNews:
                 "body": "Fed snippet",
                 "url": "https://example.com/fed",
                 "source": "Reuters",
-                "date": "2024-01-15",
+                "date": datetime.now().isoformat(),
             },
         ]
         results_q2 = [
@@ -125,7 +126,7 @@ class TestFetchEconomicNews:
                 "body": "Oil snippet",
                 "url": "https://example.com/oil",
                 "source": "Bloomberg",
-                "date": "2024-01-15",
+                "date": datetime.now().isoformat(),
             },
         ]
 
@@ -155,21 +156,21 @@ class TestFormatNewsForLLM:
                 body="The Federal Reserve kept rates unchanged.",
                 url="https://example.com/fed",
                 source="Reuters",
-                date="2024-01-15",
+                date="2024-01-15",  # Static date OK for format tests
             ),
             NewsArticle(
                 title="Oil Prices Rise",
                 body="Crude jumped 3%.",
                 url="https://example.com/oil",
                 source="Bloomberg",
-                date="2024-01-15",
+                date="2024-01-15",  # Static date OK for format tests
             ),
         ]
 
         result = format_news_for_llm(articles)
 
         assert "Today's Economic News Headlines" in result
-        assert "2 articles" in result
+        assert "2 fresh articles" in result
         assert "**Fed Holds Rates Steady**" in result
         assert "**Oil Prices Rise**" in result
         assert "Reuters" in result
@@ -181,6 +182,20 @@ class TestFormatNewsForLLM:
         result = format_news_for_llm([])
         assert result == ""
 
+    def test_format_news_for_llm_fresh_header(self):
+        """Test that formatted output uses fresh articles header."""
+        articles = [
+            NewsArticle(
+                title="Test",
+                body="Body",
+                url="https://example.com/test",
+                source="AP",
+                date="2024-01-15",  # Static date OK for format tests
+            ),
+        ]
+        result = format_news_for_llm(articles)
+        assert "fresh articles" in result
+
     def test_format_news_for_llm_missing_body(self):
         """Test formatting with articles that have no body."""
         articles = [
@@ -189,7 +204,7 @@ class TestFormatNewsForLLM:
                 body="",
                 url="https://example.com/breaking",
                 source="AP",
-                date="2024-01-15",
+                date="2024-01-15",  # Static date OK for format tests
             ),
         ]
 
@@ -197,3 +212,100 @@ class TestFormatNewsForLLM:
 
         assert "**Breaking News**" in result
         assert "AP" in result
+
+
+class TestParseArticleAgeHours:
+    """Tests for the parse_article_age_hours helper."""
+
+    def test_iso_date_recent(self):
+        """Test parsing a recent ISO date."""
+        recent = (datetime.now() - timedelta(hours=1)).isoformat()
+        age = parse_article_age_hours(recent)
+        assert age is not None
+        assert 0.5 < age < 1.5
+
+    def test_iso_date_old(self):
+        """Test parsing an old ISO date."""
+        old = (datetime.now() - timedelta(hours=72)).isoformat()
+        age = parse_article_age_hours(old)
+        assert age is not None
+        assert age > 70
+
+    def test_empty_string(self):
+        """Test that empty string returns None."""
+        assert parse_article_age_hours("") is None
+
+    def test_garbage_string(self):
+        """Test that unparseable string returns None."""
+        assert parse_article_age_hours("not a date at all xyz") is None
+
+    def test_standard_date_format(self):
+        """Test parsing a standard date format."""
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        age = parse_article_age_hours(yesterday)
+        assert age is not None
+        assert age > 20  # At least 20 hours old
+
+
+class TestFetchEconomicNewsFiltering:
+    """Tests for freshness and cross-run dedup in fetch_economic_news."""
+
+    @pytest.mark.asyncio
+    async def test_excludes_previously_reported_urls(self):
+        """Test that exclude_urls filters out already-reported articles."""
+        fresh_date = (datetime.now() - timedelta(hours=1)).isoformat()
+        mock_results = [
+            {"title": "Old Story", "body": "...", "url": "https://example.com/old", "source": "R", "date": fresh_date},
+            {"title": "New Story", "body": "...", "url": "https://example.com/new", "source": "R", "date": fresh_date},
+        ]
+        with patch("ddgs.DDGS") as mock_ddgs_class:
+            mock_ddgs = MagicMock()
+            mock_ddgs.news.return_value = mock_results
+            mock_ddgs_class.return_value = mock_ddgs
+
+            articles = await fetch_economic_news(
+                queries=["test"],
+                exclude_urls={"https://example.com/old"},
+            )
+        assert len(articles) == 1
+        assert articles[0].title == "New Story"
+
+    @pytest.mark.asyncio
+    async def test_filters_stale_articles(self):
+        """Test that articles older than max_age_hours are filtered."""
+        old_date = (datetime.now() - timedelta(hours=72)).isoformat()
+        fresh_date = (datetime.now() - timedelta(hours=1)).isoformat()
+        mock_results = [
+            {"title": "Stale", "body": "...", "url": "https://example.com/stale", "source": "R", "date": old_date},
+            {"title": "Fresh", "body": "...", "url": "https://example.com/fresh", "source": "R", "date": fresh_date},
+        ]
+        with patch("ddgs.DDGS") as mock_ddgs_class:
+            mock_ddgs = MagicMock()
+            mock_ddgs.news.return_value = mock_results
+            mock_ddgs_class.return_value = mock_ddgs
+
+            articles = await fetch_economic_news(
+                queries=["test"],
+                max_age_hours=48,
+            )
+        assert len(articles) == 1
+        assert articles[0].title == "Fresh"
+
+    @pytest.mark.asyncio
+    async def test_unparseable_dates_pass_through(self):
+        """Test that articles with unparseable dates are not filtered."""
+        mock_results = [
+            {"title": "No Date", "body": "...", "url": "https://example.com/1", "source": "R", "date": ""},
+            {"title": "Bad Date", "body": "...", "url": "https://example.com/2", "source": "R", "date": "not-a-date-xyz"},
+        ]
+        with patch("ddgs.DDGS") as mock_ddgs_class:
+            mock_ddgs = MagicMock()
+            mock_ddgs.news.return_value = mock_results
+            mock_ddgs_class.return_value = mock_ddgs
+
+            articles = await fetch_economic_news(
+                queries=["test"],
+                max_age_hours=48,
+            )
+        # Both should pass through since dates are unparseable
+        assert len(articles) == 2

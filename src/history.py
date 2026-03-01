@@ -85,6 +85,21 @@ class DigestHistory:
                 ON trend_history(trend_term)
             """)
 
+            # Table for tracking reported news articles across runs
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS reported_news (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    url TEXT NOT NULL UNIQUE,
+                    title TEXT NOT NULL,
+                    reported_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_reported_news_url
+                ON reported_news(url)
+            """)
+
             conn.commit()
 
     def store_digest(
@@ -283,6 +298,61 @@ class DigestHistory:
             'notable_days': row[3] or 0,
             'notable_rate': (row[3] or 0) / row[0] if row[0] > 0 else 0,
         }
+
+    def get_reported_news_urls(self, days: int = 7) -> set[str]:
+        """Get URLs of news articles reported in the last N days."""
+        cutoff = datetime.now() - timedelta(days=days)
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                "SELECT url FROM reported_news WHERE reported_date >= ?",
+                (cutoff.isoformat(),)
+            ).fetchall()
+        return {row[0] for row in rows}
+
+    def store_reported_news(self, articles: list[dict]) -> None:
+        """Store news articles that were included in a digest.
+
+        Args:
+            articles: List of dicts with 'url' and 'title' keys.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            for article in articles:
+                conn.execute(
+                    "INSERT OR IGNORE INTO reported_news (url, title) VALUES (?, ?)",
+                    (article['url'], article['title'])
+                )
+            conn.commit()
+
+    def get_previous_digest_summary(self, count: int = 2) -> str:
+        """Get the news content from the last N digests.
+
+        This lets the LLM know what was already reported so it avoids recycling.
+        """
+        recent = self.get_recent_digests(days=3)
+        if not recent:
+            return ""
+
+        lines = ["## Previous Digest Content (DO NOT REPEAT THESE)"]
+        for digest in recent[:count]:
+            date_str = digest.run_date.strftime("%Y-%m-%d %H:%M")
+            lines.append(f"\n### Digest from {date_str}:")
+            text = digest.digest_text
+            # Try to extract the news roundup section
+            for marker in ("**News Roundup:**", "News Roundup:", "news_roundup"):
+                if marker in text:
+                    start = text.index(marker)
+                    # Find the next section header or end of text
+                    next_section = text.find("\n\n**", start + len(marker))
+                    if next_section > 0:
+                        roundup = text[start:next_section].strip()
+                    else:
+                        roundup = text[start:start + 500].strip()
+                    lines.append(roundup)
+                    break
+            else:
+                lines.append(f"Topics covered: {', '.join(digest.trends[:5])}")
+
+        return "\n".join(lines)
 
     def format_context_for_llm(self, days: int = 7) -> str:
         """

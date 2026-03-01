@@ -279,6 +279,29 @@ class TemporalTrendAnalyzer:
 
         return timelines
 
+    def get_suppressed_trends(self, timelines: dict[str, TrendTimeline]) -> set[str]:
+        """Identify trends that should be deprioritized.
+
+        A continuing trend with declining or stable velocity is stale — the LLM
+        doesn't need to see it again unless engagement is re-accelerating.
+
+        Returns:
+            Set of trend terms that should be suppressed from the main analysis.
+        """
+        suppressed = set()
+        for term, timeline in timelines.items():
+            if (
+                timeline.is_continuing
+                and timeline.consecutive_days >= self.consecutive_threshold
+                and timeline.trend_velocity in ("declining", "stable")
+            ):
+                logger.info(
+                    f"Suppressing stale trend: {term} "
+                    f"(Day {timeline.consecutive_days}, velocity={timeline.trend_velocity})"
+                )
+                suppressed.add(term)
+        return suppressed
+
     def format_context_for_llm(self, timelines: dict[str, TrendTimeline]) -> str:
         """
         Format temporal context as a string for LLM analysis.
@@ -298,7 +321,13 @@ class TemporalTrendAnalyzer:
         if continuing:
             lines.append("**Developing Stories (multi-day trends):**")
             for t in sorted(continuing, key=lambda x: x.consecutive_days, reverse=True):
-                lines.append(f"- {t.term}: {t.format_for_llm()}")
+                stale_note = ""
+                if (
+                    t.consecutive_days >= self.consecutive_threshold
+                    and t.trend_velocity in ("declining", "stable")
+                ):
+                    stale_note = " [STALE - declining engagement, deprioritize]"
+                lines.append(f"- {t.term}: {t.format_for_llm()}{stale_note}")
             lines.append("")
 
         if recurring:

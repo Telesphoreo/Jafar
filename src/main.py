@@ -89,10 +89,10 @@ def sanitize_llm_output(text: str) -> str:
 ANALYST_SYSTEM_PROMPT = """You are someone's sharp friend who actually works in finance and texts them market takes over coffee. Not a suit. Not a talking head. The person at the office who makes the interns laugh and the managing directors nervous. You've seen enough "THIS IS IT" tweets to develop a healthy immune system against hype, but you're not dead inside - when something real happens, you genuinely light up.
 
 YOUR DUAL ROLE:
-1. **News Digest Curator**: Summarize today's economic news headlines with brief, opinionated commentary. This is your PRIMARY output - the reader wants a daily economic briefing without reading 50 sources. The news_roundup field should ALWAYS be populated when news headlines are provided.
+1. **News Digest Curator**: Summarize today's economic news headlines with brief, opinionated commentary. This is your PRIMARY output - the reader wants a daily economic briefing without reading 50 sources. The news_roundup field should be populated when fresh news headlines are provided. If all news was filtered as stale/duplicate, the news_roundup can be empty.
 2. **Twitter Signal Detector**: Identify unusual Twitter activity that might indicate emerging economic signals not yet in mainstream news. This uses your existing skeptical filter.
 
-"Nothing to report" applies to Twitter signals, not the entire digest. Even on quiet Twitter days, the news roundup provides value.
+"Nothing to report" applies to Twitter signals, not the entire digest. Even on quiet Twitter days, the news roundup provides value when fresh articles are available.
 
 YOUR SCOPE: FULL ECONOMIC PICTURE
 You analyze both traditional market signals AND broader economic developments:
@@ -289,6 +289,7 @@ async def analyze_with_llm(
         timelines: dict[str, TrendTimeline] | None = None,
         news_context: str = "",
         twitter_mentions: list[str] | None = None,
+        previous_digest_summary: str = "",
 ) -> tuple[str, str, bool, int, str | None]:
     """
     Use the LLM to generate a CALIBRATED sentiment analysis using an agentic loop.
@@ -358,6 +359,7 @@ TOOL USE & RESEARCH INSTRUCTIONS:
     - **Context Limit**: Keep your query specific. Don't ask generic questions like "what is happening around the world".
     - **Stop Condition**: You have a maximum of 5 turns. Use them wisely.
 - Compare sentiment to real data. If sentiment says "CRASHING" but data says -0.5%, that's an exaggeration.
+- **FRESHNESS PRIORITY**: New and breaking stories ALWAYS take priority over continuing narratives. If you see both a breaking event and a week-old story, lead with the breaking event. Stories from the "Previous Digest Content" section should NOT be repeated unless there is a material new development with new data points.
 """
 
     # Build twitter mentions section
@@ -370,9 +372,11 @@ These topics were being discussed on Twitter but did NOT pass the signal filter.
 {mentions_list}
 """
 
-    user_prompt = f"""Analyze the following data. Be SKEPTICAL about Twitter - most days are boring. But ALWAYS provide the news roundup.
+    user_prompt = f"""Analyze the following data. Be SKEPTICAL about Twitter - most days are boring. Provide the news roundup when fresh headlines are available.
 
 {news_context}
+
+{previous_digest_summary}
 
 {mentions_section}
 
@@ -419,7 +423,7 @@ When you are done analyzing, you MUST call the `submit_report` tool with these f
 
 - **bottom_line**: 1 sentence. The one thing you'd actually text a friend. Not a platitude. Not "stay safe out there" or "save your attention" every time. Something specific to TODAY.
 
-- **news_roundup**: Bullet-pointed summary of the news headlines provided above, with your brief commentary on each. ALWAYS populate this when news headlines are included. Use '•' character. Example:
+- **news_roundup**: Bullet-pointed summary of the news headlines provided above, with your brief commentary on each. Populate this when fresh news headlines are included above. If no news headlines section is present (all articles were filtered as stale/duplicates), set this to an empty string. Do NOT recycle or re-summarize stories from the "Previous Digest Content" section. Use '•' character. Example:
   • Fed holds rates steady at 5.25% - markets expected this, non-event
   • NVIDIA earnings beat by 15% - H200 demand cited, guidance raised
   • Oil falls 3% on OPEC+ production increase rumors
@@ -997,19 +1001,26 @@ async def run_pipeline() -> bool:
         # STEP 5: NEWS ROUNDUP - Fetch economic news headlines
         # ============================================================
         news_context = ""
+        news_articles = []
         if config.news.enabled:
             logger.info("\n[STEP 5/11] NEWS ROUNDUP: Fetching economic news headlines...")
             try:
+                # Get previously reported URLs to avoid recycling
+                previously_reported_urls = history.get_reported_news_urls(days=7)
+                logger.info(f"Excluding {len(previously_reported_urls)} previously reported URLs")
+
                 news_articles = await fetch_economic_news(
                     queries=config.news.queries,
                     max_results_per_query=config.news.max_results_per_query,
+                    max_age_hours=config.news.max_age_hours,
+                    exclude_urls=previously_reported_urls,
                 )
                 diagnostics.diagnostics.news_articles_fetched = len(news_articles)
                 if news_articles:
                     news_context = format_news_for_llm(news_articles)
-                    logger.info(f"Fetched {len(news_articles)} news articles")
+                    logger.info(f"Fetched {len(news_articles)} fresh, non-duplicate news articles")
                 else:
-                    logger.info("No news articles fetched")
+                    logger.info("No fresh news articles after filtering")
             except Exception as e:
                 logger.warning(f"News fetching failed (non-fatal): {e}")
                 diagnostics.diagnostics.add_warning(f"News fetching failed: {e}")
@@ -1069,6 +1080,20 @@ async def run_pipeline() -> bool:
         # Format temporal context for LLM
         temporal_context = temporal_analyzer.format_context_for_llm(timelines)
 
+        # Suppress stale trends — demote to mentions tier
+        suppressed_trends = temporal_analyzer.get_suppressed_trends(timelines)
+        if suppressed_trends:
+            logger.info(f"Suppressing {len(suppressed_trends)} stale trends: {suppressed_trends}")
+            if twitter_mentions is None:
+                twitter_mentions = []
+            for term in suppressed_trends:
+                if term in trend_tweets:
+                    twitter_mentions.append(
+                        f"{term} (Day {timelines[term].consecutive_days}, "
+                        f"engagement {timelines[term].trend_velocity})"
+                    )
+                    del trend_tweets[term]
+
         # ============================================================
         # STEP 8: ANALYST - LLM Summary
         # ============================================================
@@ -1077,6 +1102,7 @@ async def run_pipeline() -> bool:
             logger.info("\n[STEP 8/11] THE ANALYST: Generating calibrated analysis...")
 
             historical_context = history.format_context_for_llm(days=7)
+            previous_digest_summary = history.get_previous_digest_summary(count=2)
             baseline = history.get_baseline_stats(days=30)
 
             top_engagement = 0.0
@@ -1099,6 +1125,7 @@ async def run_pipeline() -> bool:
                 timelines=timelines,
                 news_context=news_context,
                 twitter_mentions=twitter_mentions if twitter_mentions else None,
+                previous_digest_summary=previous_digest_summary,
             )
 
             diagnostics.diagnostics.llm_calls_made += 1  # Main analysis call
@@ -1177,6 +1204,13 @@ async def run_pipeline() -> bool:
                 notable=is_notable,
                 trend_details=trend_details_for_temporal,
             )
+
+            # Store reported news URLs for cross-run dedup
+            if news_articles:
+                history.store_reported_news([
+                    {'url': a.url, 'title': a.title} for a in news_articles
+                ])
+                logger.info(f"Stored {len(news_articles)} news URLs for future dedup")
 
             if memory:
                 try:

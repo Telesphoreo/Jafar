@@ -51,6 +51,7 @@ class TestDigestHistory:
 
         assert "digests" in tables
         assert "trend_history" in tables
+        assert "reported_news" in tables
 
     def test_store_digest(self, temp_db_path):
         """Test storing a digest."""
@@ -271,3 +272,84 @@ class TestCalculateSignalStrength:
         )
         # Should handle gracefully
         assert result in ["high", "medium", "low", "none"]
+
+
+class TestReportedNews:
+    """Tests for cross-run news deduplication storage."""
+
+    def test_store_and_retrieve_reported_news(self, temp_db_path):
+        """Test storing and retrieving reported news URLs."""
+        history = DigestHistory(db_path=temp_db_path)
+        history.store_reported_news([
+            {"url": "https://example.com/1", "title": "Article 1"},
+            {"url": "https://example.com/2", "title": "Article 2"},
+        ])
+        urls = history.get_reported_news_urls(days=7)
+        assert "https://example.com/1" in urls
+        assert "https://example.com/2" in urls
+
+    def test_reported_news_dedup(self, temp_db_path):
+        """Test that duplicate URLs are handled gracefully."""
+        history = DigestHistory(db_path=temp_db_path)
+        history.store_reported_news([{"url": "https://example.com/1", "title": "A1"}])
+        history.store_reported_news([{"url": "https://example.com/1", "title": "A1"}])
+        urls = history.get_reported_news_urls(days=7)
+        assert len(urls) == 1
+
+    def test_reported_news_expiry(self, temp_db_path):
+        """Test that old reported news expires after the lookback period."""
+        history = DigestHistory(db_path=temp_db_path)
+        history.store_reported_news([{"url": "https://example.com/old", "title": "Old"}])
+        # Manually backdate the record
+        with sqlite3.connect(temp_db_path) as conn:
+            conn.execute(
+                "UPDATE reported_news SET reported_date = ? WHERE url = ?",
+                ((datetime.now() - timedelta(days=10)).isoformat(), "https://example.com/old")
+            )
+        urls = history.get_reported_news_urls(days=7)
+        assert len(urls) == 0
+
+    def test_reported_news_empty(self, temp_db_path):
+        """Test empty reported news returns empty set."""
+        history = DigestHistory(db_path=temp_db_path)
+        urls = history.get_reported_news_urls(days=7)
+        assert urls == set()
+
+
+class TestGetPreviousDigestSummary:
+    """Tests for previous digest summary extraction."""
+
+    def test_get_previous_digest_summary_with_news(self, temp_db_path):
+        """Test extracting news roundup from previous digests."""
+        history = DigestHistory(db_path=temp_db_path)
+        history.store_digest(
+            trends=["Gold"],
+            tweet_count=100,
+            digest_text="**News Roundup:**\n• Gold up 2%\n• Fed holds rates\n\n**Assessment:**\nQuiet day.",
+            signal_strength="low",
+            top_engagement=5000.0,
+        )
+        summary = history.get_previous_digest_summary(count=1)
+        assert "Previous Digest Content" in summary
+        assert "Gold up 2%" in summary
+        assert "Fed holds rates" in summary
+
+    def test_get_previous_digest_summary_no_news(self, temp_db_path):
+        """Test summary falls back to trend names when no news roundup section."""
+        history = DigestHistory(db_path=temp_db_path)
+        history.store_digest(
+            trends=["Silver", "Oil"],
+            tweet_count=100,
+            digest_text="Just a regular analysis without news section.",
+            signal_strength="low",
+            top_engagement=3000.0,
+        )
+        summary = history.get_previous_digest_summary(count=1)
+        assert "Previous Digest Content" in summary
+        assert "Silver" in summary
+
+    def test_get_previous_digest_summary_empty(self, temp_db_path):
+        """Test empty summary when no digests exist."""
+        history = DigestHistory(db_path=temp_db_path)
+        summary = history.get_previous_digest_summary(count=1)
+        assert summary == ""

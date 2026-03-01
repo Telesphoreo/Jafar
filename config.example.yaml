@@ -178,13 +178,46 @@ broad_topics:
   - bullish OR bearish
   - panic OR euphoria
 
+  # GEOPOLITICAL (war/conflict = market shocks)
+  - tariff OR trade war
+  - sanctions OR embargo
+  - China OR Taiwan
+  - Iran OR Tehran
+  - Russia OR Ukraine
+  - Israel OR Gaza
+  - NATO OR allied forces
+
+  # MILITARY/DEFENSE
+  - military strike OR air strike
+  - war OR invasion
+  - Pentagon OR Department of Defense
+  - missile OR bombing
+  - ceasefire OR escalation
+
+  # AI/TECH SECTOR (major market movers)
+  - OpenAI OR ChatGPT
+  - Anthropic OR Claude
+  - NVIDIA OR Jensen
+  - AI regulation OR AI policy
+  - AI military OR autonomous weapons
+  - AI ban OR AI restriction
+
+  # GOVERNMENT/REGULATORY
+  - Fed OR Federal Reserve
+  - antitrust OR DOJ
+  - executive order OR policy announcement
+  - supply chain risk OR national security
+
 # News Fetching Settings (economic news roundup)
 news:
   # Enable/disable news fetching for the daily digest
   enabled: true
 
   # Search queries for fetching economic news via DuckDuckGo
+  # BROAD coverage: not just financial markets — geopolitics, tech policy,
+  # defense, regulation, and social disruption all move markets
   queries:
+    # Core economic
     - "economy news today"
     - "stock market news"
     - "inflation consumer prices"
@@ -192,8 +225,41 @@ news:
     - "corporate earnings news"
     - "supply chain logistics"
 
+    # Geopolitical / defense / war
+    - "military strikes news today"
+    - "geopolitical conflict news"
+    - "war Middle East news"
+    - "NATO defense news"
+    - "sanctions news today"
+
+    # AI / tech industry
+    - "artificial intelligence news today"
+    - "AI regulation policy"
+    - "tech company news today"
+    - "AI defense military"
+    - "semiconductor chip news"
+
+    # Government / regulation / policy
+    - "government regulation news today"
+    - "Department of Defense news"
+    - "antitrust investigation news"
+    - "executive order policy news"
+
+    # Energy / commodities
+    - "oil price OPEC news"
+    - "gold commodity prices"
+    - "energy crisis news"
+
+    # Breaking / high-signal
+    - "breaking news today"
+    - "major news today"
+
   # Maximum results per query (more = broader coverage, slower)
-  max_results_per_query: 5
+  max_results_per_query: 8
+
+  # Maximum age of news articles in hours (older articles are filtered out)
+  # Prevents recycling stale stories across runs
+  max_age_hours: 48
 
 # Vector Memory Settings (for historical parallels)
 memory:

@@ -361,6 +361,55 @@ class TestTemporalTrendAnalyzer:
         assert "Temporal Context" in context
         assert "New Trends" in context
 
+    def test_get_suppressed_trends_stale(self, mock_history_db):
+        """Test that stale continuing trends are suppressed."""
+        analyzer = TemporalTrendAnalyzer(
+            history_db=mock_history_db,
+            consecutive_threshold=3,
+        )
+        timelines = {
+            "GDP": TrendTimeline(
+                term="GDP", term_normalized="gdp",
+                first_seen_today=datetime.now(), last_seen_today=datetime.now(),
+                mentions_today=20, engagement_today=3000.0,
+                total_appearances=5, consecutive_days=5,
+                previous_mentions=[30, 40, 50],  # declining (20 < avg 40)
+            ),
+            "$NVDA": TrendTimeline(
+                term="$NVDA", term_normalized="nvda",
+                first_seen_today=datetime.now(), last_seen_today=datetime.now(),
+                mentions_today=100, engagement_today=20000.0,
+                total_appearances=1,
+            ),
+        }
+        suppressed = analyzer.get_suppressed_trends(timelines)
+        assert "GDP" in suppressed
+        assert "$NVDA" not in suppressed
+
+    def test_get_suppressed_trends_accelerating_not_suppressed(self, mock_history_db):
+        """Test that accelerating trends are NOT suppressed even if continuing."""
+        analyzer = TemporalTrendAnalyzer(
+            history_db=mock_history_db,
+            consecutive_threshold=3,
+        )
+        timelines = {
+            "Silver": TrendTimeline(
+                term="Silver", term_normalized="silver",
+                first_seen_today=datetime.now(), last_seen_today=datetime.now(),
+                mentions_today=200, engagement_today=40000.0,
+                total_appearances=5, consecutive_days=5,
+                previous_mentions=[50, 60, 70],  # accelerating (200 >> avg 60)
+            ),
+        }
+        suppressed = analyzer.get_suppressed_trends(timelines)
+        assert "Silver" not in suppressed
+
+    def test_get_suppressed_trends_empty(self, mock_history_db):
+        """Test that empty timelines returns empty set."""
+        analyzer = TemporalTrendAnalyzer(history_db=mock_history_db)
+        suppressed = analyzer.get_suppressed_trends({})
+        assert suppressed == set()
+
     def test_term_normalization(self, mock_history_db):
         """Test that terms are normalized correctly."""
         mock_history_db.get_trend_history.return_value = []
