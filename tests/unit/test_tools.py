@@ -376,7 +376,7 @@ class TestToolDefinitionSchemas:
         expected_props = [
             "subject_line", "signal_strength", "assessment", "trends_observed",
             "fact_check", "actionability", "actionability_reason",
-            "historical_parallel", "bottom_line", "news_roundup"
+            "historical_parallel", "bottom_line"
         ]
         for prop in expected_props:
             assert prop in props, f"Missing property: {prop}"
@@ -389,10 +389,9 @@ class TestToolDefinitionSchemas:
         for req in expected_required:
             assert req in required, f"Missing required field: {req}"
 
-        # fact_check, historical_parallel, and news_roundup should be optional
+        # fact_check and historical_parallel should be optional
         assert "fact_check" not in required
         assert "historical_parallel" not in required
-        assert "news_roundup" not in required
 
         # Check enum values for signal_strength
         assert props["signal_strength"]["enum"] == ["high", "medium", "low", "none"]

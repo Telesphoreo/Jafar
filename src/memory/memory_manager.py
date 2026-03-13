@@ -12,11 +12,10 @@ It handles:
 import logging
 import re
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
 from .base import MemoryRecord, SearchResult, VectorStore
-from .embeddings import EmbeddingService, create_embedding_service
-from .chroma_store import ChromaVectorStore
+from .embeddings import EmbeddingService, GeminiEmbeddingService
 
 logger = logging.getLogger("jafar.memory.manager")
 
@@ -389,51 +388,39 @@ it will be able to provide historical context and identify parallels.
 
 
 async def create_memory_manager(
-    store_type: Literal["chroma", "pgvector"] = "chroma",
-    embedding_provider: Literal["openai", "local"] = "openai",
-    openai_api_key: str = "",
-    openai_embedding_model: str = "text-embedding-3-large",
-    embedding_dimensions: int | None = None,
-    postgres_url: str = "",
-    chroma_path: str = "./memory_store",
+    google_api_key: str = "",
+    embedding_model: str = "gemini-embedding-2-preview",
+    embedding_dimensions: int = 3072,
 ) -> MemoryManager:
     """
     Factory function to create a configured MemoryManager.
 
+    Uses Gemini embeddings and pgvecto.rs (Postgres) for vector storage.
+    The database must already be initialized via src.database.init_db().
+
     Args:
-        store_type: "chroma" for local, "pgvector" for production
-        embedding_provider: "openai" or "local"
-        openai_api_key: Required for OpenAI embeddings
-        openai_embedding_model: OpenAI embedding model (text-embedding-3-small or text-embedding-3-large)
-        embedding_dimensions: Override embedding dimensions. Required for pgvector (max 2000 dims).
-                              Set to 1536 or 2000 when using text-embedding-3-large with pgvector.
-        postgres_url: Required for pgvector store
-        chroma_path: Path for ChromaDB storage
+        google_api_key: Google API key for Gemini embeddings
+        embedding_model: Gemini embedding model name
+        embedding_dimensions: Embedding dimensions (128-3072)
 
     Returns:
         Initialized MemoryManager
     """
-    # Create embedding service
-    embedding_service = create_embedding_service(
-        provider=embedding_provider,
-        api_key=openai_api_key,
-        model=openai_embedding_model,
+    if not google_api_key:
+        raise ValueError("Google API key required for Gemini embeddings")
+
+    # Create Gemini embedding service
+    embedding_service = GeminiEmbeddingService(
+        api_key=google_api_key,
+        model=embedding_model,
         dimensions=embedding_dimensions,
     )
 
-    # Create vector store
-    if store_type == "chroma":
-        vector_store = ChromaVectorStore(persist_directory=chroma_path)
-    elif store_type == "pgvector":
-        if not postgres_url:
-            raise ValueError("postgres_url required for pgvector store")
-        from .pgvector_store import PgVectorStore
-        vector_store = PgVectorStore(
-            connection_string=postgres_url,
-            embedding_dimension=embedding_service.dimension,
-        )
-    else:
-        raise ValueError(f"Unknown store type: {store_type}")
+    # Create pgvecto.rs vector store
+    from .pgvector_store import PgVectorStore
+    vector_store = PgVectorStore(
+        embedding_dimension=embedding_service.dimension,
+    )
 
     # Create and initialize manager
     manager = MemoryManager(

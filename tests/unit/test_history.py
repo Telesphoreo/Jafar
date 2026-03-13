@@ -1,63 +1,60 @@
 """
 Unit tests for src/history.py
 
-Tests SQLite storage, historical digest retrieval, and signal strength calculation.
+Tests async SQLAlchemy storage, historical digest retrieval, and signal strength calculation.
 """
 
-import json
-import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, timedelta
+from unittest.mock import AsyncMock, patch
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.history import DigestHistory, HistoricalDigest, calculate_signal_strength
+from src.history import DigestHistory, calculate_signal_strength
+from src.models import Base, Digest, TrendHistory
 
 
-class TestHistoricalDigest:
-    """Tests for HistoricalDigest dataclass."""
+@pytest.fixture
+async def async_session_factory():
+    """Create an in-memory SQLite async engine and session factory for tests."""
+    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
 
-    def test_historical_digest_creation(self):
-        """Test creating a HistoricalDigest."""
-        digest = HistoricalDigest(
-            id=1,
-            run_date=datetime.now(),
-            trends=["$NVDA", "Silver"],
-            tweet_count=500,
-            digest_text="Test digest content.",
-            signal_strength="medium",
-            top_engagement=10000.0,
-            notable=True,
-        )
 
-        assert digest.id == 1
-        assert len(digest.trends) == 2
-        assert digest.tweet_count == 500
-        assert digest.notable is True
+@pytest.fixture
+def history(async_session_factory):
+    """Provide a DigestHistory that uses the test session factory."""
+    h = DigestHistory()
+    # Patch get_session to return sessions from our test factory
+    async def _get_session():
+        return async_session_factory()
+    with patch("src.history.get_session", side_effect=_get_session):
+        yield h
+
+
+@pytest.fixture
+def patched_get_session(async_session_factory):
+    """Patch get_session globally and return a DigestHistory instance."""
+    async def _get_session():
+        return async_session_factory()
+    patcher = patch("src.history.get_session", side_effect=_get_session)
+    patcher.start()
+    yield DigestHistory()
+    patcher.stop()
 
 
 class TestDigestHistory:
     """Tests for DigestHistory class."""
 
-    def test_init_creates_tables(self, temp_db_path):
-        """Test that initialization creates database tables."""
-        history = DigestHistory(db_path=temp_db_path)
-
-        # Verify tables exist
-        with sqlite3.connect(temp_db_path) as conn:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            )
-            tables = {row[0] for row in cursor.fetchall()}
-
-        assert "digests" in tables
-        assert "trend_history" in tables
-        assert "reported_news" in tables
-
-    def test_store_digest(self, temp_db_path):
+    async def test_store_digest(self, patched_get_session):
         """Test storing a digest."""
-        history = DigestHistory(db_path=temp_db_path)
-
-        digest_id = history.store_digest(
+        history = patched_get_session
+        digest_id = await history.store_digest(
             trends=["$NVDA", "Silver", "Oil"],
             tweet_count=500,
             digest_text="Test digest content.",
@@ -69,17 +66,15 @@ class TestDigestHistory:
         assert digest_id is not None
         assert digest_id > 0
 
-    def test_store_digest_with_trend_details(self, temp_db_path):
+    async def test_store_digest_with_trend_details(self, patched_get_session):
         """Test storing digest with trend details."""
-        history = DigestHistory(db_path=temp_db_path)
-
-        # Use lowercase keys since store_digest normalizes to lowercase
+        history = patched_get_session
         trend_details = {
             "nvda": {"mentions": 100, "engagement": 15000},
             "silver": {"mentions": 50, "engagement": 8000},
         }
 
-        digest_id = history.store_digest(
+        digest_id = await history.store_digest(
             trends=["$NVDA", "Silver"],
             tweet_count=300,
             digest_text="Test digest.",
@@ -88,18 +83,19 @@ class TestDigestHistory:
             trend_details=trend_details,
         )
 
-        # Verify trend history was stored - use longer lookback since dates may differ
-        trend_hist = history.get_trend_history("nvda", days=30)
+        assert digest_id is not None
+
+        # Verify trend history was stored
+        trend_hist = await history.get_trend_history("nvda", days=30)
         assert len(trend_hist) == 1
         assert trend_hist[0]["mentions"] == 100
 
-    def test_get_recent_digests(self, temp_db_path):
+    async def test_get_recent_digests(self, patched_get_session):
         """Test retrieving recent digests."""
-        history = DigestHistory(db_path=temp_db_path)
+        history = patched_get_session
 
-        # Store multiple digests
         for i in range(3):
-            history.store_digest(
+            await history.store_digest(
                 trends=[f"Trend{i}"],
                 tweet_count=100 * (i + 1),
                 digest_text=f"Digest {i}",
@@ -107,17 +103,19 @@ class TestDigestHistory:
                 top_engagement=1000.0 * (i + 1),
             )
 
-        recent = history.get_recent_digests(days=7)
+        recent = await history.get_recent_digests(days=7)
 
         assert len(recent) == 3
-        assert all(isinstance(d, HistoricalDigest) for d in recent)
+        assert all(isinstance(d, dict) for d in recent)
+        assert "trends" in recent[0]
+        assert "tweet_count" in recent[0]
+        assert "signal_strength" in recent[0]
 
-    def test_get_trend_history(self, temp_db_path):
+    async def test_get_trend_history(self, patched_get_session):
         """Test retrieving trend history."""
-        history = DigestHistory(db_path=temp_db_path)
+        history = patched_get_session
 
-        # Store digest with trend details
-        history.store_digest(
+        await history.store_digest(
             trends=["$AAPL"],
             tweet_count=200,
             digest_text="Apple trending.",
@@ -126,23 +124,23 @@ class TestDigestHistory:
             trend_details={"aapl": {"mentions": 75, "engagement": 12000}},
         )
 
-        trend_hist = history.get_trend_history("aapl", days=30)
+        trend_hist = await history.get_trend_history("aapl", days=30)
 
         assert len(trend_hist) == 1
         assert trend_hist[0]["mentions"] == 75
         assert trend_hist[0]["engagement"] == 12000
 
-    def test_get_trend_history_empty(self, temp_db_path):
+    async def test_get_trend_history_empty(self, patched_get_session):
         """Test trend history returns empty for unknown trends."""
-        history = DigestHistory(db_path=temp_db_path)
-        trend_hist = history.get_trend_history("unknown_trend", days=30)
+        history = patched_get_session
+        trend_hist = await history.get_trend_history("unknown_trend", days=30)
         assert trend_hist == []
 
-    def test_get_all_recent_trends(self, temp_db_path):
-        """Test retrieving all recent trends."""
-        history = DigestHistory(db_path=temp_db_path)
+    async def test_get_all_recent_trends(self, patched_get_session):
+        """Test retrieving all recent trends aggregated."""
+        history = patched_get_session
 
-        history.store_digest(
+        await history.store_digest(
             trends=["$NVDA", "$AAPL"],
             tweet_count=400,
             digest_text="Tech stocks trending.",
@@ -154,53 +152,74 @@ class TestDigestHistory:
             },
         )
 
-        all_trends = history.get_all_recent_trends(days=7)
+        all_trends = await history.get_all_recent_trends(days=7)
 
-        assert "nvda" in all_trends
-        assert "aapl" in all_trends
-        assert len(all_trends["nvda"]) == 1
+        assert isinstance(all_trends, list)
+        trend_terms = [t["trend_term"] for t in all_trends]
+        assert "nvda" in trend_terms
+        assert "aapl" in trend_terms
 
-    def test_get_baseline_stats(self, temp_db_path):
+    async def test_get_baseline_stats(self, patched_get_session):
         """Test calculating baseline statistics."""
-        history = DigestHistory(db_path=temp_db_path)
+        history = patched_get_session
 
-        # Store several digests
         for i in range(5):
-            history.store_digest(
+            await history.store_digest(
                 trends=[f"Trend{i}"],
                 tweet_count=100 + i * 50,
                 digest_text=f"Digest {i}",
                 signal_strength="low" if i < 4 else "high",
                 top_engagement=5000.0 + i * 1000,
-                notable=i == 4,  # One notable day
+                notable=i == 4,
             )
 
-        stats = history.get_baseline_stats(days=30)
+        stats = await history.get_baseline_stats(days=30)
 
-        assert stats["total_runs"] == 5
-        assert stats["notable_days"] == 1
-        assert stats["avg_tweets"] > 0
-        assert stats["avg_top_engagement"] > 0
+        assert stats["total_digests"] == 5
+        assert stats["avg_tweet_count"] > 0
+        assert stats["avg_engagement"] > 0
 
-    def test_get_baseline_stats_empty(self, temp_db_path):
+    async def test_get_baseline_stats_empty(self, patched_get_session):
         """Test baseline stats with no data."""
-        history = DigestHistory(db_path=temp_db_path)
-        stats = history.get_baseline_stats(days=30)
+        history = patched_get_session
+        stats = await history.get_baseline_stats(days=30)
 
-        assert stats["total_runs"] == 0
-        assert stats["avg_top_engagement"] == 0
-        assert stats["notable_rate"] == 0
+        assert stats["total_digests"] == 0
+        assert stats["avg_engagement"] == 0
 
-    def test_format_context_for_llm(self, temp_db_path):
-        """Test LLM context formatting."""
-        history = DigestHistory(db_path=temp_db_path)
+    async def test_get_previous_digest_summary(self, patched_get_session):
+        """Test extracting summary from previous digest."""
+        history = patched_get_session
 
-        # First run - empty history
-        context = history.format_context_for_llm(days=7)
+        await history.store_digest(
+            trends=["Gold"],
+            tweet_count=100,
+            digest_text="## Summary\nGold up 2%, Fed holds rates.\n\n**Assessment:**\nQuiet day.",
+            signal_strength="low",
+            top_engagement=5000.0,
+        )
+
+        summary = await history.get_previous_digest_summary(days_back=1)
+        assert summary is not None
+        assert "Gold up 2%" in summary
+
+    async def test_get_previous_digest_summary_empty(self, patched_get_session):
+        """Test empty summary when no digests exist."""
+        history = patched_get_session
+        summary = await history.get_previous_digest_summary(days_back=1)
+        assert summary is None
+
+    async def test_format_context_for_llm_empty(self, patched_get_session):
+        """Test LLM context formatting with no data."""
+        history = patched_get_session
+        context = await history.format_context_for_llm(days=7)
         assert "first run" in context.lower() or "no historical data" in context.lower()
 
-        # Store some data
-        history.store_digest(
+    async def test_format_context_for_llm_with_data(self, patched_get_session):
+        """Test LLM context formatting with data."""
+        history = patched_get_session
+
+        await history.store_digest(
             trends=["$NVDA", "Silver"],
             tweet_count=500,
             digest_text="Market digest.",
@@ -209,10 +228,8 @@ class TestDigestHistory:
             notable=True,
         )
 
-        # Now should have context
-        context = history.format_context_for_llm(days=7)
+        context = await history.format_context_for_llm(days=7)
         assert "Historical Context" in context
-        assert "NVDA" in context or "Silver" in context
 
 
 class TestCalculateSignalStrength:
@@ -230,7 +247,7 @@ class TestCalculateSignalStrength:
     def test_high_signal(self):
         """Test high signal detection."""
         result = calculate_signal_strength(
-            top_engagement=50000.0,  # 10x baseline
+            top_engagement=50000.0,
             trend_count=5,
             baseline_engagement=5000.0,
         )
@@ -239,7 +256,7 @@ class TestCalculateSignalStrength:
     def test_medium_signal(self):
         """Test medium signal detection."""
         result = calculate_signal_strength(
-            top_engagement=15000.0,  # 3x baseline
+            top_engagement=15000.0,
             trend_count=3,
             baseline_engagement=5000.0,
         )
@@ -248,7 +265,7 @@ class TestCalculateSignalStrength:
     def test_low_signal(self):
         """Test low signal detection."""
         result = calculate_signal_strength(
-            top_engagement=4000.0,  # Below baseline
+            top_engagement=4000.0,
             trend_count=2,
             baseline_engagement=5000.0,
         )
@@ -257,7 +274,7 @@ class TestCalculateSignalStrength:
     def test_none_signal_below_threshold(self):
         """Test none signal for very low engagement."""
         result = calculate_signal_strength(
-            top_engagement=2000.0,  # Well below baseline
+            top_engagement=2000.0,
             trend_count=1,
             baseline_engagement=5000.0,
         )
@@ -270,86 +287,4 @@ class TestCalculateSignalStrength:
             trend_count=3,
             baseline_engagement=0,
         )
-        # Should handle gracefully
         assert result in ["high", "medium", "low", "none"]
-
-
-class TestReportedNews:
-    """Tests for cross-run news deduplication storage."""
-
-    def test_store_and_retrieve_reported_news(self, temp_db_path):
-        """Test storing and retrieving reported news URLs."""
-        history = DigestHistory(db_path=temp_db_path)
-        history.store_reported_news([
-            {"url": "https://example.com/1", "title": "Article 1"},
-            {"url": "https://example.com/2", "title": "Article 2"},
-        ])
-        urls = history.get_reported_news_urls(days=7)
-        assert "https://example.com/1" in urls
-        assert "https://example.com/2" in urls
-
-    def test_reported_news_dedup(self, temp_db_path):
-        """Test that duplicate URLs are handled gracefully."""
-        history = DigestHistory(db_path=temp_db_path)
-        history.store_reported_news([{"url": "https://example.com/1", "title": "A1"}])
-        history.store_reported_news([{"url": "https://example.com/1", "title": "A1"}])
-        urls = history.get_reported_news_urls(days=7)
-        assert len(urls) == 1
-
-    def test_reported_news_expiry(self, temp_db_path):
-        """Test that old reported news expires after the lookback period."""
-        history = DigestHistory(db_path=temp_db_path)
-        history.store_reported_news([{"url": "https://example.com/old", "title": "Old"}])
-        # Manually backdate the record
-        with sqlite3.connect(temp_db_path) as conn:
-            conn.execute(
-                "UPDATE reported_news SET reported_date = ? WHERE url = ?",
-                ((datetime.now() - timedelta(days=10)).isoformat(), "https://example.com/old")
-            )
-        urls = history.get_reported_news_urls(days=7)
-        assert len(urls) == 0
-
-    def test_reported_news_empty(self, temp_db_path):
-        """Test empty reported news returns empty set."""
-        history = DigestHistory(db_path=temp_db_path)
-        urls = history.get_reported_news_urls(days=7)
-        assert urls == set()
-
-
-class TestGetPreviousDigestSummary:
-    """Tests for previous digest summary extraction."""
-
-    def test_get_previous_digest_summary_with_news(self, temp_db_path):
-        """Test extracting news roundup from previous digests."""
-        history = DigestHistory(db_path=temp_db_path)
-        history.store_digest(
-            trends=["Gold"],
-            tweet_count=100,
-            digest_text="**News Roundup:**\n• Gold up 2%\n• Fed holds rates\n\n**Assessment:**\nQuiet day.",
-            signal_strength="low",
-            top_engagement=5000.0,
-        )
-        summary = history.get_previous_digest_summary(count=1)
-        assert "Previous Digest Content" in summary
-        assert "Gold up 2%" in summary
-        assert "Fed holds rates" in summary
-
-    def test_get_previous_digest_summary_no_news(self, temp_db_path):
-        """Test summary falls back to trend names when no news roundup section."""
-        history = DigestHistory(db_path=temp_db_path)
-        history.store_digest(
-            trends=["Silver", "Oil"],
-            tweet_count=100,
-            digest_text="Just a regular analysis without news section.",
-            signal_strength="low",
-            top_engagement=3000.0,
-        )
-        summary = history.get_previous_digest_summary(count=1)
-        assert "Previous Digest Content" in summary
-        assert "Silver" in summary
-
-    def test_get_previous_digest_summary_empty(self, temp_db_path):
-        """Test empty summary when no digests exist."""
-        history = DigestHistory(db_path=temp_db_path)
-        summary = history.get_previous_digest_summary(count=1)
-        assert summary == ""

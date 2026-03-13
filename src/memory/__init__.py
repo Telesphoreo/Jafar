@@ -8,8 +8,7 @@ enabling the system to find true parallels - not just keyword matches.
 """
 
 from .base import MemoryRecord, VectorStore, SearchResult
-from .embeddings import EmbeddingService, create_embedding_service
-from .chroma_store import ChromaVectorStore
+from .embeddings import EmbeddingService, GeminiEmbeddingService
 from .memory_manager import MemoryManager, create_memory_manager
 
 __all__ = [
@@ -17,8 +16,7 @@ __all__ = [
     "VectorStore",
     "SearchResult",
     "EmbeddingService",
-    "create_embedding_service",
-    "ChromaVectorStore",
+    "GeminiEmbeddingService",
     "MemoryManager",
     "create_memory_manager",
 ]

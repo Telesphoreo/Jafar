@@ -8,101 +8,27 @@ historical context. This enables:
 - "Today looks like a normal day, nothing unusual"
 """
 
-import json
 import logging
-import sqlite3
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from pathlib import Path
+from datetime import date, timedelta
 from typing import Optional
+
+from sqlalchemy import func, select
+
+from src.database import get_session
+from src.models import Digest, TrendHistory
 
 logger = logging.getLogger("jafar.history")
 
 
-@dataclass
-class HistoricalDigest:
-    """A stored digest from a previous run."""
-    id: int
-    run_date: datetime
-    trends: list[str]
-    tweet_count: int
-    digest_text: str
-    signal_strength: str  # 'high', 'medium', 'low', 'none'
-    top_engagement: float
-    notable: bool  # Was this day flagged as notable?
-
-
 class DigestHistory:
     """
-    SQLite-backed storage for historical digests.
+    SQLAlchemy-backed storage for historical digests.
 
     Provides context for the LLM to make better judgments about
     whether today's trends are actually significant.
     """
 
-    def __init__(self, db_path: str = "digest_history.db"):
-        self.db_path = db_path
-        self._init_db()
-        logger.info(f"DigestHistory initialized with database: {db_path}")
-
-    def _init_db(self) -> None:
-        """Initialize the database schema."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS digests (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    run_date TIMESTAMP NOT NULL,
-                    trends TEXT NOT NULL,
-                    tweet_count INTEGER NOT NULL,
-                    digest_text TEXT NOT NULL,
-                    signal_strength TEXT NOT NULL,
-                    top_engagement REAL NOT NULL,
-                    notable INTEGER NOT NULL DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # Index for date-based queries
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_digests_run_date
-                ON digests(run_date)
-            """)
-
-            # Table for tracking individual trend appearances over time
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS trend_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    trend_term TEXT NOT NULL,
-                    run_date TIMESTAMP NOT NULL,
-                    mention_count INTEGER NOT NULL,
-                    engagement_score REAL NOT NULL,
-                    UNIQUE(trend_term, run_date)
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_trend_history_term
-                ON trend_history(trend_term)
-            """)
-
-            # Table for tracking reported news articles across runs
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS reported_news (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    url TEXT NOT NULL UNIQUE,
-                    title TEXT NOT NULL,
-                    reported_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_reported_news_url
-                ON reported_news(url)
-            """)
-
-            conn.commit()
-
-    def store_digest(
+    async def store_digest(
         self,
         trends: list[str],
         tweet_count: int,
@@ -127,241 +53,198 @@ class DigestHistory:
         Returns:
             The ID of the stored digest
         """
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO digests
-                (run_date, trends, tweet_count, digest_text, signal_strength, top_engagement, notable)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    datetime.now().isoformat(),
-                    json.dumps(trends),
-                    tweet_count,
-                    digest_text,
-                    signal_strength,
-                    top_engagement,
-                    1 if notable else 0,
-                )
+        session = await get_session()
+        async with session.begin():
+            digest = Digest(
+                date=date.today(),
+                trends=trends,
+                tweet_count=tweet_count,
+                digest_text=digest_text,
+                signal_strength=signal_strength,
+                top_engagement=top_engagement,
+                notable=notable,
+                trend_details=trend_details,
             )
-            digest_id = cursor.lastrowid
+            session.add(digest)
+            await session.flush()
 
-            # Store individual trend history if provided
             if trend_details:
                 for term, details in trend_details.items():
-                    conn.execute(
-                        """
-                        INSERT OR REPLACE INTO trend_history
-                        (trend_term, run_date, mention_count, engagement_score)
-                        VALUES (?, ?, ?, ?)
-                        """,
-                        (
-                            term.lower(),
-                            datetime.now().date().isoformat(),
-                            details.get('mentions', 0),
-                            details.get('engagement', 0),
-                        )
+                    trend_entry = TrendHistory(
+                        trend_term=term.lower(),
+                        date=date.today(),
+                        mentions=details.get("mentions", 0),
+                        engagement=details.get("engagement", 0),
                     )
+                    session.add(trend_entry)
 
-            conn.commit()
-            logger.info(f"Stored digest #{digest_id} with {len(trends)} trends")
-            return digest_id
+        logger.info(f"Stored digest #{digest.id} with {len(trends)} trends")
+        return digest.id
 
-    def get_recent_digests(self, days: int = 7) -> list[HistoricalDigest]:
+    async def get_recent_digests(self, days: int = 7) -> list[dict]:
         """Get digests from the last N days."""
-        cutoff = datetime.now() - timedelta(days=days)
+        cutoff = date.today() - timedelta(days=days)
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                SELECT * FROM digests
-                WHERE run_date >= ?
-                ORDER BY run_date DESC
-                """,
-                (cutoff.isoformat(),)
-            ).fetchall()
+        session = await get_session()
+        async with session.begin():
+            result = await session.execute(
+                select(Digest)
+                .where(Digest.date >= cutoff)
+                .order_by(Digest.date.desc())
+            )
+            rows = result.scalars().all()
 
         return [
-            HistoricalDigest(
-                id=row['id'],
-                run_date=datetime.fromisoformat(row['run_date']),
-                trends=json.loads(row['trends']),
-                tweet_count=row['tweet_count'],
-                digest_text=row['digest_text'],
-                signal_strength=row['signal_strength'],
-                top_engagement=row['top_engagement'],
-                notable=bool(row['notable']),
-            )
+            {
+                "date": row.date,
+                "trends": row.trends or [],
+                "tweet_count": row.tweet_count,
+                "signal_strength": row.signal_strength,
+                "top_engagement": row.top_engagement,
+                "notable": row.notable,
+                "trend_details": row.trend_details,
+            }
             for row in rows
         ]
 
-    def get_trend_history(self, trend_term: str, days: int = 30) -> list[dict]:
+    async def get_trend_history(self, trend_term: str, days: int = 30) -> list[dict]:
         """
         Get historical data for a specific trend.
 
         Returns list of {date, mentions, engagement} for when this trend appeared.
         """
-        cutoff = datetime.now() - timedelta(days=days)
+        cutoff = date.today() - timedelta(days=days)
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                SELECT run_date, mention_count, engagement_score
-                FROM trend_history
-                WHERE trend_term = ? AND run_date >= ?
-                ORDER BY run_date DESC
-                """,
-                (trend_term.lower(), cutoff.date().isoformat())
-            ).fetchall()
+        session = await get_session()
+        async with session.begin():
+            result = await session.execute(
+                select(TrendHistory)
+                .where(
+                    TrendHistory.trend_term == trend_term.lower(),
+                    TrendHistory.date >= cutoff,
+                )
+                .order_by(TrendHistory.date.desc())
+            )
+            rows = result.scalars().all()
 
         return [
             {
-                'date': row['run_date'],
-                'mentions': row['mention_count'],
-                'engagement': row['engagement_score'],
+                "date": row.date,
+                "mentions": row.mentions,
+                "engagement": row.engagement,
             }
             for row in rows
         ]
 
-    def get_all_recent_trends(self, days: int = 7) -> dict[str, list[dict]]:
+    async def get_all_recent_trends(self, days: int = 7) -> list[dict]:
         """
-        Get all trends that appeared in the last N days.
+        Get all trends that appeared in the last N days, aggregated.
 
-        Returns dict of {trend_term: [{date, mentions, engagement}, ...]}
-        Useful for finding what else was trending during the same period.
+        Returns list of dicts with: trend_term, total_mentions, total_engagement, appearances
         """
-        cutoff = datetime.now() - timedelta(days=days)
+        cutoff = date.today() - timedelta(days=days)
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                SELECT trend_term, run_date, mention_count, engagement_score
-                FROM trend_history
-                WHERE run_date >= ?
-                ORDER BY trend_term, run_date DESC
-                """,
-                (cutoff.date().isoformat(),)
-            ).fetchall()
+        session = await get_session()
+        async with session.begin():
+            result = await session.execute(
+                select(
+                    TrendHistory.trend_term,
+                    func.sum(TrendHistory.mentions).label("total_mentions"),
+                    func.sum(TrendHistory.engagement).label("total_engagement"),
+                    func.count().label("appearances"),
+                )
+                .where(TrendHistory.date >= cutoff)
+                .group_by(TrendHistory.trend_term)
+            )
+            rows = result.all()
 
-        # Group by trend term
-        trends: dict[str, list[dict]] = {}
-        for row in rows:
-            term = row['trend_term']
-            if term not in trends:
-                trends[term] = []
-            trends[term].append({
-                'date': row['run_date'],
-                'mentions': row['mention_count'],
-                'engagement': row['engagement_score'],
-            })
+        return [
+            {
+                "trend_term": row.trend_term,
+                "total_mentions": row.total_mentions or 0,
+                "total_engagement": row.total_engagement or 0,
+                "appearances": row.appearances,
+            }
+            for row in rows
+        ]
 
-        return trends
-
-    def get_baseline_stats(self, days: int = 30) -> dict:
+    async def get_baseline_stats(self, days: int = 30) -> dict:
         """
         Calculate baseline statistics for comparison.
 
         Returns average engagement, typical trend count, etc.
         """
-        cutoff = datetime.now() - timedelta(days=days)
+        cutoff = date.today() - timedelta(days=days)
 
-        with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                """
-                SELECT
-                    COUNT(*) as total_runs,
-                    AVG(top_engagement) as avg_top_engagement,
-                    AVG(tweet_count) as avg_tweets,
-                    SUM(notable) as notable_days
-                FROM digests
-                WHERE run_date >= ?
-                """,
-                (cutoff.isoformat(),)
-            ).fetchone()
+        session = await get_session()
+        async with session.begin():
+            result = await session.execute(
+                select(
+                    func.count().label("total_digests"),
+                    func.avg(Digest.tweet_count).label("avg_tweet_count"),
+                    func.avg(Digest.top_engagement).label("avg_engagement"),
+                    func.count()
+                    .filter(Digest.notable.is_(True))
+                    .label("notable_count"),
+                )
+                .where(Digest.date >= cutoff)
+            )
+            row = result.one()
 
-        if not row or row[0] == 0:
+        total = row.total_digests or 0
+        if total == 0:
             return {
-                'total_runs': 0,
-                'avg_top_engagement': 0,
-                'avg_tweets': 0,
-                'notable_days': 0,
-                'notable_rate': 0,
+                "avg_tweet_count": 0,
+                "avg_engagement": 0,
+                "total_digests": 0,
+                "notable_count": 0,
             }
 
         return {
-            'total_runs': row[0],
-            'avg_top_engagement': row[1] or 0,
-            'avg_tweets': row[2] or 0,
-            'notable_days': row[3] or 0,
-            'notable_rate': (row[3] or 0) / row[0] if row[0] > 0 else 0,
+            "avg_tweet_count": row.avg_tweet_count or 0,
+            "avg_engagement": row.avg_engagement or 0,
+            "total_digests": total,
+            "notable_count": row.notable_count or 0,
         }
 
-    def get_reported_news_urls(self, days: int = 7) -> set[str]:
-        """Get URLs of news articles reported in the last N days."""
-        cutoff = datetime.now() - timedelta(days=days)
-        with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT url FROM reported_news WHERE reported_date >= ?",
-                (cutoff.isoformat(),)
-            ).fetchall()
-        return {row[0] for row in rows}
+    async def get_previous_digest_summary(self, days_back: int = 1) -> Optional[str]:
+        """Get a summary from the most recent digest."""
+        cutoff = date.today() - timedelta(days=days_back)
 
-    def store_reported_news(self, articles: list[dict]) -> None:
-        """Store news articles that were included in a digest.
+        session = await get_session()
+        async with session.begin():
+            result = await session.execute(
+                select(Digest.digest_text)
+                .where(Digest.date >= cutoff)
+                .order_by(Digest.date.desc())
+                .limit(1)
+            )
+            row = result.scalar_one_or_none()
 
-        Args:
-            articles: List of dicts with 'url' and 'title' keys.
-        """
-        with sqlite3.connect(self.db_path) as conn:
-            for article in articles:
-                conn.execute(
-                    "INSERT OR IGNORE INTO reported_news (url, title) VALUES (?, ?)",
-                    (article['url'], article['title'])
-                )
-            conn.commit()
+        if not row:
+            return None
 
-    def get_previous_digest_summary(self, count: int = 2) -> str:
-        """Get the news content from the last N digests.
+        text = row
+        # Try to extract the summary section
+        for marker in ("## Summary", "**Summary:**", "Summary:"):
+            if marker in text:
+                start = text.index(marker)
+                next_section = text.find("\n\n**", start + len(marker))
+                if next_section > 0:
+                    return text[start:next_section].strip()
+                return text[start:start + 500].strip()
 
-        This lets the LLM know what was already reported so it avoids recycling.
-        """
-        recent = self.get_recent_digests(days=3)
-        if not recent:
-            return ""
+        # Fall back to the first 500 characters
+        return text[:500].strip() if text else None
 
-        lines = ["## Previous Digest Content (DO NOT REPEAT THESE)"]
-        for digest in recent[:count]:
-            date_str = digest.run_date.strftime("%Y-%m-%d %H:%M")
-            lines.append(f"\n### Digest from {date_str}:")
-            text = digest.digest_text
-            # Try to extract the news roundup section
-            for marker in ("**News Roundup:**", "News Roundup:", "news_roundup"):
-                if marker in text:
-                    start = text.index(marker)
-                    # Find the next section header or end of text
-                    next_section = text.find("\n\n**", start + len(marker))
-                    if next_section > 0:
-                        roundup = text[start:next_section].strip()
-                    else:
-                        roundup = text[start:start + 500].strip()
-                    lines.append(roundup)
-                    break
-            else:
-                lines.append(f"Topics covered: {', '.join(digest.trends[:5])}")
-
-        return "\n".join(lines)
-
-    def format_context_for_llm(self, days: int = 7) -> str:
+    async def format_context_for_llm(self, days: int = 7) -> str:
         """
         Format recent history as context for the LLM.
 
         This helps the LLM understand what's normal vs unusual.
         """
-        recent = self.get_recent_digests(days)
-        baseline = self.get_baseline_stats(30)
+        recent = await self.get_recent_digests(days)
+        baseline = await self.get_baseline_stats(30)
 
         if not recent:
             return """
@@ -372,19 +255,21 @@ After a few days of data, the system will be able to compare against baseline.
 
         lines = [
             "## Historical Context (last 7 days)",
-            f"Runs in database: {baseline['total_runs']}",
-            f"Average top engagement: {baseline['avg_top_engagement']:.0f}",
-            f"Days flagged as notable: {baseline['notable_days']} ({baseline['notable_rate']*100:.0f}%)",
+            f"Runs in database: {baseline['total_digests']}",
+            f"Average top engagement: {baseline['avg_engagement']:.0f}",
+            f"Notable digests: {baseline['notable_count']}",
             "",
             "### Recent Digests:",
         ]
 
-        for digest in recent[:5]:  # Last 5 digests
-            date_str = digest.run_date.strftime("%Y-%m-%d")
-            notable_flag = " [NOTABLE]" if digest.notable else ""
+        for digest in recent[:5]:
+            date_str = digest["date"].isoformat()
+            notable_flag = " [NOTABLE]" if digest["notable"] else ""
+            trends = digest["trends"] or []
             lines.append(
-                f"- {date_str}: {', '.join(digest.trends[:3])} "
-                f"(signal: {digest.signal_strength}, engagement: {digest.top_engagement:.0f}){notable_flag}"
+                f"- {date_str}: {', '.join(trends[:3])} "
+                f"(signal: {digest['signal_strength']}, "
+                f"engagement: {digest['top_engagement']:.0f}){notable_flag}"
             )
 
         return "\n".join(lines)

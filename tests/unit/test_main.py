@@ -2,13 +2,20 @@
 Unit tests for src/main.py
 
 Tests the agentic analysis loop, submit_report handling, fallback parsing,
-and the LLM trend filter with tool calling.
+the LLM trend filter with tool calling, and ML diagnostics interval tracking.
 """
 
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
-from src.main import analyze_with_llm, llm_filter_trends, _get_filter_tool_definition
+from src.main import (
+    analyze_with_llm,
+    llm_filter_trends,
+    _get_filter_tool_definition,
+    should_send_ml_diagnostics,
+    mark_ml_diagnostics_sent,
+)
 from src.analyzer import DiscoveredTrend
 
 
@@ -543,89 +550,6 @@ Should still parse correctly."""
 
 
     @pytest.mark.asyncio
-    async def test_submit_report_news_roundup_appears_first(self, mock_llm, mock_trend_tweets):
-        """Test that news_roundup appears first in body_parts."""
-        mock_tool_call = MagicMock()
-        mock_tool_call.function.name = "submit_report"
-        mock_tool_call.function.arguments = '''{
-            "subject_line": "Fed Holds Steady, Twitter Yawns",
-            "signal_strength": "low",
-            "news_roundup": "• Fed holds rates at 5.25% - expected, markets shrug\\n• NVIDIA earnings beat by 15%",
-            "assessment": "Another quiet Twitter day.",
-            "trends_observed": "• Generic market chatter",
-            "actionability": "not actionable",
-            "actionability_reason": "No unusual signals.",
-            "bottom_line": "News was the story today, not Twitter."
-        }'''
-        mock_tool_call.id = "call_news"
-
-        mock_response = MagicMock()
-        mock_response.content = ""
-        mock_response.tool_calls = [mock_tool_call]
-        mock_response.token_count = 100
-        mock_response.raw_content = None
-
-        mock_llm.generate.return_value = mock_response
-
-        with patch('src.main.ToolRegistry') as MockRegistry:
-            mock_registry = MagicMock()
-            mock_registry.get_definitions.return_value = []
-            MockRegistry.return_value = mock_registry
-
-            body, signal, is_notable, tokens, subject = await analyze_with_llm(
-                llm=mock_llm,
-                trend_tweets=mock_trend_tweets,
-            )
-
-        # News roundup should appear in the body
-        assert "**News Roundup:**" in body
-        # News roundup should come BEFORE assessment
-        news_pos = body.index("**News Roundup:**")
-        assessment_pos = body.index("**Assessment:**")
-        assert news_pos < assessment_pos
-
-    @pytest.mark.asyncio
-    async def test_news_context_included_in_prompt(self, mock_llm, mock_trend_tweets):
-        """Test that news_context is passed through to the LLM prompt."""
-        mock_tool_call = MagicMock()
-        mock_tool_call.function.name = "submit_report"
-        mock_tool_call.function.arguments = '''{
-            "subject_line": "Test",
-            "signal_strength": "low",
-            "assessment": "Test",
-            "trends_observed": "• Test",
-            "actionability": "not actionable",
-            "actionability_reason": "Test.",
-            "bottom_line": "Test."
-        }'''
-        mock_tool_call.id = "call_ctx"
-
-        mock_response = MagicMock()
-        mock_response.content = ""
-        mock_response.tool_calls = [mock_tool_call]
-        mock_response.token_count = 25
-        mock_response.raw_content = None
-
-        mock_llm.generate.return_value = mock_response
-
-        with patch('src.main.ToolRegistry') as MockRegistry:
-            mock_registry = MagicMock()
-            mock_registry.get_definitions.return_value = []
-            MockRegistry.return_value = mock_registry
-
-            await analyze_with_llm(
-                llm=mock_llm,
-                trend_tweets=mock_trend_tweets,
-                news_context="## Today's Economic News Headlines\n1. Fed holds rates",
-            )
-
-        # Verify the news context was included in the prompt sent to LLM
-        call_args = mock_llm.generate.call_args
-        messages = call_args.kwargs.get("messages", [])
-        user_msg = messages[0]["content"] if messages else ""
-        assert "Economic News Headlines" in user_msg
-
-    @pytest.mark.asyncio
     async def test_twitter_mentions_included_in_prompt(self, mock_llm, mock_trend_tweets):
         """Test that twitter_mentions are included in the LLM prompt."""
         mock_tool_call = MagicMock()
@@ -964,3 +888,125 @@ class TestLLMFilterTrends:
         result = await llm_filter_trends(mock_llm, candidates)
 
         assert result == ["Silver"]
+
+
+class TestMLDiagnosticsInterval:
+    """Tests for ML diagnostics email interval tracking."""
+
+    @pytest.mark.asyncio
+    async def test_should_send_when_never_sent(self, async_session_factory):
+        """Test that ML diagnostics should be sent when no record exists."""
+        async def _get_session():
+            return async_session_factory()
+
+        with patch("src.database.get_session", side_effect=_get_session):
+            result = await should_send_ml_diagnostics(interval_days=3)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_should_send_when_interval_elapsed(self, async_session_factory):
+        """Test that ML diagnostics should be sent when interval has elapsed."""
+        from src.models import AppState
+
+        # Insert a record from 4 days ago
+        session = async_session_factory()
+        async with session:
+            async with session.begin():
+                four_days_ago = datetime.now() - timedelta(days=4)
+                await session.merge(AppState(
+                    key="last_ml_email",
+                    value=four_days_ago.isoformat(),
+                ))
+
+        async def _get_session():
+            return async_session_factory()
+
+        with patch("src.database.get_session", side_effect=_get_session):
+            result = await should_send_ml_diagnostics(interval_days=3)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_should_not_send_when_recently_sent(self, async_session_factory):
+        """Test that ML diagnostics should not be sent when sent recently."""
+        from src.models import AppState
+
+        # Insert a record from 1 day ago
+        session = async_session_factory()
+        async with session:
+            async with session.begin():
+                one_day_ago = datetime.now() - timedelta(days=1)
+                await session.merge(AppState(
+                    key="last_ml_email",
+                    value=one_day_ago.isoformat(),
+                ))
+
+        async def _get_session():
+            return async_session_factory()
+
+        with patch("src.database.get_session", side_effect=_get_session):
+            result = await should_send_ml_diagnostics(interval_days=3)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_mark_ml_diagnostics_sent_creates_record(self, async_session_factory):
+        """Test that marking ML diagnostics sent creates a record."""
+        from src.models import AppState
+        from sqlalchemy import select
+
+        async def _get_session():
+            return async_session_factory()
+
+        with patch("src.database.get_session", side_effect=_get_session):
+            await mark_ml_diagnostics_sent()
+
+        # Verify record was created
+        session = async_session_factory()
+        async with session:
+            result = await session.execute(
+                select(AppState).where(AppState.key == "last_ml_email")
+            )
+            state = result.scalar_one_or_none()
+
+        assert state is not None
+        assert state.key == "last_ml_email"
+        # Value should be a valid ISO datetime string
+        parsed = datetime.fromisoformat(state.value)
+        assert (datetime.now() - parsed).total_seconds() < 10
+
+    @pytest.mark.asyncio
+    async def test_mark_ml_diagnostics_sent_updates_existing(self, async_session_factory):
+        """Test that marking ML diagnostics sent updates an existing record."""
+        from src.models import AppState
+        from sqlalchemy import select
+
+        # Insert an old record
+        session = async_session_factory()
+        async with session:
+            async with session.begin():
+                old_time = datetime.now() - timedelta(days=5)
+                await session.merge(AppState(
+                    key="last_ml_email",
+                    value=old_time.isoformat(),
+                ))
+
+        async def _get_session():
+            return async_session_factory()
+
+        with patch("src.database.get_session", side_effect=_get_session):
+            await mark_ml_diagnostics_sent()
+
+        # Verify record was updated
+        session = async_session_factory()
+        async with session:
+            result = await session.execute(
+                select(AppState).where(AppState.key == "last_ml_email")
+            )
+            state = result.scalar_one_or_none()
+
+        assert state is not None
+        parsed = datetime.fromisoformat(state.value)
+        # Should be recent, not 5 days ago
+        assert (datetime.now() - parsed).total_seconds() < 10

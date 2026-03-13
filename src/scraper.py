@@ -78,6 +78,63 @@ class ScrapedTweet:
         )
 
 
+async def fetch_trending_topics(api: API) -> list[str]:
+    """Fetch current trending topics from Twitter.
+
+    Returns list of trending topic strings (hashtags, terms, etc.)
+    """
+    try:
+        trends = await api.trends()
+        # trends should return trend objects — extract the name/text
+        trend_names = []
+        for trend in trends:
+            # twscrape Trend objects typically have a .name attribute
+            if hasattr(trend, 'name'):
+                trend_names.append(trend.name)
+            elif isinstance(trend, str):
+                trend_names.append(trend)
+            elif isinstance(trend, dict) and 'name' in trend:
+                trend_names.append(trend['name'])
+
+        logger.info(f"Fetched {len(trend_names)} trending topics from Twitter")
+        return trend_names
+    except Exception as e:
+        logger.warning(f"Failed to fetch Twitter trends: {e}")
+        return []
+
+
+async def store_tweets(tweets: list[ScrapedTweet], source_query: str, pipeline_run: str) -> int:
+    """Store scraped tweets to Postgres for ML training data. Returns count stored."""
+    from src.database import get_session
+    from src.models import Tweet as TweetModel
+
+    if not tweets:
+        return 0
+
+    stored = 0
+    session = await get_session()
+    async with session.begin():
+        for tweet in tweets:
+            model = TweetModel(
+                id=tweet.id,
+                username=tweet.username,
+                display_name=tweet.display_name,
+                content=tweet.text,
+                created_at=tweet.created_at,
+                likes=tweet.likes,
+                retweets=tweet.retweets,
+                replies=tweet.replies,
+                views=tweet.views,
+                language=tweet.language,
+                hashtags=tweet.hashtags,
+                source_query=source_query,
+                pipeline_run=pipeline_run,
+            )
+            await session.merge(model)
+            stored += 1
+    return stored
+
+
 class TwitterScraper:
     """
     Asynchronous Twitter scraper using twscrape.

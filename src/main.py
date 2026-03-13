@@ -6,13 +6,12 @@ This script coordinates the full pipeline:
 2. Investigator: Extract trending entities using spaCy NER
 3. LLM Filter: Validate trend candidates with context
 4. Deep Dive: Targeted scraping of trending entities
-5. News Roundup: Fetch economic news headlines via DuckDuckGo
-6. Fact Checker: Initialize market data verification
-7. Temporal Analysis: Track trend continuity over time
-8. Analyst: LLM agentic loop with tool use
-9. Reporter: Email the digest
-10. History: Store digest for future reference
-11. Admin Diagnostics: Send admin alerts if needed
+5. Fact Checker: Initialize market data verification
+6. Temporal Analysis: Track trend continuity over time
+7. Analyst: LLM agentic loop with tool use
+8. Reporter: Email the digest
+9. History: Store digest for future reference
+10. Admin Diagnostics: Send admin alerts if needed
 
 SETUP REQUIRED:
 1. Copy .env.example to .env and fill in credentials
@@ -35,10 +34,11 @@ import sys
 from datetime import datetime
 
 from .config import config
-from .scraper import TwitterScraper, ScrapedTweet
+from .scraper import TwitterScraper, ScrapedTweet, fetch_trending_topics, store_tweets
 from .analyzer import TrendAnalyzer, DiscoveredTrend, StatisticalTrendAnalyzer
 from .llm import create_llm_provider, LLMProvider
 from .reporter import create_reporter_from_config
+from .database import init_db, close_db, create_tables
 from .history import DigestHistory, calculate_signal_strength
 from .memory import create_memory_manager, MemoryManager
 from .checkpoint import CheckpointManager
@@ -46,10 +46,48 @@ from .fact_checker import MarketFactChecker
 from .temporal_analyzer import TemporalTrendAnalyzer, TrendTimeline
 from .diagnostics import DiagnosticsCollector, rotate_logs, should_send_admin_alert
 from .tools import ToolRegistry
-from .news import fetch_economic_news, format_news_for_llm
 import time
 
 logger = logging.getLogger("jafar.main")
+
+
+async def should_send_ml_diagnostics(interval_days: int = 3) -> bool:
+    """Check if enough time has passed since last ML diagnostics email."""
+    from .database import get_session
+    from .models import AppState
+    from sqlalchemy import select
+    from datetime import timedelta
+
+    session = await get_session()
+    try:
+        result = await session.execute(
+            select(AppState).where(AppState.key == "last_ml_email")
+        )
+        state = result.scalar_one_or_none()
+
+        if state is None:
+            return True  # Never sent, send now
+
+        last_sent = datetime.fromisoformat(state.value)
+        return datetime.now() - last_sent >= timedelta(days=interval_days)
+    finally:
+        await session.close()
+
+
+async def mark_ml_diagnostics_sent() -> None:
+    """Record that ML diagnostics email was sent."""
+    from .database import get_session
+    from .models import AppState
+
+    session = await get_session()
+    try:
+        async with session.begin():
+            await session.merge(AppState(
+                key="last_ml_email",
+                value=datetime.now().isoformat(),
+            ))
+    finally:
+        await session.close()
 
 
 def sanitize_llm_output(text: str) -> str:
@@ -88,11 +126,10 @@ def sanitize_llm_output(text: str) -> str:
 # System prompt for the LLM analyst - CALIBRATED FOR SKEPTICISM + HISTORICAL AWARENESS
 ANALYST_SYSTEM_PROMPT = """You are someone's sharp friend who actually works in finance and texts them market takes over coffee. Not a suit. Not a talking head. The person at the office who makes the interns laugh and the managing directors nervous. You've seen enough "THIS IS IT" tweets to develop a healthy immune system against hype, but you're not dead inside - when something real happens, you genuinely light up.
 
-YOUR DUAL ROLE:
-1. **News Digest Curator**: Summarize today's economic news headlines with brief, opinionated commentary. This is your PRIMARY output - the reader wants a daily economic briefing without reading 50 sources. The news_roundup field should be populated when fresh news headlines are provided. If all news was filtered as stale/duplicate, the news_roundup can be empty.
-2. **Twitter Signal Detector**: Identify unusual Twitter activity that might indicate emerging economic signals not yet in mainstream news. This uses your existing skeptical filter.
+YOUR ROLE:
+**Twitter Signal Detector**: Identify unusual Twitter activity that might indicate emerging economic signals not yet in mainstream news. You have tools to verify claims with real market data and search the web for context when needed.
 
-"Nothing to report" applies to Twitter signals, not the entire digest. Even on quiet Twitter days, the news roundup provides value when fresh articles are available.
+"Nothing to report" is a valid and honest output. Most days are boring.
 
 YOUR SCOPE: FULL ECONOMIC PICTURE
 You analyze both traditional market signals AND broader economic developments:
@@ -287,7 +324,6 @@ async def analyze_with_llm(
         memory: MemoryManager | None = None,
         temporal_analyzer: TemporalTrendAnalyzer | None = None,
         timelines: dict[str, TrendTimeline] | None = None,
-        news_context: str = "",
         twitter_mentions: list[str] | None = None,
         previous_digest_summary: str = "",
 ) -> tuple[str, str, bool, int, str | None]:
@@ -372,9 +408,7 @@ These topics were being discussed on Twitter but did NOT pass the signal filter.
 {mentions_list}
 """
 
-    user_prompt = f"""Analyze the following data. Be SKEPTICAL about Twitter - most days are boring. Provide the news roundup when fresh headlines are available.
-
-{news_context}
+    user_prompt = f"""Analyze the following data. Be SKEPTICAL about Twitter - most days are boring.
 
 {previous_digest_summary}
 
@@ -422,11 +456,6 @@ When you are done analyzing, you MUST call the `submit_report` tool with these f
 - **historical_parallel**: If meaningful: "History rhymes: [parallel]". Otherwise: "No meaningful historical parallels."
 
 - **bottom_line**: 1 sentence. The one thing you'd actually text a friend. Not a platitude. Not "stay safe out there" or "save your attention" every time. Something specific to TODAY.
-
-- **news_roundup**: Bullet-pointed summary of the news headlines provided above, with your brief commentary on each. Populate this when fresh news headlines are included above. If no news headlines section is present (all articles were filtered as stale/duplicates), set this to an empty string. Do NOT recycle or re-summarize stories from the "Previous Digest Content" section. Use '•' character. Example:
-  • Fed holds rates steady at 5.25% - markets expected this, non-event
-  • NVIDIA earnings beat by 15% - H200 demand cited, guidance raised
-  • Oil falls 3% on OPEC+ production increase rumors
 
 If Twitter mentions are provided (topics that didn't pass the signal filter), briefly note what Twitter is chattering about at the end of your assessment. One sentence is enough - e.g., "Twitter was also buzzing about [topics] but nothing actionable there."
 
@@ -483,7 +512,6 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. T
 
                          # Extract structured sections (handle None values)
                          # Apply sanitization to fix common LLM formatting issues
-                         news_roundup = sanitize_llm_output(arguments.get("news_roundup") or "")
                          assessment = sanitize_llm_output(arguments.get("assessment") or "")
                          trends_observed = sanitize_llm_output(arguments.get("trends_observed") or "")
                          fact_check = sanitize_llm_output(arguments.get("fact_check") or "")
@@ -493,10 +521,7 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. T
                          bottom_line = sanitize_llm_output(arguments.get("bottom_line") or "")
 
                          # Format body with Title Case headers
-                         # News roundup comes FIRST (before Twitter analysis)
                          body_parts = []
-                         if news_roundup:
-                             body_parts.append(f"**News Roundup:**\n{news_roundup}")
                          if assessment:
                              body_parts.append(f"**Assessment:**\n{assessment}")
                          if trends_observed:
@@ -698,6 +723,122 @@ Analyze each trend's sample tweets to understand the real context, then call sub
         return [t.term for t in candidates]
 
 
+async def _get_account_tweets(username: str, limit: int = 20) -> list[dict]:
+    """Get recent tweets for an account from the database.
+
+    Returns a list of dicts suitable for the BotJudge.judge_account API.
+    """
+    from .database import get_session
+    from .models import Tweet
+    from sqlalchemy import select
+
+    session = await get_session()
+    async with session:
+        result = await session.execute(
+            select(Tweet)
+            .where(Tweet.username == username)
+            .order_by(Tweet.created_at.desc())
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+
+    return [
+        {
+            "content": row.content,
+            "created_at": str(row.created_at) if row.created_at else "unknown",
+            "likes": row.likes,
+            "retweets": row.retweets,
+            "replies": row.replies,
+            "views": row.views,
+        }
+        for row in rows
+    ]
+
+
+async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:
+    """Run ML analysis on stored tweets. Returns ML insights for the report."""
+    from .ml import BotScorer, AccountScorer
+
+    logger.info("=" * 60)
+    logger.info("STEP: ML ANALYSIS")
+    logger.info("=" * 60)
+
+    ml_results = {
+        "bot_suspects": [],
+        "top_accounts": [],
+        "ml_evaluation": None,
+    }
+
+    bot_scores = []
+    suspects = []
+
+    try:
+        # 1. Bot Detection
+        bot_scorer = BotScorer()
+        training_stats = await bot_scorer.train(min_tweets_per_account=5)
+        logger.info(f"Bot detection trained on {training_stats.get('accounts_eligible', 0)} accounts")
+
+        if bot_scorer.model is not None:
+            bot_scores = await bot_scorer.score_all_accounts(min_tweets=5)
+            # Get top suspects (score > 0.7)
+            suspects = [s for s in bot_scores if s["bot_score"] > 0.7]
+            ml_results["bot_suspects"] = suspects[:10]  # Top 10
+            logger.info(f"Found {len(suspects)} suspected bot accounts")
+            diagnostics.bot_suspects_found = len(suspects)
+
+        # 2. Account Signal Scoring
+        account_scorer = AccountScorer()
+        top_accounts = await account_scorer.get_top_accounts(n=20, min_tweets=3)
+        ml_results["top_accounts"] = top_accounts
+        logger.info(f"Scored {len(top_accounts)} accounts for signal quality")
+        diagnostics.accounts_scored = len(top_accounts)
+
+        # 3. LLM Bot Judging (on top suspects only to save API calls)
+        if suspects:
+            from .ml.llm_judge import BotJudge
+
+            judge = BotJudge(
+                api_key=config.google.api_key,
+                model=config.google.model,
+            )
+
+            # Judge top 10 suspects — fetch tweets from DB for each
+            judgments = []
+            for suspect in suspects[:10]:
+                tweets = await _get_account_tweets(suspect["username"], limit=20)
+                judgment = await judge.judge_account(
+                    username=suspect["username"],
+                    tweets=tweets,
+                    ml_features=suspect.get("features"),
+                )
+                judgments.append(judgment)
+
+            ml_results["bot_judgments"] = judgments
+
+            # Evaluate ML model against LLM judgments if we have enough data
+            if len(bot_scores) >= 10:
+                # Attach tweets to bot_scores for the evaluator
+                scores_with_tweets = []
+                for s in bot_scores:
+                    tweets = await _get_account_tweets(s["username"], limit=20)
+                    scores_with_tweets.append({**s, "tweets": tweets})
+
+                evaluation = await judge.evaluate_ml_model(
+                    scores_with_tweets, sample_size=min(20, len(scores_with_tweets))
+                )
+                ml_results["ml_evaluation"] = evaluation
+                logger.info(
+                    f"ML evaluation - Agreement: {evaluation.get('agreement_rate', 0):.1%}, "
+                    f"F1: {evaluation.get('f1_score', 0):.2f}"
+                )
+                diagnostics.ml_agreement_rate = evaluation.get("agreement_rate", 0)
+
+    except Exception as e:
+        logger.warning(f"ML analysis encountered an error: {e}", exc_info=True)
+
+    return ml_results
+
+
 async def run_pipeline() -> bool:
     """
     Run the full sentiment analysis pipeline with checkpointing.
@@ -754,6 +895,10 @@ async def run_pipeline() -> bool:
         checkpoint.start_new_run(topics=config.app.broad_topics)
         state = checkpoint.get_state()
 
+    # Initialize database
+    await init_db(config.database.url)
+    await create_tables()
+
     # Initialize components
     scraper = TwitterScraper(db_path=config.twitter.db_path)
     # Automatically reset locks to prevent "stuck" accounts from previous interrupted runs
@@ -792,17 +937,13 @@ async def run_pipeline() -> bool:
 
     # Initialize vector memory system
     memory: MemoryManager | None = None
-    if config.memory.enabled:
+    if config.database.memory_enabled:
         try:
             logger.info("Initializing vector memory system...")
             memory = await create_memory_manager(
-                store_type=config.memory.store_type,
-                embedding_provider=config.memory.embedding_provider,
-                openai_api_key=config.openai.api_key,
-                openai_embedding_model=config.memory.openai_embedding_model,
-                embedding_dimensions=config.memory.embedding_dimensions,
-                postgres_url=config.memory.postgres_url,
-                chroma_path=config.memory.chroma_path,
+                google_api_key=config.google.api_key,
+                embedding_model=config.google.embedding_model,
+                embedding_dimensions=config.google.embedding_dimensions,
             )
             memory_count = await memory.vector_store.count()
             logger.info(f"Vector memory initialized with {memory_count} stored memories")
@@ -812,9 +953,6 @@ async def run_pipeline() -> bool:
 
     try:
         llm = create_llm_provider(
-            provider=config.app.llm_provider,
-            openai_api_key=config.openai.api_key,
-            openai_model=config.openai.model,
             google_api_key=config.google.api_key,
             google_model=config.google.model,
         )
@@ -882,6 +1020,30 @@ async def run_pipeline() -> bool:
 
         logger.info(f"Total broad tweets: {len(broad_tweets)}")
 
+        # Store broad tweets for ML training data
+        try:
+            broad_stored = await store_tweets(broad_tweets, source_query="broad_scrape", pipeline_run=state.run_id)
+            diagnostics.diagnostics.tweets_stored += broad_stored
+            logger.info(f"Stored {broad_stored} broad tweets for ML training")
+        except Exception as e:
+            logger.warning(f"Failed to store broad tweets: {e}")
+            diagnostics.diagnostics.add_warning(f"Failed to store broad tweets: {e}")
+
+        # ============================================================
+        # STEP 1b: TWITTER TRENDS - Fetch trending topics
+        # ============================================================
+        logger.info("\n[STEP 1b/11] TWITTER TRENDS: Fetching trending topics...")
+        twitter_api = await scraper._get_api()
+        twitter_trends_raw = await fetch_trending_topics(twitter_api)
+        diagnostics.diagnostics.twitter_trends_fetched = len(twitter_trends_raw)
+
+        if twitter_trends_raw:
+            logger.info(f"Twitter trending topics ({len(twitter_trends_raw)}): {twitter_trends_raw[:10]}")
+            if len(twitter_trends_raw) > 10:
+                logger.info(f"  ... and {len(twitter_trends_raw) - 10} more")
+        else:
+            logger.info("No Twitter trending topics fetched (API may be unavailable)")
+
         # ============================================================
         # STEP 2: INVESTIGATOR - NER Analysis
         # ============================================================
@@ -918,6 +1080,22 @@ async def run_pipeline() -> bool:
             # Note: trend_objects will be empty for resumed runs, LLM filter will be skipped
 
         diagnostics.diagnostics.time_step2_analysis = time.time() - step2_start
+
+        # Merge Twitter trending topics into discovered trends (non-keyword discovery)
+        if twitter_trends_raw:
+            existing_lower = {t.lower() for t in trends}
+            new_from_twitter = []
+            for tt in twitter_trends_raw:
+                if tt.lower() not in existing_lower:
+                    new_from_twitter.append(tt)
+                    existing_lower.add(tt.lower())
+            if new_from_twitter:
+                logger.info(f"Adding {len(new_from_twitter)} Twitter trending topics not found by NER: {new_from_twitter}")
+                trends.extend(new_from_twitter)
+                checkpoint.save_trends(trends)
+                state = checkpoint.get_state()
+            else:
+                logger.info("All Twitter trending topics already covered by NER discovery")
 
         logger.info(f"Trends (pre-filter): {trends}")
 
@@ -997,36 +1175,20 @@ async def run_pipeline() -> bool:
         total_tweets = sum(len(t) for t in trend_tweets.values())
         logger.info(f"Total trend tweets: {total_tweets}")
 
-        # ============================================================
-        # STEP 5: NEWS ROUNDUP - Fetch economic news headlines
-        # ============================================================
-        news_context = ""
-        news_articles = []
-        if config.news.enabled:
-            logger.info("\n[STEP 5/11] NEWS ROUNDUP: Fetching economic news headlines...")
-            try:
-                # Get previously reported URLs to avoid recycling
-                previously_reported_urls = history.get_reported_news_urls(days=7)
-                logger.info(f"Excluding {len(previously_reported_urls)} previously reported URLs")
-
-                news_articles = await fetch_economic_news(
-                    queries=config.news.queries,
-                    max_results_per_query=config.news.max_results_per_query,
-                    max_age_hours=config.news.max_age_hours,
-                    exclude_urls=previously_reported_urls,
-                )
-                diagnostics.diagnostics.news_articles_fetched = len(news_articles)
-                if news_articles:
-                    news_context = format_news_for_llm(news_articles)
-                    logger.info(f"Fetched {len(news_articles)} fresh, non-duplicate news articles")
-                else:
-                    logger.info("No fresh news articles after filtering")
-            except Exception as e:
-                logger.warning(f"News fetching failed (non-fatal): {e}")
-                diagnostics.diagnostics.add_warning(f"News fetching failed: {e}")
+        # Store deep dive tweets for ML training data
+        try:
+            deep_stored = 0
+            for trend, tweets_list in trend_tweets.items():
+                count = await store_tweets(tweets_list, source_query=trend, pipeline_run=state.run_id)
+                deep_stored += count
+            diagnostics.diagnostics.tweets_stored += deep_stored
+            logger.info(f"Stored {deep_stored} deep dive tweets for ML training")
+        except Exception as e:
+            logger.warning(f"Failed to store deep dive tweets: {e}")
+            diagnostics.diagnostics.add_warning(f"Failed to store deep dive tweets: {e}")
 
         # ============================================================
-        # STEP 6: FACT CHECKER - Init for LLM tool use
+        # STEP 5: FACT CHECKER - Init for LLM tool use
         # ============================================================
         fact_checker = None
         if config.fact_checker.enabled:
@@ -1101,9 +1263,9 @@ async def run_pipeline() -> bool:
         if not state.step4_complete:
             logger.info("\n[STEP 8/11] THE ANALYST: Generating calibrated analysis...")
 
-            historical_context = history.format_context_for_llm(days=7)
-            previous_digest_summary = history.get_previous_digest_summary(count=2)
-            baseline = history.get_baseline_stats(days=30)
+            historical_context = await history.format_context_for_llm(days=7)
+            previous_digest_summary = await history.get_previous_digest_summary(days_back=2)
+            baseline = await history.get_baseline_stats(days=30)
 
             top_engagement = 0.0
             for tweets_list in trend_tweets.values():
@@ -1123,7 +1285,6 @@ async def run_pipeline() -> bool:
                 memory=memory,
                 temporal_analyzer=temporal_analyzer,
                 timelines=timelines,
-                news_context=news_context,
                 twitter_mentions=twitter_mentions if twitter_mentions else None,
                 previous_digest_summary=previous_digest_summary,
             )
@@ -1153,6 +1314,22 @@ async def run_pipeline() -> bool:
         logger.info(f"Signal: {signal_strength.upper()}, Notable: {is_notable}")
 
         # ============================================================
+        # STEP 8b: ML ANALYSIS - Bot detection & account scoring
+        # ============================================================
+        logger.info("\n[STEP 8b/11] ML ANALYSIS: Running bot detection & account scoring...")
+        try:
+            ml_results = await run_ml_analysis(config, diagnostics.diagnostics, state.run_id)
+            if ml_results.get("bot_suspects"):
+                logger.info(f"Top bot suspect: @{ml_results['bot_suspects'][0]['username']} "
+                            f"(score: {ml_results['bot_suspects'][0]['bot_score']:.2f})")
+            if ml_results.get("top_accounts"):
+                logger.info(f"Top signal account: @{ml_results['top_accounts'][0]['username']} "
+                            f"(score: {ml_results['top_accounts'][0]['signal_score']:.2f})")
+        except Exception as e:
+            logger.warning(f"ML analysis step failed (non-fatal): {e}")
+            ml_results = {"bot_suspects": [], "top_accounts": [], "ml_evaluation": None}
+
+        # ============================================================
         # STEP 9: REPORTER - Email Digest
         # ============================================================
         step5_start = time.time()
@@ -1160,7 +1337,24 @@ async def run_pipeline() -> bool:
             logger.info("\n[STEP 9/11] THE REPORTER: Sending email digest...")
 
             provider_info = f"{llm.provider_name} {llm.model_name}"
-            news_count = diagnostics.diagnostics.news_articles_fetched
+
+            # Only include ML results in email if enough time has elapsed
+            include_ml = False
+            try:
+                include_ml = await should_send_ml_diagnostics(
+                    config.app.ml_diagnostics_interval_days
+                )
+                if include_ml:
+                    logger.info("ML diagnostics interval elapsed - including ML section in email")
+                else:
+                    logger.info(
+                        f"ML diagnostics sent recently (interval: "
+                        f"{config.app.ml_diagnostics_interval_days} days) - skipping ML section"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to check ML diagnostics interval (including ML): {e}")
+                include_ml = True  # Default to including on error
+
             success = reporter.send_email(
                 report_content=analysis,
                 trends=trends,
@@ -1169,12 +1363,18 @@ async def run_pipeline() -> bool:
                 signal_strength=signal_strength,
                 timelines=timelines,
                 subject_line=subject_line,
-                news_count=news_count,
+                ml_results=ml_results if include_ml else None,
             )
 
             diagnostics.diagnostics.email_sent = success
 
             if success:
+                if include_ml and ml_results:
+                    try:
+                        await mark_ml_diagnostics_sent()
+                        logger.info("Recorded ML diagnostics sent timestamp")
+                    except Exception as e:
+                        logger.warning(f"Failed to record ML diagnostics timestamp: {e}")
                 logger.info("Email sent successfully!")
             else:
                 logger.warning("Failed to send email")
@@ -1195,7 +1395,7 @@ async def run_pipeline() -> bool:
         if not state.step6_complete:
             logger.info("\n[STEP 10/11] Storing digest in history...")
 
-            history.store_digest(
+            await history.store_digest(
                 trends=trends,
                 tweet_count=total_tweets,
                 digest_text=analysis,
@@ -1204,13 +1404,6 @@ async def run_pipeline() -> bool:
                 notable=is_notable,
                 trend_details=trend_details_for_temporal,
             )
-
-            # Store reported news URLs for cross-run dedup
-            if news_articles:
-                history.store_reported_news([
-                    {'url': a.url, 'title': a.title} for a in news_articles
-                ])
-                logger.info(f"Stored {len(news_articles)} news URLs for future dedup")
 
             if memory:
                 try:
@@ -1346,6 +1539,7 @@ async def run_pipeline() -> bool:
         await scraper.close()
         if memory:
             await memory.close()
+        await close_db()
 
 
 def main():

@@ -1,25 +1,17 @@
 """
-pgvector PostgreSQL Vector Store Implementation.
+pgvecto.rs PostgreSQL Vector Store Implementation.
 
-Production-ready vector storage using PostgreSQL with pgvector extension.
-
-Advantages over ChromaDB:
-- Battle-tested PostgreSQL infrastructure
-- Full SQL querying capabilities
-- Better for large scale (> 1M vectors)
-- ACID compliance
-- Easy to integrate with existing Postgres infrastructure
-
-Requirements:
-- PostgreSQL with pgvector extension installed
-- asyncpg for async PostgreSQL access
-- DATABASE_URL environment variable or explicit connection string
+Uses SQLAlchemy async with the pgvecto.rs extension for vector similarity search.
 """
 
-import json
 import logging
-from datetime import datetime, timedelta
+from datetime import date, timedelta
 from typing import Optional
+
+from sqlalchemy import func, select, text
+
+from src.database import create_tables, get_engine, get_session
+from src.models import MemoryRecord as MemoryRecordModel
 
 from .base import MemoryRecord, SearchResult, VectorStore
 
@@ -28,264 +20,183 @@ logger = logging.getLogger("jafar.memory.pgvector")
 
 class PgVectorStore(VectorStore):
     """
-    PostgreSQL + pgvector implementation of the vector store.
+    PostgreSQL + pgvecto.rs implementation of the vector store.
 
-    Production-ready vector storage with full SQL capabilities.
+    Uses SQLAlchemy async sessions from src.database instead of
+    managing its own connection pool.
     """
 
-    def __init__(
-        self,
-        connection_string: str,
-        table_name: str = "market_memories",
-        embedding_dimension: int = 1536,
-    ):
+    def __init__(self, embedding_dimension: int = 3072):
         """
         Initialize pgvector store.
 
         Args:
-            connection_string: PostgreSQL connection string
-                e.g., "postgresql://user:pass@localhost:5432/dbname"
-            table_name: Name of the table to store memories
-            embedding_dimension: Dimension of embeddings (1536 for OpenAI small)
+            embedding_dimension: Dimension of embeddings (default 3072).
         """
-        self.connection_string = connection_string
-        self.table_name = table_name
         self.embedding_dimension = embedding_dimension
-        self._pool = None
-        logger.info(f"PgVectorStore configured with table: {table_name}")
 
     async def initialize(self) -> None:
-        """Initialize PostgreSQL connection pool and create tables."""
-        try:
-            import asyncpg
-        except ImportError:
-            raise RuntimeError(
-                "asyncpg not installed. Install with: pip install asyncpg"
-            )
+        """Create the pgvecto.rs extension, tables, and HNSW index."""
+        engine = get_engine()
 
-        # Create connection pool
-        self._pool = await asyncpg.create_pool(
-            self.connection_string,
-            min_size=1,
-            max_size=10,
-        )
+        # Create the pgvecto.rs extension (note: extension name is "vectors")
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vectors"))
 
-        # Create pgvector extension and table
-        async with self._pool.acquire() as conn:
-            # Enable pgvector extension
-            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        # Create ORM tables
+        await create_tables()
 
-            # Create memories table
-            await conn.execute(f"""
-                CREATE TABLE IF NOT EXISTS {self.table_name} (
-                    id TEXT PRIMARY KEY,
-                    date TIMESTAMP NOT NULL,
-                    embedding vector({self.embedding_dimension}),
-                    trends JSONB NOT NULL,
-                    trend_categories JSONB NOT NULL,
-                    signal_strength TEXT NOT NULL,
-                    sentiment TEXT NOT NULL,
-                    top_engagement FLOAT NOT NULL,
-                    themes JSONB NOT NULL,
-                    summary TEXT NOT NULL,
-                    full_digest TEXT NOT NULL,
-                    notable BOOLEAN NOT NULL DEFAULT FALSE,
-                    tweet_count INTEGER NOT NULL DEFAULT 0,
-                    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-                )
-            """)
-
-            # Create indexes for common queries
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.table_name}_date
-                ON {self.table_name}(date DESC)
-            """)
-
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.table_name}_notable
-                ON {self.table_name}(notable) WHERE notable = TRUE
-            """)
-
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.table_name}_signal
-                ON {self.table_name}(signal_strength)
-            """)
-
-            # Create vector index for similarity search using HNSW
-            # HNSW is faster, more accurate, and supports higher dimensions than ivfflat
-            await conn.execute(f"""
-                CREATE INDEX IF NOT EXISTS idx_{self.table_name}_embedding_hnsw
-                ON {self.table_name}
-                USING hnsw (embedding vector_cosine_ops)
-                WITH (m = 16, ef_construction = 64)
-            """)
+        # Create HNSW index on the embedding column
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_memory_embedding "
+                "ON memory_records USING vectors (embedding vector_cos_ops)"
+            ))
 
         count = await self.count()
         logger.info(f"pgvector initialized with {count} existing memories")
 
-    def _ensure_initialized(self) -> None:
-        """Ensure the store is initialized."""
-        if self._pool is None:
-            raise RuntimeError("PgVectorStore not initialized. Call initialize() first.")
-
     async def store(self, record: MemoryRecord, embedding: list[float]) -> str:
-        """Store a memory record with its embedding."""
-        self._ensure_initialized()
-
-        async with self._pool.acquire() as conn:
-            # Upsert the record
-            await conn.execute(f"""
-                INSERT INTO {self.table_name} (
-                    id, date, embedding, trends, trend_categories,
-                    signal_strength, sentiment, top_engagement,
-                    themes, summary, full_digest, notable, tweet_count, created_at
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-                ON CONFLICT (id) DO UPDATE SET
-                    date = EXCLUDED.date,
-                    embedding = EXCLUDED.embedding,
-                    trends = EXCLUDED.trends,
-                    trend_categories = EXCLUDED.trend_categories,
-                    signal_strength = EXCLUDED.signal_strength,
-                    sentiment = EXCLUDED.sentiment,
-                    top_engagement = EXCLUDED.top_engagement,
-                    themes = EXCLUDED.themes,
-                    summary = EXCLUDED.summary,
-                    full_digest = EXCLUDED.full_digest,
-                    notable = EXCLUDED.notable,
-                    tweet_count = EXCLUDED.tweet_count
-            """,
-                record.id,
-                record.date,
-                str(embedding),  # pgvector accepts string representation
-                json.dumps(record.trends),
-                json.dumps(record.trend_categories),
-                record.signal_strength,
-                record.sentiment,
-                record.top_engagement,
-                json.dumps(record.themes),
-                record.summary,
-                record.full_digest,
-                record.notable,
-                record.tweet_count,
-                record.created_at,
+        """Store a memory record with its embedding via SQLAlchemy merge."""
+        session = await get_session()
+        async with session.begin():
+            orm_record = MemoryRecordModel(
+                id=record.id,
+                date=record.date,
+                content=record.content,
+                summary=record.summary,
+                trends=record.trends,
+                signal_strength=record.signal_strength,
+                notable=record.notable,
+                metadata_json=record.metadata,
+                embedding=embedding,
             )
+            await session.merge(orm_record)
 
+        await session.close()
         logger.info(f"Stored memory: {record.id}")
         return record.id
 
-    def _row_to_record(self, row) -> MemoryRecord:
-        """Convert a database row to a MemoryRecord."""
+    def _to_dataclass(self, row: MemoryRecordModel) -> MemoryRecord:
+        """Convert an ORM MemoryRecord model instance to the base MemoryRecord dataclass."""
         return MemoryRecord(
-            id=row["id"],
-            date=row["date"],
-            trends=json.loads(row["trends"]) if isinstance(row["trends"], str) else row["trends"],
-            trend_categories=json.loads(row["trend_categories"]) if isinstance(row["trend_categories"], str) else row["trend_categories"],
-            signal_strength=row["signal_strength"],
-            sentiment=row["sentiment"],
-            top_engagement=row["top_engagement"],
-            themes=json.loads(row["themes"]) if isinstance(row["themes"], str) else row["themes"],
-            summary=row["summary"],
-            full_digest=row["full_digest"],
-            notable=row["notable"],
-            tweet_count=row["tweet_count"],
-            created_at=row["created_at"],
+            id=row.id,
+            date=row.date,
+            content=row.content,
+            summary=row.summary or "",
+            trends=row.trends or [],
+            signal_strength=row.signal_strength or "none",
+            notable=row.notable,
+            metadata=row.metadata_json,
         )
 
     async def search(
         self,
         query_embedding: list[float],
         limit: int = 5,
-        min_similarity: float = 0.5,
+        min_similarity: float = 0.6,
     ) -> list[SearchResult]:
         """Search for similar memories using cosine similarity."""
-        self._ensure_initialized()
+        query_vec_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
-        async with self._pool.acquire() as conn:
-            # Use cosine distance (1 - similarity)
-            # pgvector <=> operator returns cosine distance
-            rows = await conn.fetch(f"""
-                SELECT *,
-                    1 - (embedding <=> $1::vector) as similarity,
-                    embedding <=> $1::vector as distance
-                FROM {self.table_name}
-                WHERE 1 - (embedding <=> $1::vector) >= $2
-                ORDER BY embedding <=> $1::vector
-                LIMIT $3
-            """,
-                str(query_embedding),
-                min_similarity,
-                limit,
+        sql = text("""
+            SELECT *,
+                1 - (embedding <=> :query_vec::vector) AS similarity
+            FROM memory_records
+            WHERE 1 - (embedding <=> :query_vec::vector) >= :min_sim
+            ORDER BY similarity DESC
+            LIMIT :lim
+        """)
+
+        session = await get_session()
+        try:
+            result = await session.execute(
+                sql,
+                {"query_vec": query_vec_str, "min_sim": min_similarity, "lim": limit},
             )
+            rows = result.mappings().all()
+        finally:
+            await session.close()
 
         results = []
         for row in rows:
-            record = self._row_to_record(row)
+            record = MemoryRecord(
+                id=row["id"],
+                date=row["date"],
+                content=row["content"],
+                summary=row["summary"] or "",
+                trends=row["trends"] or [],
+                signal_strength=row["signal_strength"] or "none",
+                notable=row["notable"],
+                metadata=row["metadata_json"],
+            )
+            similarity = float(row["similarity"])
             results.append(SearchResult(
                 record=record,
-                similarity=row["similarity"],
-                distance=row["distance"],
+                similarity=similarity,
+                distance=1.0 - similarity,
             ))
 
         return results
 
-    async def get_by_date(self, date: datetime) -> Optional[MemoryRecord]:
-        """Get a specific memory by date."""
-        self._ensure_initialized()
+    async def get_by_date(self, date_str: str) -> Optional[MemoryRecord]:
+        """Get a specific memory by id (date string like '20240115')."""
+        session = await get_session()
+        try:
+            result = await session.get(MemoryRecordModel, date_str)
+        finally:
+            await session.close()
 
-        date_id = f"memory_{date.strftime('%Y%m%d')}"
-
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(f"""
-                SELECT * FROM {self.table_name} WHERE id = $1
-            """, date_id)
-
-        if row:
-            return self._row_to_record(row)
-        return None
+        if result is None:
+            return None
+        return self._to_dataclass(result)
 
     async def get_recent(self, days: int = 7) -> list[MemoryRecord]:
         """Get recent memories."""
-        self._ensure_initialized()
+        cutoff = date.today() - timedelta(days=days)
 
-        cutoff = datetime.now() - timedelta(days=days)
+        session = await get_session()
+        try:
+            stmt = (
+                select(MemoryRecordModel)
+                .where(MemoryRecordModel.date >= cutoff)
+                .order_by(MemoryRecordModel.date.desc())
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+        finally:
+            await session.close()
 
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(f"""
-                SELECT * FROM {self.table_name}
-                WHERE date >= $1
-                ORDER BY date DESC
-            """, cutoff)
-
-        return [self._row_to_record(row) for row in rows]
+        return [self._to_dataclass(row) for row in rows]
 
     async def get_notable(self, limit: int = 10) -> list[MemoryRecord]:
         """Get notable/significant memories."""
-        self._ensure_initialized()
+        session = await get_session()
+        try:
+            stmt = (
+                select(MemoryRecordModel)
+                .where(MemoryRecordModel.notable == True)  # noqa: E712
+                .order_by(MemoryRecordModel.date.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            rows = result.scalars().all()
+        finally:
+            await session.close()
 
-        async with self._pool.acquire() as conn:
-            rows = await conn.fetch(f"""
-                SELECT * FROM {self.table_name}
-                WHERE notable = TRUE
-                ORDER BY date DESC
-                LIMIT $1
-            """, limit)
-
-        return [self._row_to_record(row) for row in rows]
+        return [self._to_dataclass(row) for row in rows]
 
     async def count(self) -> int:
         """Get total number of stored memories."""
-        self._ensure_initialized()
-
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(f"""
-                SELECT COUNT(*) as count FROM {self.table_name}
-            """)
-
-        return row["count"]
+        session = await get_session()
+        try:
+            result = await session.execute(
+                select(func.count()).select_from(MemoryRecordModel)
+            )
+            return result.scalar_one()
+        finally:
+            await session.close()
 
     async def close(self) -> None:
-        """Clean up resources."""
-        if self._pool:
-            await self._pool.close()
-            self._pool = None
-        logger.info("pgvector connection closed")
+        """No-op — engine lifecycle is managed by src.database."""
+        pass

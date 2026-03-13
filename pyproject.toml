@@ -4,35 +4,28 @@ build-backend = "hatchling.build"
 
 [project]
 name = "jafar"
-version = "2.0.0"
+version = "3.0.0"
 description = "The villain to BlackRock's Aladdin. Twitter/X market sentiment analysis for people who can't afford $25k/month."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
     "twscrape",
     "spacy",
     "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
-    "openai",
     "google-genai",
     "python-dotenv",
     "pyyaml",
     "aiohttp",
-    "chromadb",
-    "socksio",
+    "sqlalchemy[asyncio]",
     "asyncpg",
     "yfinance",
     "ddgs",
     "python-dateutil>=2.9.0.post0",
+    "scikit-learn",
 ]
 
 [project.scripts]
 jafar = "src.main:main"
-
-[project.optional-dependencies]
-# For production pgvector support
-postgres = ["asyncpg"]
-# For local embeddings (free, no API needed)
-local-embeddings = ["sentence-transformers"]
 
 [dependency-groups]
 dev = [
@@ -43,6 +36,7 @@ dev = [
     "pytest-cov",
     "pytest-timeout",
     "freezegun",
+    "aiosqlite",
 ]
 
 [tool.pytest.ini_options]
@@ -63,3 +57,6 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.uv.sources]
+twscrape = { git = "https://github.com/Telesphoreo/twscrape.git" }

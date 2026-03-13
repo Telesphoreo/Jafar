@@ -48,6 +48,270 @@ class EmailReporter:
         self.config = config
         logger.info(f"EmailReporter initialized for {config.host}:{config.port}")
 
+    def _generate_ml_section_html(self, ml_results: dict) -> str:
+        """
+        Generate HTML for the ML Analysis section of the email report.
+
+        Args:
+            ml_results: Dict with bot_suspects, top_accounts, bot_judgments, ml_evaluation.
+
+        Returns:
+            HTML string for the ML analysis section.
+        """
+        if not ml_results:
+            return ""
+
+        bot_suspects = ml_results.get("bot_suspects", [])
+        top_accounts = ml_results.get("top_accounts", [])
+        bot_judgments = ml_results.get("bot_judgments", [])
+        ml_evaluation = ml_results.get("ml_evaluation")
+
+        # Build a lookup of LLM judgments by username
+        judgment_map = {j["username"]: j for j in bot_judgments}
+
+        sections = []
+
+        # Table styles (inline for email compatibility)
+        th_style = "padding: 10px; border-bottom: 2px solid #000; text-align: left; font-family: monospace; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; background-color: #fafafa;"
+        td_style = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px;"
+        td_alt_style = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; background-color: #fafafa;"
+        section_header_style = "font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;"
+
+        # --- Section header ---
+        sections.append("""
+        <div style="padding: 30px 40px 10px 40px; border-top: 1px solid #000;">
+            <h2 style="margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;">ML Analysis</h2>
+        </div>
+        """)
+
+        # --- Bot Suspects ---
+        if bot_suspects:
+            rows = []
+            for i, suspect in enumerate(bot_suspects[:10]):
+                username = suspect.get("username", "unknown")
+                bot_score = suspect.get("bot_score", 0.0)
+                judgment = judgment_map.get(username, {})
+                llm_verdict = judgment.get("classification", "—")
+                confidence = judgment.get("confidence", 0.0)
+                reasoning = judgment.get("reasoning", "—")
+                # Truncate reasoning for table display
+                if len(reasoning) > 120:
+                    reasoning = reasoning[:117] + "..."
+
+                row_style = td_alt_style if i % 2 == 0 else td_style
+                score_color = "#c00" if bot_score >= 0.7 else "#c80" if bot_score >= 0.4 else "#333"
+
+                rows.append(f"""
+                <tr>
+                    <td style="{row_style}">@{username}</td>
+                    <td style="{row_style} color: {score_color}; font-weight: bold;">{bot_score:.2f}</td>
+                    <td style="{row_style}">{llm_verdict}</td>
+                    <td style="{row_style}">{confidence:.2f}</td>
+                    <td style="{row_style} font-size: 11px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">{reasoning}</td>
+                </tr>
+                """)
+
+            sections.append(f"""
+            <div style="padding: 20px 40px; border-bottom: 1px solid #eee;">
+                <div style="{section_header_style}">Bot Suspects</div>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                    <tr>
+                        <th style="{th_style}">Account</th>
+                        <th style="{th_style}">ML Score</th>
+                        <th style="{th_style}">LLM Verdict</th>
+                        <th style="{th_style}">Confidence</th>
+                        <th style="{th_style}">Reasoning</th>
+                    </tr>
+                    {"".join(rows)}
+                </table>
+            </div>
+            """)
+
+        # --- Top Signal Accounts ---
+        if top_accounts:
+            rows = []
+            for i, account in enumerate(top_accounts[:10]):
+                username = account.get("username", "unknown")
+                signal_score = account.get("signal_score", 0.0)
+                cluster = account.get("cluster", "—")
+                tweet_count = account.get("tweet_count", 0)
+
+                row_style = td_alt_style if i % 2 == 0 else td_style
+
+                rows.append(f"""
+                <tr>
+                    <td style="{row_style}">@{username}</td>
+                    <td style="{row_style} font-weight: bold;">{signal_score:.2f}</td>
+                    <td style="{row_style}">{cluster}</td>
+                    <td style="{row_style}">{tweet_count}</td>
+                </tr>
+                """)
+
+            sections.append(f"""
+            <div style="padding: 20px 40px; border-bottom: 1px solid #eee;">
+                <div style="{section_header_style}">Top Signal Accounts</div>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                    <tr>
+                        <th style="{th_style}">Account</th>
+                        <th style="{th_style}">Signal Score</th>
+                        <th style="{th_style}">Cluster</th>
+                        <th style="{th_style}">Tweets</th>
+                    </tr>
+                    {"".join(rows)}
+                </table>
+            </div>
+            """)
+
+        # --- Model Health ---
+        if ml_evaluation:
+            agreement = ml_evaluation.get("agreement_rate", 0.0)
+            precision = ml_evaluation.get("precision", 0.0)
+            recall = ml_evaluation.get("recall", 0.0)
+            f1 = ml_evaluation.get("f1_score", 0.0)
+
+            # Color code agreement rate
+            agreement_color = "#00aa00" if agreement >= 0.8 else "#c80" if agreement >= 0.6 else "#c00"
+
+            sections.append(f"""
+            <div style="padding: 20px 40px; border-bottom: 1px solid #eee;">
+                <div style="{section_header_style}">ML Model Health</div>
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                    <tr>
+                        <td style="{td_alt_style}"><strong>ML/LLM Agreement</strong></td>
+                        <td style="{td_alt_style} color: {agreement_color}; font-weight: bold;">{agreement:.0%}</td>
+                    </tr>
+                    <tr>
+                        <td style="{td_style}"><strong>Precision</strong></td>
+                        <td style="{td_style}">{precision:.2f}</td>
+                    </tr>
+                    <tr>
+                        <td style="{td_alt_style}"><strong>Recall</strong></td>
+                        <td style="{td_alt_style}">{recall:.2f}</td>
+                    </tr>
+                    <tr>
+                        <td style="{td_style}"><strong>F1 Score</strong></td>
+                        <td style="{td_style}">{f1:.2f}</td>
+                    </tr>
+                </table>
+            </div>
+            """)
+
+            # --- Disagreements ---
+            disagreements = ml_evaluation.get("disagreements", [])
+            if disagreements:
+                rows = []
+                for i, d in enumerate(disagreements[:10]):
+                    username = d.get("username", "unknown")
+                    ml_score = d.get("ml_score", d.get("bot_score", 0.0))
+                    llm_class = d.get("llm_classification", d.get("classification", "—"))
+                    reason = d.get("reason", d.get("reasoning", "—"))
+                    if len(reason) > 120:
+                        reason = reason[:117] + "..."
+
+                    row_style = td_alt_style if i % 2 == 0 else td_style
+
+                    rows.append(f"""
+                    <tr>
+                        <td style="{row_style}">@{username}</td>
+                        <td style="{row_style} font-weight: bold;">{ml_score:.2f}</td>
+                        <td style="{row_style}">{llm_class}</td>
+                        <td style="{row_style} font-size: 11px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">{reason}</td>
+                    </tr>
+                    """)
+
+                sections.append(f"""
+                <div style="padding: 20px 40px; border-bottom: 1px solid #eee;">
+                    <div style="{section_header_style}; color: #c80;">ML/LLM Disagreements — Review Recommended</div>
+                    <p style="font-size: 13px; color: #666; margin: 0 0 15px 0;">
+                        These accounts had significant disagreement between ML scoring and LLM evaluation.
+                    </p>
+                    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse: collapse;">
+                        <tr>
+                            <th style="{th_style}">Account</th>
+                            <th style="{th_style}">ML Score</th>
+                            <th style="{th_style}">LLM Verdict</th>
+                            <th style="{th_style}">Reason</th>
+                        </tr>
+                        {"".join(rows)}
+                    </table>
+                </div>
+                """)
+
+        return "\n".join(sections)
+
+    def _generate_ml_section_plain_text(self, ml_results: dict) -> str:
+        """
+        Generate plain text for the ML Analysis section.
+
+        Args:
+            ml_results: Dict with bot_suspects, top_accounts, bot_judgments, ml_evaluation.
+
+        Returns:
+            Plain text string for the ML analysis section.
+        """
+        if not ml_results:
+            return ""
+
+        bot_suspects = ml_results.get("bot_suspects", [])
+        top_accounts = ml_results.get("top_accounts", [])
+        bot_judgments = ml_results.get("bot_judgments", [])
+        ml_evaluation = ml_results.get("ml_evaluation")
+
+        judgment_map = {j["username"]: j for j in bot_judgments}
+
+        lines = [
+            "",
+            "--------------------------------------------------------------------------------",
+            "ML ANALYSIS",
+            "--------------------------------------------------------------------------------",
+        ]
+
+        if bot_suspects:
+            lines.append("")
+            lines.append("Bot Suspects:")
+            for suspect in bot_suspects[:10]:
+                username = suspect.get("username", "unknown")
+                bot_score = suspect.get("bot_score", 0.0)
+                judgment = judgment_map.get(username, {})
+                llm_verdict = judgment.get("classification", "n/a")
+                confidence = judgment.get("confidence", 0.0)
+                lines.append(
+                    f"  @{username}: ML={bot_score:.2f}, LLM={llm_verdict} (conf={confidence:.2f})"
+                )
+
+        if top_accounts:
+            lines.append("")
+            lines.append("Top Signal Accounts:")
+            for account in top_accounts[:10]:
+                username = account.get("username", "unknown")
+                signal_score = account.get("signal_score", 0.0)
+                cluster = account.get("cluster", "n/a")
+                tweet_count = account.get("tweet_count", 0)
+                lines.append(
+                    f"  @{username}: score={signal_score:.2f}, cluster={cluster}, tweets={tweet_count}"
+                )
+
+        if ml_evaluation:
+            lines.append("")
+            lines.append("Model Health:")
+            lines.append(f"  ML/LLM Agreement: {ml_evaluation.get('agreement_rate', 0.0):.0%}")
+            lines.append(f"  Precision: {ml_evaluation.get('precision', 0.0):.2f}")
+            lines.append(f"  Recall: {ml_evaluation.get('recall', 0.0):.2f}")
+            lines.append(f"  F1 Score: {ml_evaluation.get('f1_score', 0.0):.2f}")
+
+            disagreements = ml_evaluation.get("disagreements", [])
+            if disagreements:
+                lines.append("")
+                lines.append("ML/LLM Disagreements (review recommended):")
+                for d in disagreements[:10]:
+                    username = d.get("username", "unknown")
+                    ml_score = d.get("ml_score", d.get("bot_score", 0.0))
+                    llm_class = d.get("llm_classification", d.get("classification", "n/a"))
+                    reason = d.get("reason", d.get("reasoning", "n/a"))
+                    lines.append(f"  @{username}: ML={ml_score:.2f}, LLM={llm_class} — {reason}")
+
+        return "\n".join(lines)
+
     def _generate_html_report(
         self,
         report_content: str,
@@ -56,7 +320,7 @@ class EmailReporter:
         provider_info: str,
         signal_strength: str = "low",
         timelines: dict = None,
-        news_count: int = 0,
+        ml_results: dict = None,
     ) -> str:
         """
         Generate a clean, minimalist HTML email.
@@ -68,7 +332,7 @@ class EmailReporter:
             provider_info: LLM provider used for analysis.
             signal_strength: Signal strength rating (high/medium/low/none).
             timelines: Dict of {trend: TrendTimeline} for temporal badges.
-            news_count: Number of news articles fetched.
+            ml_results: Dict with ML analysis results (bot detection, scoring, evaluation).
 
         Returns:
             HTML formatted email body.
@@ -150,7 +414,7 @@ class EmailReporter:
         <!-- Metadata Row -->
         <div style="display: flex; border-bottom: 1px solid #000; font-family: monospace; font-size: 13px; background-color: #fcfcfc;">
             <div style="padding: 15px 40px; border-right: 1px solid #000; flex: 1;">
-                Analyzed: <strong>{tweet_count}</strong> tweets, <strong>{news_count}</strong> headlines
+                Analyzed: <strong>{tweet_count}</strong> tweets
             </div>
             <div style="padding: 15px 40px; flex: 1;">
                 Detected: <strong>{len(trends)}</strong> trends
@@ -175,6 +439,8 @@ class EmailReporter:
                 </p>
             </div>
         </div>
+
+        {self._generate_ml_section_html(ml_results) if ml_results else ''}
 
         <!-- Footer -->
         <div style="border-top: 1px solid #000; padding: 30px 40px; font-size: 13px; color: #444; background-color: #fafafa;">
@@ -208,7 +474,7 @@ class EmailReporter:
         report_content: str,
         trends: list[str],
         tweet_count: int,
-        news_count: int = 0,
+        ml_results: dict = None,
     ) -> str:
         """
         Generate a plain text version of the report.
@@ -217,7 +483,7 @@ class EmailReporter:
             report_content: The LLM-generated analysis.
             trends: List of trending topics analyzed.
             tweet_count: Total number of tweets analyzed.
-            news_count: Number of news articles fetched.
+            ml_results: Dict with ML analysis results (bot detection, scoring, evaluation).
 
         Returns:
             Plain text formatted email body.
@@ -225,18 +491,21 @@ class EmailReporter:
         today = datetime.now().strftime("%B %d, %Y")
         trends_str = ", ".join(trends)
 
+        ml_section = self._generate_ml_section_plain_text(ml_results) if ml_results else ""
+
         return f"""
 Jafar Intelligence System
 Market Digest - {today}
 --------------------------------------------------------------------------------
 
 Signal: Detected
-Inputs: {tweet_count} tweets, {news_count} headlines
+Inputs: {tweet_count} tweets
 Topics: {trends_str}
 
 --------------------------------------------------------------------------------
 
 {report_content}
+{ml_section}
 
 --------------------------------------------------------------------------------
 
@@ -252,7 +521,7 @@ Disclaimer: Not financial advice.
         signal_strength: str = "low",
         timelines: dict = None,
         subject_line: str = None,
-        news_count: int = 0,
+        ml_results: dict = None,
     ) -> bool:
         """
         Send the economic digest via email.
@@ -265,7 +534,7 @@ Disclaimer: Not financial advice.
             signal_strength: Signal strength rating (high/medium/low/none).
             timelines: Dict of {trend: TrendTimeline} for temporal badges.
             subject_line: Optional custom subject line from LLM.
-            news_count: Number of news articles fetched.
+            ml_results: Dict with ML analysis results (bot detection, scoring, evaluation).
 
         Returns:
             True if email was sent successfully.
@@ -287,9 +556,9 @@ Disclaimer: Not financial advice.
         msg["To"] = self.config.email_from
 
         # Generate both plain text and HTML versions
-        text_content = self._generate_plain_text(report_content, trends, tweet_count, news_count)
+        text_content = self._generate_plain_text(report_content, trends, tweet_count, ml_results)
         html_content = self._generate_html_report(
-            report_content, trends, tweet_count, provider_info, signal_strength, timelines, news_count
+            report_content, trends, tweet_count, provider_info, signal_strength, timelines, ml_results
         )
 
         # Attach both versions (email clients will choose the best one)

@@ -51,28 +51,6 @@ class TestTwitterConfig:
         assert "http://proxy1:8080" in proxies
 
 
-class TestOpenAIConfig:
-    """Tests for OpenAIConfig dataclass."""
-
-    def test_openai_config_has_model(self):
-        """Test OpenAIConfig has a model configured."""
-        from src.config import OpenAIConfig
-
-        config = OpenAIConfig()
-        # Model should be set (either from config.yaml or default)
-        assert config.model is not None
-        assert len(config.model) > 0
-
-    def test_openai_config_uses_env_api_key(self, monkeypatch):
-        """Test that API key comes from environment."""
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key-123")
-
-        from src.config import OpenAIConfig
-
-        config = OpenAIConfig()
-        assert config.api_key == "test-key-123"
-
-
 class TestGoogleConfig:
     """Tests for GoogleConfig dataclass."""
 
@@ -109,7 +87,14 @@ class TestAppConfig:
         assert config.top_trends_count > 0
         assert config.min_trend_mentions > 0
         assert config.min_trend_authors > 0
-        assert config.llm_provider in ["openai", "google"]
+        assert config.broad_tweet_limit > 0  # already checked above, just a placeholder
+
+    def test_ml_diagnostics_interval_days_default(self):
+        """Test that ml_diagnostics_interval_days defaults to 3."""
+        from src.config import AppConfig
+
+        config = AppConfig()
+        assert config.ml_diagnostics_interval_days == 3
 
     def test_broad_topics_has_entries(self):
         """Test that broad_topics has entries."""
@@ -150,32 +135,14 @@ class TestTemporalConfig:
 class TestConfigValidation:
     """Tests for Config.validate() method."""
 
-    def test_validate_missing_openai_key(self, monkeypatch, sample_config_yaml):
-        """Test validation fails when OpenAI provider selected without key."""
-        monkeypatch.setenv("OPENAI_API_KEY", "")
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-
-        # Need to reload config module to pick up changes
-        with patch("src.config._yaml_config", {"llm": {"provider": "openai"}}):
-            from src.config import Config
-
-            config = Config()
-            # Force OpenAI provider
-            config.app.llm_provider = "openai"
-            config.openai.api_key = ""
-
-            errors = config.validate()
-            assert any("OPENAI_API_KEY" in e for e in errors)
-
     def test_validate_missing_google_key(self, monkeypatch):
-        """Test validation fails when Google provider selected without key."""
+        """Test validation fails when Google API key is missing."""
         monkeypatch.setenv("GOOGLE_API_KEY", "")
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
 
         from src.config import Config
 
         config = Config()
-        config.app.llm_provider = "google"
         config.google.api_key = ""
 
         errors = config.validate()

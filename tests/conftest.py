@@ -18,7 +18,9 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from src.models import Base
 from src.scraper import ScrapedTweet
 from tests.fixtures import make_financial_tweets, make_sample_tweet, make_sample_tweets
 
@@ -33,7 +35,6 @@ def spacy_nlp():
     """Session-scoped spaCy model - load once for all tests."""
     try:
         import spacy
-
         return spacy.load("en_core_web_sm")
     except OSError:
         pytest.skip("spaCy model 'en_core_web_sm' not installed")
@@ -100,9 +101,9 @@ def sample_config_yaml(tmp_path) -> Path:
     config_path = tmp_path / "config.yaml"
     config_content = """
 llm:
-  provider: openai
-  openai_model: gpt-4o
   google_model: gemini-2.0-flash
+  embedding_model: gemini-embedding-2-preview
+  embedding_dimensions: 3072
 
 scraping:
   broad_tweet_limit: 100
@@ -124,8 +125,6 @@ email:
 
 memory:
   enabled: true
-  store_type: chroma
-  embedding_provider: openai
 
 fact_checker:
   enabled: true
@@ -209,33 +208,6 @@ def mock_google_genai():
         yield mock_client_class
 
 
-@pytest.fixture
-def mock_openai():
-    """Mock AsyncOpenAI for OpenAI API tests."""
-    # Patch at the module where it's imported, not where it's defined
-    with patch("src.llm.openai_client.AsyncOpenAI") as mock_client_class:
-        mock_client = MagicMock()
-
-        # Create mock response
-        mock_message = MagicMock()
-        mock_message.content = "This is a test response from OpenAI."
-        mock_message.tool_calls = None
-
-        mock_choice = MagicMock()
-        mock_choice.message = mock_message
-
-        mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
-        mock_response.model = "gpt-4o"
-        mock_response.usage = MagicMock(
-            prompt_tokens=100,
-            completion_tokens=50,
-            total_tokens=150,
-        )
-
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-        mock_client_class.return_value = mock_client
-        yield mock_client_class
 
 
 @pytest.fixture
@@ -331,8 +303,8 @@ def mock_ddgs_news():
 @pytest.fixture
 def mock_env_vars(monkeypatch):
     """Set mock environment variables for testing."""
-    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
     monkeypatch.setenv("GOOGLE_API_KEY", "test-google-key")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test:test@localhost/jafar_test")
     monkeypatch.setenv("SMTP_USERNAME", "test@example.com")
     monkeypatch.setenv("SMTP_PASSWORD", "test-password")
     monkeypatch.setenv("TWITTER_USERNAME", "testuser")
@@ -345,27 +317,41 @@ def mock_env_vars(monkeypatch):
 
 
 @pytest.fixture
-def sample_history_db(temp_db_path):
+async def async_session_factory():
+    """Create an in-memory SQLite async engine and session factory for tests."""
+    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
+
+
+@pytest.fixture
+async def sample_history_db(async_session_factory):
     """Create a DigestHistory instance with sample data."""
+    from unittest.mock import patch
+
     from src.history import DigestHistory
 
-    history = DigestHistory(db_path=temp_db_path)
+    async def _get_session():
+        return async_session_factory()
 
-    # Add some sample historical data
-    history.store_digest(
-        trends=["$NVDA", "Silver", "Oil"],
-        tweet_count=500,
-        digest_text="Sample digest from yesterday.",
-        signal_strength="medium",
-        top_engagement=10000.0,
-        notable=False,
-        trend_details={
-            "nvda": {"mentions": 50, "engagement": 5000},
-            "silver": {"mentions": 30, "engagement": 3000},
-        },
-    )
-
-    return history
+    with patch("src.history.get_session", side_effect=_get_session):
+        history = DigestHistory()
+        await history.store_digest(
+            trends=["$NVDA", "Silver", "Oil"],
+            tweet_count=500,
+            digest_text="Sample digest from yesterday.",
+            signal_strength="medium",
+            top_engagement=10000.0,
+            notable=False,
+            trend_details={
+                "nvda": {"mentions": 50, "engagement": 5000},
+                "silver": {"mentions": 30, "engagement": 3000},
+            },
+        )
+        yield history
 
 
 # =============================================================================

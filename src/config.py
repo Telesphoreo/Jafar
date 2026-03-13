@@ -9,7 +9,6 @@ import os
 import contextvars
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 import yaml
 from dotenv import load_dotenv
@@ -83,21 +82,20 @@ def _get_proxies() -> list[str]:
 
 
 @dataclass
-class OpenAIConfig:
-    """OpenAI API configuration."""
-    # Secret from .env
-    api_key: str = field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
-    # Setting from YAML
-    model: str = field(default_factory=lambda: _get_yaml("llm", "openai_model", "gpt-4o"))
-
-
-@dataclass
 class GoogleConfig:
-    """Google Generative AI configuration."""
+    """Google Generative AI configuration (LLM + embeddings)."""
     # Secret from .env
     api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
-    # Setting from YAML
+    # LLM model
     model: str = field(default_factory=lambda: _get_yaml("llm", "google_model", "gemini-2.0-flash"))
+    # Embedding model
+    embedding_model: str = field(
+        default_factory=lambda: _get_yaml("llm", "embedding_model", "gemini-embedding-2-preview")
+    )
+    # Embedding dimensions (128-3072, recommended: 768, 1536, or 3072)
+    embedding_dimensions: int = field(
+        default_factory=lambda: _get_yaml("llm", "embedding_dimensions", 3072)
+    )
 
 
 @dataclass
@@ -163,11 +161,6 @@ class AppConfig:
         default_factory=lambda: _get_yaml("scraping", "search_timeout", 120)
     )
 
-    # LLM provider
-    llm_provider: Literal["openai", "google"] = field(
-        default_factory=lambda: _get_yaml("llm", "provider", "openai")
-    )
-
     # Logging
     log_level: str = field(
         default_factory=lambda: _get_yaml("logging", "level", "INFO")
@@ -176,6 +169,11 @@ class AppConfig:
     # NLP Model
     spacy_model: str = field(
         default_factory=lambda: _get_yaml("app", "spacy_model", "en_core_web_sm")
+    )
+
+    # ML diagnostics email frequency (days between ML sections in digest)
+    ml_diagnostics_interval_days: int = field(
+        default_factory=lambda: _get_yaml("ml", "diagnostics_interval_days", 3)
     )
 
     # Broad search topics
@@ -228,83 +226,16 @@ def _get_broad_topics() -> list[str]:
 
 
 @dataclass
-class MemoryConfig:
-    """Vector memory configuration for historical context."""
-    enabled: bool = field(
+class DatabaseConfig:
+    """Postgres database configuration."""
+    # Secret from .env (contains credentials)
+    url: str = field(default_factory=lambda: os.getenv("DATABASE_URL", ""))
+    # Memory/vector search settings
+    memory_enabled: bool = field(
         default_factory=lambda: _get_yaml("memory", "enabled", True)
     )
-    store_type: Literal["chroma", "pgvector"] = field(
-        default_factory=lambda: _get_yaml("memory", "store_type", "chroma")
-    )
-    embedding_provider: Literal["openai", "local"] = field(
-        default_factory=lambda: _get_yaml("memory", "embedding_provider", "openai")
-    )
-    # OpenAI embedding model: "text-embedding-3-small" (1536d) or "text-embedding-3-large" (3072d)
-    openai_embedding_model: str = field(
-        default_factory=lambda: _get_yaml("memory", "openai_embedding_model", "text-embedding-3-large")
-    )
-    # Override embedding dimensions (required for pgvector which has 2000 dim limit)
-    # Set to 1536 or 2000 when using text-embedding-3-large with pgvector
-    # None = use model's default dimensions
-    embedding_dimensions: int | None = field(
-        default_factory=lambda: _get_yaml("memory", "embedding_dimensions", None)
-    )
-    chroma_path: str = field(
-        default_factory=lambda: _get_yaml("memory", "chroma_path", "./memory_store")
-    )
-    # Secret from .env (contains credentials)
-    postgres_url: str = field(default_factory=lambda: os.getenv("POSTGRES_URL", ""))
     min_similarity: float = field(
         default_factory=lambda: _get_yaml("memory", "min_similarity", 0.6)
-    )
-
-
-@dataclass
-class NewsConfig:
-    """News fetching configuration."""
-    enabled: bool = field(
-        default_factory=lambda: _get_yaml("news", "enabled", True)
-    )
-    queries: list[str] = field(
-        default_factory=lambda: _get_yaml("news", "queries", [
-            "economy news today",
-            "stock market news",
-            "inflation consumer prices",
-            "Federal Reserve monetary policy",
-            "corporate earnings news",
-            "supply chain logistics",
-            "military strikes news today",
-            "geopolitical conflict news",
-            "war Middle East news",
-            "sanctions news today",
-            "artificial intelligence news today",
-            "AI regulation policy",
-            "tech company news today",
-            "government regulation news today",
-            "Department of Defense news",
-            "oil price OPEC news",
-            "breaking news today",
-            "major news today",
-        ]) or [
-            "economy news today",
-            "stock market news",
-            "inflation consumer prices",
-            "Federal Reserve monetary policy",
-            "corporate earnings news",
-            "supply chain logistics",
-            "military strikes news today",
-            "geopolitical conflict news",
-            "artificial intelligence news today",
-            "AI regulation policy",
-            "breaking news today",
-            "major news today",
-        ]
-    )
-    max_results_per_query: int = field(
-        default_factory=lambda: _get_yaml("news", "max_results_per_query", 5)
-    )
-    max_age_hours: float = field(
-        default_factory=lambda: _get_yaml("news", "max_age_hours", 48)
     )
 
 
@@ -339,12 +270,10 @@ class TemporalConfig:
 class Config:
     """Main configuration container."""
     twitter: TwitterConfig = field(default_factory=TwitterConfig)
-    openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     google: GoogleConfig = field(default_factory=GoogleConfig)
     smtp: SMTPConfig = field(default_factory=SMTPConfig)
     app: AppConfig = field(default_factory=AppConfig)
-    memory: MemoryConfig = field(default_factory=MemoryConfig)
-    news: NewsConfig = field(default_factory=NewsConfig)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
     fact_checker: FactCheckerConfig = field(default_factory=FactCheckerConfig)
     temporal: TemporalConfig = field(default_factory=TemporalConfig)
 
@@ -381,11 +310,9 @@ class Config:
         if not CONFIG_FILE.exists():
             errors.append(f"Config file not found: {CONFIG_FILE} (copy config.yaml.example to config.yaml)")
 
-        # Check LLM provider configuration
-        if self.app.llm_provider == "openai" and not self.openai.api_key:
-            errors.append("OPENAI_API_KEY is required when using OpenAI provider")
-        elif self.app.llm_provider == "google" and not self.google.api_key:
-            errors.append("GOOGLE_API_KEY is required when using Google provider")
+        # Check Google API key
+        if not self.google.api_key:
+            errors.append("GOOGLE_API_KEY is required (used for LLM and embeddings)")
 
         # Check SMTP configuration for email sending
         if not self.smtp.username or not self.smtp.password:

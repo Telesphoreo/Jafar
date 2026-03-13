@@ -32,14 +32,13 @@ class RunDiagnostics:
     deep_dive_trends_attempted: int = 0
     deep_dive_trends_completed: int = 0
     deep_dive_tweets_scraped: int = 0
+    tweets_stored: int = 0
+    twitter_trends_fetched: int = 0
 
     # Twitter account health
     twitter_accounts_total: int = 0
     twitter_accounts_active: int = 0
     twitter_accounts_rate_limited: int = 0
-
-    # News statistics
-    news_articles_fetched: int = 0
 
     # Analysis statistics
     llm_calls_made: int = 0
@@ -60,6 +59,11 @@ class RunDiagnostics:
     # Error tracking
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+    # ML Analysis
+    bot_suspects_found: int = 0
+    accounts_scored: int = 0
+    ml_agreement_rate: float = 0.0
 
     # Final results
     signal_strength: str = "unknown"
@@ -136,6 +140,7 @@ class RunDiagnostics:
             "SCRAPING STATS:",
             f"  Broad topics: {self.broad_topics_completed}/{self.broad_topics_attempted}",
             f"  Broad tweets: {self.broad_tweets_scraped}",
+            f"  Twitter trends fetched: {self.twitter_trends_fetched}",
             f"  Trends discovered: {self.trends_discovered}",
             f"  Trends after LLM filter: {self.trends_filtered_by_llm}",
             f"  Deep dive trends: {self.deep_dive_trends_completed}/{self.deep_dive_trends_attempted}",
@@ -152,6 +157,11 @@ class RunDiagnostics:
             f"  LLM calls: {self.llm_calls_made} ({self.llm_tokens_used} tokens)",
             f"  Fact checks: {self.fact_checks_performed}",
             f"  Temporal patterns: {self.temporal_patterns_detected}",
+            "",
+            "ML ANALYSIS:",
+            f"  Bot suspects found: {self.bot_suspects_found}",
+            f"  Accounts scored: {self.accounts_scored}",
+            f"  ML/LLM agreement rate: {self.ml_agreement_rate:.1%}",
             "",
             "PERFORMANCE:",
             f"  Step 1 (broad scraping): {self.time_step1_scraping:.1f}s",

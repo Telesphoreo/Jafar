@@ -220,10 +220,6 @@ class ToolRegistry:
                             "type": "string",
                             "description": "1 sentence. Be direct, be memorable. 'Save your attention for another day' is valid."
                         },
-                        "news_roundup": {
-                            "type": "string",
-                            "description": "Bullet-pointed summary of today's economic news headlines with brief commentary. ALWAYS populate this when news headlines are provided in the prompt. Use '•' bullets. Example: '• Fed holds rates steady - no surprise, markets shrug\\n• NVIDIA earnings beat estimates by 15%'"
-                        }
                     },
                     "required": ["subject_line", "signal_strength", "assessment", "trends_observed", "actionability", "actionability_reason", "bottom_line"]
                 }
