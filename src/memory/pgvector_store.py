@@ -51,7 +51,7 @@ class PgVectorStore(VectorStore):
         async with engine.begin() as conn:
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS idx_memory_embedding "
-                "ON memory_records USING vchordrq (embedding vector_cos_ops)"
+                "ON memory_records USING vchordrq (embedding vector_cosine_ops)"
             ))
 
         count = await self.count()

@@ -81,7 +81,7 @@ safe_remove_pid_file() {
         local real_path
         real_path="$(realpath "$PID_FILE" 2>/dev/null)" || real_path="$PID_FILE"
         local expected_path
-        expected_path="$(realpath "${SCRIPT_DIR}/pipeline.pid" 2>/dev/null)" || expected_path="${SCRIPT_DIR}/pipeline.pid"
+        expected_path="$(realpath "${RUN_DIR}/pipeline.pid" 2>/dev/null)" || expected_path="${RUN_DIR}/pipeline.pid"
 
         if [[ "$real_path" == "$expected_path" ]]; then
             rm -f -- "$PID_FILE"
