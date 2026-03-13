@@ -1,7 +1,7 @@
 """
-pgvecto.rs PostgreSQL Vector Store Implementation.
+VectorChord PostgreSQL Vector Store Implementation.
 
-Uses SQLAlchemy async with the pgvecto.rs extension for vector similarity search.
+Uses SQLAlchemy async with VectorChord (pgvector + vchord) for vector similarity search.
 """
 
 import logging
@@ -20,7 +20,7 @@ logger = logging.getLogger("jafar.memory.pgvector")
 
 class PgVectorStore(VectorStore):
     """
-    PostgreSQL + pgvecto.rs implementation of the vector store.
+    PostgreSQL + VectorChord implementation of the vector store.
 
     Uses SQLAlchemy async sessions from src.database instead of
     managing its own connection pool.
@@ -36,25 +36,26 @@ class PgVectorStore(VectorStore):
         self.embedding_dimension = embedding_dimension
 
     async def initialize(self) -> None:
-        """Create the pgvecto.rs extension, tables, and HNSW index."""
+        """Create the VectorChord extensions, tables, and index."""
         engine = get_engine()
 
-        # Create the pgvecto.rs extension (note: extension name is "vectors")
+        # Create pgvector + vchord extensions (VectorChord depends on pgvector)
         async with engine.begin() as conn:
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vectors"))
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vchord CASCADE"))
 
         # Create ORM tables
         await create_tables()
 
-        # Create HNSW index on the embedding column
+        # Create VectorChord RaBitQ index on the embedding column
         async with engine.begin() as conn:
             await conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS idx_memory_embedding "
-                "ON memory_records USING vectors (embedding vector_cos_ops)"
+                "ON memory_records USING vchordrq (embedding vector_cos_ops)"
             ))
 
         count = await self.count()
-        logger.info(f"pgvector initialized with {count} existing memories")
+        logger.info(f"VectorChord initialized with {count} existing memories")
 
     async def store(self, record: MemoryRecord, embedding: list[float]) -> str:
         """Store a memory record with its embedding via SQLAlchemy merge."""

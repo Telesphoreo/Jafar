@@ -34,7 +34,10 @@ import sys
 from datetime import datetime
 
 from .config import config
-from .scraper import TwitterScraper, ScrapedTweet, fetch_trending_topics, store_tweets
+from .scraper import (
+    TwitterScraper, ScrapedTweet, fetch_trending_topics,
+    load_broad_tweets_from_db, load_trend_tweets_from_db,
+)
 from .analyzer import TrendAnalyzer, DiscoveredTrend, StatisticalTrendAnalyzer
 from .llm import create_llm_provider, LLMProvider
 from .reporter import create_reporter_from_config
@@ -884,15 +887,15 @@ async def run_pipeline() -> bool:
         state = checkpoint.get_state()
         logger.info(f"Resuming from checkpoint: {state.run_id}")
         logger.info(
-            f"  - Scout (broad scraping): {'DONE' if state.step1_complete else f'{len(state.topics_completed)}/{len(state.topics_completed) + len(state.topics_remaining)} topics'}")
+            f"  - Scout (broad scraping): {'DONE' if state.step1_complete else f'{len(state.topics_completed)}/{len(config.app.broad_topics)} topics'}")
         logger.info(f"  - Investigator (trends): {'DONE' if state.step2_complete else 'PENDING'}")
-        logger.info(f"  - Deep Dive: {'DONE' if state.step3_complete else 'PENDING'}")
+        logger.info(f"  - Deep Dive: {'DONE' if state.step3_complete else f'{len(state.trends_completed)}/{len(state.trends)} trends'}")
         logger.info(f"  - Analyst (LLM): {'DONE' if state.step4_complete else 'PENDING'}")
         logger.info(f"  - Reporter (email): {'DONE' if state.step5_complete else 'PENDING'}")
         logger.info(f"  - History: {'DONE' if state.step6_complete else 'PENDING'}")
     else:
         logger.info("Starting fresh pipeline run")
-        checkpoint.start_new_run(topics=config.app.broad_topics)
+        checkpoint.start_new_run()
         state = checkpoint.get_state()
 
     # Initialize database
@@ -976,58 +979,39 @@ async def run_pipeline() -> bool:
         # STEP 1: SCOUT - Broad Twitter Search (with checkpointing)
         # ============================================================
         step1_start = time.time()
+        diagnostics.diagnostics.broad_topics_attempted = len(config.app.broad_topics)
+
         if not state.step1_complete:
             logger.info("\n[STEP 1/11] THE SCOUT: Gathering broad economic tweets...")
-            logger.info(f"Topics: {len(state.topics_remaining)} remaining, {len(state.topics_completed)} completed")
+            logger.info(f"Topics: {len(config.app.broad_topics) - len(state.topics_completed)} remaining, {len(state.topics_completed)} completed")
 
-            diagnostics.diagnostics.broad_topics_attempted = len(config.app.broad_topics)
-
-            # Callback to save progress after each topic
-            def on_topic_done(topic: str, tweets: list[ScrapedTweet]) -> None:
-                checkpoint.mark_topic_complete(topic, tweets)
-
-            # Get any already-collected tweets from checkpoint
-            existing_tweets = checkpoint.get_broad_tweets() if state.topics_completed else []
-
-            # Scrape remaining topics incrementally
-            new_tweets = await scraper.get_broad_tweets_incremental(
+            stored = await scraper.get_broad_tweets(
                 topics=config.app.broad_topics,
                 limit_per_topic=config.app.broad_tweet_limit,
-                on_topic_complete=on_topic_done,
                 skip_topics=state.topics_completed,
-                timeout=config.app.search_timeout,
+                pipeline_run=state.run_id,
+                on_topic_complete=lambda topic, tweets: checkpoint.mark_topic_done(topic),
             )
+            diagnostics.diagnostics.tweets_stored += stored
 
-            broad_tweets = existing_tweets + new_tweets
             checkpoint.complete_step1()
             state = checkpoint.get_state()
-
             diagnostics.diagnostics.broad_topics_completed = len(state.topics_completed)
-            diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
         else:
             logger.info("\n[STEP 1/11] Skipping (already complete)")
-            broad_tweets = checkpoint.get_broad_tweets()
-            diagnostics.diagnostics.broad_topics_attempted = len(config.app.broad_topics)
             diagnostics.diagnostics.broad_topics_completed = len(config.app.broad_topics)
-            diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
 
+        # Load all broad tweets from DB (works for both fresh and resumed runs)
+        broad_tweets = await load_broad_tweets_from_db(state.run_id, state.topics_completed)
+        diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
         diagnostics.diagnostics.time_step1_scraping = time.time() - step1_start
 
         if not broad_tweets:
-            logger.error("No tweets retrieved. Check twscrape setup.")
+            logger.error(f"No tweets retrieved for run_id={state.run_id}. Check twscrape setup or DB.")
             diagnostics.diagnostics.add_error("No tweets retrieved from broad scraping")
             return False
 
         logger.info(f"Total broad tweets: {len(broad_tweets)}")
-
-        # Store broad tweets for ML training data
-        try:
-            broad_stored = await store_tweets(broad_tweets, source_query="broad_scrape", pipeline_run=state.run_id)
-            diagnostics.diagnostics.tweets_stored += broad_stored
-            logger.info(f"Stored {broad_stored} broad tweets for ML training")
-        except Exception as e:
-            logger.warning(f"Failed to store broad tweets: {e}")
-            diagnostics.diagnostics.add_warning(f"Failed to store broad tweets: {e}")
 
         # ============================================================
         # STEP 1b: TWITTER TRENDS - Fetch trending topics
@@ -1135,57 +1119,33 @@ async def run_pipeline() -> bool:
         # STEP 4: DEEP DIVE - Targeted Scraping
         # ============================================================
         step3_start = time.time()
+        diagnostics.diagnostics.deep_dive_trends_attempted = len(trends) if trends else 0
+
         if not state.step3_complete:
             logger.info("\n[STEP 4/11] THE DEEP DIVE: Gathering sentiment for each trend...")
 
-            diagnostics.diagnostics.deep_dive_trends_attempted = len(trends) if trends else 0
-
-            # Callback to save progress after each trend
-            def on_trend_done(trend: str, tweets: list[ScrapedTweet]) -> None:
-                checkpoint.mark_trend_scraped(trend, tweets)
-
-            already_scraped = list(state.trend_tweets.keys())
-
-            new_trend_tweets = await scraper.get_specific_sentiment_incremental(
+            stored = await scraper.get_specific_sentiment(
                 trends=trends,
                 limit_per_trend=config.app.specific_tweet_limit,
-                on_trend_complete=on_trend_done,
-                skip_trends=already_scraped,
-                timeout=config.app.search_timeout,
+                skip_trends=state.trends_completed,
+                pipeline_run=state.run_id,
+                on_trend_complete=lambda trend, tweets: checkpoint.mark_trend_done(trend),
             )
-
-            # Merge with already-scraped trends
-            trend_tweets = checkpoint.get_trend_tweets()
-            trend_tweets.update(new_trend_tweets)
-
-            diagnostics.diagnostics.deep_dive_trends_completed = len(trend_tweets)
-            diagnostics.diagnostics.deep_dive_tweets_scraped = sum(len(t) for t in trend_tweets.values())
+            diagnostics.diagnostics.tweets_stored += stored
 
             checkpoint.complete_step3()
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 4/11] Skipping (already complete)")
-            trend_tweets = checkpoint.get_trend_tweets()
-            diagnostics.diagnostics.deep_dive_trends_attempted = len(trends) if trends else 0
-            diagnostics.diagnostics.deep_dive_trends_completed = len(trend_tweets)
-            diagnostics.diagnostics.deep_dive_tweets_scraped = sum(len(t) for t in trend_tweets.values())
 
+        # Load all trend tweets from DB (works for both fresh and resumed runs)
+        trend_tweets = await load_trend_tweets_from_db(state.run_id, trends)
+        diagnostics.diagnostics.deep_dive_trends_completed = len([t for t in trends if trend_tweets.get(t)])
+        diagnostics.diagnostics.deep_dive_tweets_scraped = sum(len(v) for v in trend_tweets.values())
         diagnostics.diagnostics.time_step3_deep_dive = time.time() - step3_start
 
         total_tweets = sum(len(t) for t in trend_tweets.values())
         logger.info(f"Total trend tweets: {total_tweets}")
-
-        # Store deep dive tweets for ML training data
-        try:
-            deep_stored = 0
-            for trend, tweets_list in trend_tweets.items():
-                count = await store_tweets(tweets_list, source_query=trend, pipeline_run=state.run_id)
-                deep_stored += count
-            diagnostics.diagnostics.tweets_stored += deep_stored
-            logger.info(f"Stored {deep_stored} deep dive tweets for ML training")
-        except Exception as e:
-            logger.warning(f"Failed to store deep dive tweets: {e}")
-            diagnostics.diagnostics.add_warning(f"Failed to store deep dive tweets: {e}")
 
         # ============================================================
         # STEP 5: FACT CHECKER - Init for LLM tool use

@@ -72,10 +72,10 @@ class EmailReporter:
         sections = []
 
         # Table styles (inline for email compatibility)
-        th_style = "padding: 10px; border-bottom: 2px solid #000; text-align: left; font-family: monospace; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; background-color: #fafafa;"
-        td_style = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px;"
+        th_style = "padding: 10px; border-bottom: 2px solid #000; text-align: left; font-family: monospace; font-size: 12px; letter-spacing: 1px; background-color: #fafafa; color: #111;"
+        td_style = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; background-color: #fff;"
         td_alt_style = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; background-color: #fafafa;"
-        section_header_style = "font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;"
+        section_header_style = "font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; letter-spacing: 1px;"
 
         # --- Section header ---
         sections.append("""
@@ -107,7 +107,7 @@ class EmailReporter:
                     <td style="{row_style} color: {score_color}; font-weight: bold;">{bot_score:.2f}</td>
                     <td style="{row_style}">{llm_verdict}</td>
                     <td style="{row_style}">{confidence:.2f}</td>
-                    <td style="{row_style} font-size: 11px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">{reasoning}</td>
+                    <td style="{row_style} font-size: 11px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #666;">{reasoning}</td>
                 </tr>
                 """)
 
@@ -170,7 +170,7 @@ class EmailReporter:
             f1 = ml_evaluation.get("f1_score", 0.0)
 
             # Color code agreement rate
-            agreement_color = "#00aa00" if agreement >= 0.8 else "#c80" if agreement >= 0.6 else "#c00"
+            agreement_color = "#333" if agreement >= 0.8 else "#c80" if agreement >= 0.6 else "#c00"
 
             sections.append(f"""
             <div style="padding: 20px 40px; border-bottom: 1px solid #eee;">
@@ -215,7 +215,7 @@ class EmailReporter:
                         <td style="{row_style}">@{username}</td>
                         <td style="{row_style} font-weight: bold;">{ml_score:.2f}</td>
                         <td style="{row_style}">{llm_class}</td>
-                        <td style="{row_style} font-size: 11px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">{reason}</td>
+                        <td style="{row_style} font-size: 11px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #666;">{reason}</td>
                     </tr>
                     """)
 
@@ -339,14 +339,13 @@ class EmailReporter:
         """
         today = datetime.now().strftime("%B %d, %Y")
 
-        # Minimalist signal indicators (Monochrome/High Contrast)
-        signal_styles = {
-            "high": "border-left: 4px solid #000000; background-color: #fafafa;",
-            "medium": "border-left: 4px solid #666666; background-color: #fafafa;",
-            "low": "border-left: 4px solid #bbbbbb; background-color: #ffffff;",
-            "none": "border-left: 4px solid #eeeeee; background-color: #ffffff; color: #888888;",
+        signal_configs = {
+            "high": {"border_color": "#000000"},
+            "medium": {"border_color": "#666666"},
+            "low": {"border_color": "#bbbbbb"},
+            "none": {"border_color": "#eeeeee"},
         }
-        signal_style = signal_styles.get(signal_strength, signal_styles["low"])
+        signal_config = signal_configs.get(signal_strength, signal_configs["low"])
         signal_text = signal_strength.capitalize()
 
         # Format trends as simple tags with temporal badges
@@ -384,20 +383,35 @@ class EmailReporter:
 </head>
 <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; line-height: 1.6; margin: 0; padding: 40px 20px; background-color: #f6f6f6;">
     <div style="max-width: 850px; margin: 0 auto; border: 1px solid #000; background-color: #fff; box-shadow: 10px 10px 0px #000;">
-        
-        <!-- Header -->
-        <div style="border-bottom: 1px solid #000; padding: 30px 40px; background-color: #000; color: #fff;">
-            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; opacity: 0.8;">
+
+        <!-- Header with perspective grid SVG -->
+        <div style="border-bottom: 1px solid #333; padding: 30px 40px; background-color: #0a0a0a; color: #ffffff; position: relative;">
+            <svg width="100%" height="100%" style="position: absolute; top: 0; left: 0; pointer-events: none;">
+                <line x1="50%" y1="0" x2="0%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="10%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="20%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="30%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="40%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="60%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="70%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="80%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="90%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="100%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="0" y1="40%" x2="100%" y2="40%" stroke="#1a1a1a" stroke-width="0.5"/>
+                <line x1="0" y1="60%" x2="100%" y2="60%" stroke="#1a1a1a" stroke-width="0.5"/>
+                <line x1="0" y1="80%" x2="100%" y2="80%" stroke="#1a1a1a" stroke-width="0.5"/>
+            </svg>
+            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; color: #888888; position: relative;">
                 Jafar Intelligence System
             </div>
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="position: relative;">
                 <tr>
                     <td align="left">
-                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px;">
+                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; color: #ffffff;">
                             Market Digest
                         </h1>
                     </td>
-                    <td align="right" style="font-family: monospace; font-size: 16px; opacity: 0.9;">
+                    <td align="right" style="font-family: monospace; font-size: 16px; color: #888888;">
                         {today}
                     </td>
                 </tr>
@@ -405,25 +419,27 @@ class EmailReporter:
         </div>
 
         <!-- Signal Banner -->
-        <div style="padding: 20px 40px; {signal_style} border-bottom: 1px solid #000;">
-            <span style="font-family: monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px;">
-                Signal strength: {signal_text}
+        <div style="padding: 20px 40px; border-left: 4px solid {signal_config['border_color']}; border-bottom: 1px solid #000;">
+            <span style="font-family: monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px; color: #111;">
+                Signal Strength: {signal_text}
             </span>
         </div>
 
-        <!-- Metadata Row -->
-        <div style="display: flex; border-bottom: 1px solid #000; font-family: monospace; font-size: 13px; background-color: #fcfcfc;">
-            <div style="padding: 15px 40px; border-right: 1px solid #000; flex: 1;">
-                Analyzed: <strong>{tweet_count}</strong> tweets
-            </div>
-            <div style="padding: 15px 40px; flex: 1;">
-                Detected: <strong>{len(trends)}</strong> trends
-            </div>
-        </div>
+        <!-- Metadata Row (table layout for email compatibility) -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-bottom: 1px solid #000; font-family: monospace; font-size: 13px; background-color: #fcfcfc;">
+            <tr>
+                <td style="padding: 15px 40px; border-right: 1px solid #000; width: 50%;">
+                    Analyzed: <strong>{tweet_count}</strong> tweets
+                </td>
+                <td style="padding: 15px 40px; width: 50%;">
+                    Detected: <strong>{len(trends)}</strong> trends
+                </td>
+            </tr>
+        </table>
 
         <!-- Trends Section -->
-        <div style="padding: 25px 40px; border-bottom: 1px solid #eee; background-color: #fff;">
-            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">
+        <div style="padding: 25px 40px; border-bottom: 1px solid #000; background-color: #fff;">
+            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 12px; letter-spacing: 1px;">
                 Current Market Topics
             </div>
             <div style="line-height: 1.8;">
@@ -443,12 +459,12 @@ class EmailReporter:
         {self._generate_ml_section_html(ml_results) if ml_results else ''}
 
         <!-- Footer -->
-        <div style="border-top: 1px solid #000; padding: 30px 40px; font-size: 13px; color: #444; background-color: #fafafa;">
+        <div style="border-top: 1px solid #ddd; padding: 30px 40px; font-size: 13px; color: #444; background-color: #fafafa;">
             <table width="100%" cellpadding="0" cellspacing="0" border="0">
                 <tr>
                     <td style="padding-bottom: 20px;">
                         <div style="font-weight: bold; font-size: 15px; margin-bottom: 5px; color: #000;">Jafar</div>
-                        <div style="opacity: 0.8;">The villain to BlackRock's Aladdin.</div>
+                        <div style="color: #999;">The villain to BlackRock's Aladdin.</div>
                     </td>
                 </tr>
                 <tr>
@@ -461,8 +477,11 @@ class EmailReporter:
             </table>
         </div>
     </div>
-    <div style="max-width: 850px; margin: 20px auto 0; text-align: center; font-family: monospace; font-size: 10px; color: #bbb; letter-spacing: 2px;">
-        End of transmission
+    <!-- End of transmission -->
+    <div style="max-width: 850px; margin: 20px auto 0; text-align: center; padding: 15px 0;">
+        <span style="font-family: monospace; font-size: 10px; color: #bbb; letter-spacing: 2px;">
+            End of transmission
+        </span>
     </div>
 </body>
 </html>
@@ -638,12 +657,12 @@ Disclaimer: Not financial advice.
 
         # Determine status styling
         if diagnostics.has_critical_errors:
-            status_text = "Critical error"
+            status_text = "Critical Error"
             status_color = "#ff0000"
             status_bg = "#fff0f0"
         elif diagnostics.has_warnings:
             status_text = "Warning"
-            status_color = "#ff8800"
+            status_color = "#ffaa00"
             status_bg = "#fff8f0"
         else:
             status_text = "Operational"
@@ -655,8 +674,8 @@ Disclaimer: Not financial advice.
         if diagnostics.errors:
             errors_list = "".join(f"<li style='margin: 5px 0; font-family: monospace; font-size: 13px; color: #c00;'>{e}</li>" for e in diagnostics.errors)
             errors_html = f"""
-            <div style="margin: 20px 0; padding: 20px; background-color: #fff5f5; border-left: 4px solid #c00;">
-                <div style="font-weight: bold; margin-bottom: 10px; color: #c00;">Errors detected:</div>
+            <div style="margin: 20px 40px; padding: 20px; background-color: #fff5f5; border-left: 4px solid #c00;">
+                <div style="font-weight: bold; margin-bottom: 10px; color: #c00;">Errors Detected:</div>
                 <ul style="margin: 0; padding-left: 20px;">
                     {errors_list}
                 </ul>
@@ -667,13 +686,18 @@ Disclaimer: Not financial advice.
         if diagnostics.warnings:
             warnings_list = "".join(f"<li style='margin: 5px 0; font-family: monospace; font-size: 13px; color: #c80;'>{w}</li>" for w in diagnostics.warnings)
             warnings_html = f"""
-            <div style="margin: 20px 0; padding: 20px; background-color: #fffef5; border-left: 4px solid #c80;">
+            <div style="margin: 20px 40px; padding: 20px; background-color: #fffef5; border-left: 4px solid #c80;">
                 <div style="font-weight: bold; margin-bottom: 10px; color: #c80;">Warnings:</div>
                 <ul style="margin: 0; padding-left: 20px;">
                     {warnings_list}
                 </ul>
             </div>
             """
+
+        # Admin table styles
+        admin_td = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 14px; background-color: #fff;"
+        admin_td_alt = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 14px; background-color: #fafafa;"
+        admin_section_header = "font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; letter-spacing: 1px;"
 
         html = f"""
 <!DOCTYPE html>
@@ -686,19 +710,34 @@ Disclaimer: Not financial advice.
 <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; line-height: 1.6; margin: 0; padding: 40px 20px; background-color: #f6f6f6;">
     <div style="max-width: 850px; margin: 0 auto; border: 1px solid #000; background-color: #fff; box-shadow: 10px 10px 0px #000;">
 
-        <!-- Header -->
-        <div style="border-bottom: 1px solid #000; padding: 30px 40px; background-color: #000; color: #fff;">
-            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; opacity: 0.8;">
+        <!-- Header with perspective grid SVG -->
+        <div style="border-bottom: 1px solid #333; padding: 30px 40px; background-color: #0a0a0a; color: #ffffff; position: relative;">
+            <svg width="100%" height="100%" style="position: absolute; top: 0; left: 0; pointer-events: none;">
+                <line x1="50%" y1="0" x2="0%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="10%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="20%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="30%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="40%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="60%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="70%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="80%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="90%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="50%" y1="0" x2="100%" y2="100%" stroke="#1a1a1a" stroke-width="1"/>
+                <line x1="0" y1="40%" x2="100%" y2="40%" stroke="#1a1a1a" stroke-width="0.5"/>
+                <line x1="0" y1="60%" x2="100%" y2="60%" stroke="#1a1a1a" stroke-width="0.5"/>
+                <line x1="0" y1="80%" x2="100%" y2="80%" stroke="#1a1a1a" stroke-width="0.5"/>
+            </svg>
+            <div style="font-family: monospace; font-size: 13px; letter-spacing: 2px; margin-bottom: 10px; color: #888888; position: relative;">
                 Jafar Admin Diagnostics
             </div>
-            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="position: relative;">
                 <tr>
                     <td align="left">
-                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px;">
+                        <h1 style="margin: 0; font-size: 32px; font-weight: 700; letter-spacing: -1px; color: #ffffff;">
                             System Report
                         </h1>
                     </td>
-                    <td align="right" style="font-family: monospace; font-size: 16px; opacity: 0.9;">
+                    <td align="right" style="font-family: monospace; font-size: 16px; color: #888888;">
                         {today}
                     </td>
                 </tr>
@@ -706,7 +745,7 @@ Disclaimer: Not financial advice.
         </div>
 
         <!-- Status Banner -->
-        <div style="padding: 20px 40px; background-color: {status_bg}; border-bottom: 1px solid #000; border-left: 4px solid {status_color};">
+        <div style="padding: 20px 40px; background-color: {status_bg}; border-bottom: 1px solid #eee; border-left: 4px solid {status_color};">
             <span style="font-family: monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px; color: {status_color};">
                 Status: {status_text}
             </span>
@@ -715,142 +754,142 @@ Disclaimer: Not financial advice.
 
         <!-- Run Stats -->
         <div style="padding: 30px 40px; border-bottom: 1px solid #eee;">
-            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;">
+            <div style="{admin_section_header}">
                 Run Statistics
             </div>
 
-            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace;">
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Run ID</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.run_id}</td>
+            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace; border-collapse: collapse;">
+                <tr>
+                    <td style="{admin_td_alt}"><strong>Run ID</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.run_id}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Duration</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.duration_formatted}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Signal Strength</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.signal_strength.upper()}</td>
+                    <td style="{admin_td}"><strong>Duration</strong></td>
+                    <td style="{admin_td}">{diagnostics.duration_formatted}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Email Sent</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{'✓ Yes' if diagnostics.email_sent else '✗ No'}</td>
+                    <td style="{admin_td_alt}"><strong>Signal Strength</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.signal_strength.capitalize()}</td>
+                </tr>
+                <tr>
+                    <td style="{admin_td}"><strong>Email Sent</strong></td>
+                    <td style="{admin_td}">{'Yes' if diagnostics.email_sent else 'No'}</td>
                 </tr>
             </table>
         </div>
 
         <!-- Scraping Stats -->
         <div style="padding: 30px 40px; border-bottom: 1px solid #eee;">
-            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;">
+            <div style="{admin_section_header}">
                 Scraping Statistics
             </div>
 
-            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace;">
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Broad Topics</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.broad_topics_completed}/{diagnostics.broad_topics_attempted}</td>
+            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace; border-collapse: collapse;">
+                <tr>
+                    <td style="{admin_td_alt}"><strong>Broad Topics</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.broad_topics_completed}/{diagnostics.broad_topics_attempted}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Broad Tweets</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.broad_tweets_scraped}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Trends Discovered</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.trends_discovered}</td>
+                    <td style="{admin_td}"><strong>Broad Tweets</strong></td>
+                    <td style="{admin_td}">{diagnostics.broad_tweets_scraped}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>After LLM Filter</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.trends_filtered_by_llm}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Deep Dive Trends</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.deep_dive_trends_completed}/{diagnostics.deep_dive_trends_attempted}</td>
+                    <td style="{admin_td_alt}"><strong>Trends Discovered</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.trends_discovered}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Deep Dive Tweets</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.deep_dive_tweets_scraped}</td>
+                    <td style="{admin_td}"><strong>After LLM Filter</strong></td>
+                    <td style="{admin_td}">{diagnostics.trends_filtered_by_llm}</td>
                 </tr>
-                <tr style="background-color: #fafafa; font-weight: bold;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Total Tweets</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.total_tweets}</td>
+                <tr>
+                    <td style="{admin_td_alt}"><strong>Deep Dive Trends</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.deep_dive_trends_completed}/{diagnostics.deep_dive_trends_attempted}</td>
+                </tr>
+                <tr>
+                    <td style="{admin_td}"><strong>Deep Dive Tweets</strong></td>
+                    <td style="{admin_td}">{diagnostics.deep_dive_tweets_scraped}</td>
+                </tr>
+                <tr>
+                    <td style="{admin_td_alt}"><strong>Total Tweets</strong></td>
+                    <td style="{admin_td_alt} font-weight: bold;">{diagnostics.total_tweets}</td>
                 </tr>
             </table>
         </div>
 
         <!-- Twitter Accounts -->
         <div style="padding: 30px 40px; border-bottom: 1px solid #eee;">
-            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;">
+            <div style="{admin_section_header}">
                 Twitter Account Health
             </div>
 
-            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace;">
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Active Accounts</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.twitter_accounts_active}/{diagnostics.twitter_accounts_total}</td>
+            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace; border-collapse: collapse;">
+                <tr>
+                    <td style="{admin_td_alt}"><strong>Active Accounts</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.twitter_accounts_active}/{diagnostics.twitter_accounts_total}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Rate Limited</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.twitter_accounts_rate_limited}</td>
+                    <td style="{admin_td}"><strong>Rate Limited</strong></td>
+                    <td style="{admin_td}">{diagnostics.twitter_accounts_rate_limited}</td>
                 </tr>
             </table>
         </div>
 
         <!-- Analysis Stats -->
         <div style="padding: 30px 40px; border-bottom: 1px solid #eee;">
-            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;">
+            <div style="{admin_section_header}">
                 Analysis & Processing
             </div>
 
-            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace;">
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>LLM Calls</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.llm_calls_made}</td>
+            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace; border-collapse: collapse;">
+                <tr>
+                    <td style="{admin_td_alt}"><strong>LLM Calls</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.llm_calls_made}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>LLM Tokens Used</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.llm_tokens_used:,}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Fact Checks</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.fact_checks_performed}</td>
+                    <td style="{admin_td}"><strong>LLM Tokens Used</strong></td>
+                    <td style="{admin_td}">{diagnostics.llm_tokens_used:,}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Temporal Patterns</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.temporal_patterns_detected}</td>
+                    <td style="{admin_td_alt}"><strong>Fact Checks</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.fact_checks_performed}</td>
+                </tr>
+                <tr>
+                    <td style="{admin_td}"><strong>Temporal Patterns</strong></td>
+                    <td style="{admin_td}">{diagnostics.temporal_patterns_detected}</td>
                 </tr>
             </table>
         </div>
 
         <!-- Performance -->
         <div style="padding: 30px 40px; border-bottom: 1px solid #eee;">
-            <div style="font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 1px;">
+            <div style="{admin_section_header}">
                 Performance Breakdown
             </div>
 
-            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace;">
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Step 1: Broad Scraping</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.time_step1_scraping:.1f}s</td>
+            <table width="100%" cellpadding="8" cellspacing="0" style="font-size: 14px; font-family: monospace; border-collapse: collapse;">
+                <tr>
+                    <td style="{admin_td_alt}"><strong>Step 1: Broad Scraping</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.time_step1_scraping:.1f}s</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Step 2: Trend Analysis</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.time_step2_analysis:.1f}s</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Step 3: Deep Dive</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.time_step3_deep_dive:.1f}s</td>
+                    <td style="{admin_td}"><strong>Step 2: Trend Analysis</strong></td>
+                    <td style="{admin_td}">{diagnostics.time_step2_analysis:.1f}s</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Step 4: LLM Analysis</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.time_step4_llm:.1f}s</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Step 5: Email</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.time_step5_email:.1f}s</td>
+                    <td style="{admin_td_alt}"><strong>Step 3: Deep Dive</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.time_step3_deep_dive:.1f}s</td>
                 </tr>
                 <tr>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;"><strong>Step 6: Storage</strong></td>
-                    <td style="padding: 10px; border-bottom: 1px solid #eee;">{diagnostics.time_step6_storage:.1f}s</td>
+                    <td style="{admin_td}"><strong>Step 4: LLM Analysis</strong></td>
+                    <td style="{admin_td}">{diagnostics.time_step4_llm:.1f}s</td>
+                </tr>
+                <tr>
+                    <td style="{admin_td_alt}"><strong>Step 5: Email</strong></td>
+                    <td style="{admin_td_alt}">{diagnostics.time_step5_email:.1f}s</td>
+                </tr>
+                <tr>
+                    <td style="{admin_td}"><strong>Step 6: Storage</strong></td>
+                    <td style="{admin_td}">{diagnostics.time_step6_storage:.1f}s</td>
                 </tr>
             </table>
         </div>
@@ -859,7 +898,7 @@ Disclaimer: Not financial advice.
         {warnings_html}
 
         <!-- Footer -->
-        <div style="border-top: 1px solid #000; padding: 30px 40px; font-size: 13px; color: #444; background-color: #fafafa;">
+        <div style="border-top: 1px solid #eee; padding: 30px 40px; font-size: 13px; color: #999; background-color: #fafafa;">
             <p style="margin: 0; font-family: monospace; font-size: 11px; color: #999; letter-spacing: 1px;">
                 Jafar Admin Diagnostics | {today}
             </p>

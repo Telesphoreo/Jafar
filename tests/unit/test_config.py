@@ -163,34 +163,3 @@ class TestConfigValidation:
         assert any("SMTP" in e for e in errors)
 
 
-class TestWorkerLogFilter:
-    """Tests for WorkerLogFilter."""
-
-    def test_filter_adds_worker_info(self):
-        """Test that filter adds worker_info to log records."""
-        import logging
-
-        from src.config import WorkerLogFilter, worker_context
-
-        filter_instance = WorkerLogFilter()
-        record = logging.LogRecord(
-            name="test",
-            level=logging.INFO,
-            pathname="test.py",
-            lineno=1,
-            msg="test message",
-            args=(),
-            exc_info=None,
-        )
-
-        # Without worker context
-        filter_instance.filter(record)
-        assert record.worker_info == ""
-
-        # With worker context
-        worker_context.set(5)
-        filter_instance.filter(record)
-        assert record.worker_info == " [Worker 5]"
-
-        # Clean up
-        worker_context.set(None)

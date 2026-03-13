@@ -75,11 +75,7 @@ email:
 # Scraping Configuration
 scraping:
   # Tweets per broad topic during discovery phase
-  # Each worker paces at ~10-15s per page (15 tweets), so:
-  #   50 tweets  = ~30-45s per topic
-  #   100 tweets = ~60-90s per topic
-  #   200 tweets = ~2-3 min per topic
-  # More accounts = more parallel workers (faster overall), NOT higher limits.
+  # twscrape handles rate limiting and pacing internally.
   # Recommended: 50-100 for balanced speed/coverage
   broad_tweet_limit: 75
 
@@ -96,10 +92,6 @@ scraping:
   # Lower = more trends (including noise), Higher = only strong signals
   min_trend_mentions: 3
   min_trend_authors: 2
-
-  # Timeout for each search query in seconds
-  # Prevents hanging if Twitter API becomes unresponsive
-  search_timeout: 120
 
 # Broad Search Topics
 # These topics cast a wide net to discover trending financial content.
@@ -211,7 +203,7 @@ broad_topics:
   - supply chain risk OR national security
 
 # Vector Memory Settings (for historical parallels)
-# Uses pgvecto.rs (PostgreSQL vectors extension) for storage.
+# Uses VectorChord (pgvector + vchord PostgreSQL extensions) for storage.
 memory:
   # Enable/disable semantic memory system
   enabled: true

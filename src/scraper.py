@@ -4,6 +4,10 @@ Twitter Scraper Module using twscrape.
 Handles asynchronous scraping of Twitter/X for broad topic discovery
 and specific entity sentiment gathering.
 
+twscrape handles rate limiting, account rotation, request jitter, and
+ban detection internally. This module focuses on search orchestration,
+DB persistence, and pipeline integration.
+
 IMPORTANT: Before running this script, you must add Twitter accounts to twscrape.
 
 1. Create a file called `accounts.txt` with your Twitter credentials:
@@ -24,16 +28,13 @@ IMPORTANT: Before running this script, you must add Twitter accounts to twscrape
 This populates the accounts.db SQLite database that twscrape uses for authentication.
 """
 
-import asyncio
 import logging
-import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from twscrape import API
 from twscrape.models import Tweet
-
-from .config import worker_context
 
 logger = logging.getLogger("jafar.scraper")
 
@@ -84,17 +85,10 @@ async def fetch_trending_topics(api: API) -> list[str]:
     Returns list of trending topic strings (hashtags, terms, etc.)
     """
     try:
-        trends = await api.trends()
-        # trends should return trend objects — extract the name/text
         trend_names = []
-        for trend in trends:
-            # twscrape Trend objects typically have a .name attribute
+        async for trend in api.trends("trending"):
             if hasattr(trend, 'name'):
                 trend_names.append(trend.name)
-            elif isinstance(trend, str):
-                trend_names.append(trend)
-            elif isinstance(trend, dict) and 'name' in trend:
-                trend_names.append(trend['name'])
 
         logger.info(f"Fetched {len(trend_names)} trending topics from Twitter")
         return trend_names
@@ -113,31 +107,112 @@ async def store_tweets(tweets: list[ScrapedTweet], source_query: str, pipeline_r
 
     stored = 0
     session = await get_session()
-    async with session.begin():
-        for tweet in tweets:
-            model = TweetModel(
-                id=tweet.id,
-                username=tweet.username,
-                display_name=tweet.display_name,
-                content=tweet.text,
-                created_at=tweet.created_at,
-                likes=tweet.likes,
-                retweets=tweet.retweets,
-                replies=tweet.replies,
-                views=tweet.views,
-                language=tweet.language,
-                hashtags=tweet.hashtags,
-                source_query=source_query,
-                pipeline_run=pipeline_run,
-            )
-            await session.merge(model)
-            stored += 1
+    async with session:
+        async with session.begin():
+            for tweet in tweets:
+                model = TweetModel(
+                    id=tweet.id,
+                    username=tweet.username,
+                    display_name=tweet.display_name,
+                    content=tweet.text,
+                    created_at=tweet.created_at,
+                    likes=tweet.likes,
+                    retweets=tweet.retweets,
+                    replies=tweet.replies,
+                    views=tweet.views,
+                    language=tweet.language,
+                    hashtags=tweet.hashtags,
+                    source_query=source_query,
+                    pipeline_run=pipeline_run,
+                )
+                await session.merge(model)
+                stored += 1
     return stored
+
+
+def _tweet_model_to_scraped(row) -> ScrapedTweet:
+    """Convert a Tweet ORM model back to a ScrapedTweet."""
+    return ScrapedTweet(
+        id=row.id,
+        text=row.content,
+        username=row.username,
+        display_name=row.display_name or "Unknown",
+        created_at=row.created_at,
+        likes=row.likes,
+        retweets=row.retweets,
+        replies=row.replies,
+        views=row.views,
+        language=row.language,
+        hashtags=row.hashtags or [],
+        is_retweet=row.content.startswith("RT @") if row.content else False,
+    )
+
+
+async def load_broad_tweets_from_db(
+    pipeline_run: str,
+    completed_topics: list[str],
+) -> list[ScrapedTweet]:
+    """Load broad-scrape tweets for a pipeline run from the DB.
+
+    Only returns tweets whose source_query matches a completed topic,
+    avoiding contamination from deep-dive tweets on partial resumes.
+    """
+    from src.database import get_session
+    from src.models import Tweet as TweetModel
+    from sqlalchemy import select
+
+    if not completed_topics:
+        return []
+
+    session = await get_session()
+    async with session:
+        result = await session.execute(
+            select(TweetModel).where(
+                TweetModel.pipeline_run == pipeline_run,
+                TweetModel.source_query.in_(completed_topics),
+            )
+        )
+        rows = result.scalars().all()
+
+    return [_tweet_model_to_scraped(row) for row in rows]
+
+
+async def load_trend_tweets_from_db(
+    pipeline_run: str,
+    trends: list[str],
+) -> dict[str, list[ScrapedTweet]]:
+    """Load trend-specific tweets for a pipeline run from the DB."""
+    from src.database import get_session
+    from src.models import Tweet as TweetModel
+    from sqlalchemy import select
+
+    if not trends:
+        return {}
+
+    session = await get_session()
+    async with session:
+        result = await session.execute(
+            select(TweetModel).where(
+                TweetModel.pipeline_run == pipeline_run,
+                TweetModel.source_query.in_(trends),
+            )
+        )
+        rows = result.scalars().all()
+
+    out: dict[str, list[ScrapedTweet]] = {t: [] for t in trends}
+    for row in rows:
+        if row.source_query in out:
+            out[row.source_query].append(_tweet_model_to_scraped(row))
+    return out
 
 
 class TwitterScraper:
     """
     Asynchronous Twitter scraper using twscrape.
+
+    twscrape handles rate limiting, account rotation, and request pacing
+    internally via its account pool. This class provides search orchestration
+    and DB persistence.
 
     SETUP REQUIRED:
     Before using this class, you must add Twitter accounts via CLI:
@@ -146,8 +221,6 @@ class TwitterScraper:
     2. Run: twscrape add_accounts accounts.txt username:password:email:email_password
     3. Run: twscrape login_accounts (or with --manual flag for non-IMAP emails)
     4. Verify: twscrape accounts
-
-    The scraper handles account pools automatically for rate limit management.
     """
 
     def __init__(self, db_path: str = "accounts.db"):
@@ -238,18 +311,16 @@ class TwitterScraper:
         query: str,
         limit: int = 50,
         lang: str = "en",
-        timeout: int = 300,
-        worker_id: int | str | None = None,
     ) -> list[ScrapedTweet]:
         """
         Search for tweets matching a query.
+
+        twscrape handles rate limiting, account rotation, and pacing internally.
 
         Args:
             query: Search query (hashtag, keyword, or phrase).
             limit: Maximum number of tweets to retrieve.
             lang: Language filter (default: English).
-            timeout: Maximum time in seconds to wait for results (default: 300s/5min).
-            worker_id: Optional ID of the worker initiating the search for logging.
 
         Returns:
             List of ScrapedTweet objects.
@@ -257,68 +328,11 @@ class TwitterScraper:
         api = await self._get_api()
         tweets: list[ScrapedTweet] = []
 
-        # Add language filter to query
         search_query = f"{query} lang:{lang}"
-
-        # Check account availability and adjust timeout if rate limited
-        wait_time_needed = 0
-        try:
-            stats = await api.pool.stats()
-            active = stats.get("active", 0)
-            total = stats.get("total", 0)
-
-            if total > 0 and active == 0:
-                # All accounts rate limited. Twscrape will wait automatically.
-                # We need to ensure our timeout is longer than the wait time.
-                # Since we can't easily get the exact reset time from stats here,
-                # we'll assume a standard 15-minute window + buffer if we detect this state.
-                wait_time_needed = 900  # 15 minutes
-                logger.warning(f"All {total} accounts are rate-limited. Increasing timeout to allow waiting...")
-                timeout = max(timeout, wait_time_needed + 60)
-        except Exception as e:
-            logger.debug(f"Could not check account availability: {e}")
-
-        logger.info(f"Searching for: '{search_query}' (limit: {limit}, timeout: {timeout}s)")
-
-        if limit > 100:
-            logger.warning(f"High tweet limit ({limit}) detected. This may trigger rate limits quickly.")
-            logger.warning("Consider reducing 'broad_tweet_limit' in config.yaml to < 100 for safer scraping.")
-
-        # Use a long safety timeout (20 min) to allow twscrape to wait for rate limits (15 min window)
-        # We rely on twscrape's internal logic to handle 429s and waits.
-        safety_timeout = 1200
+        logger.info(f"Searching for: '{search_query}' (limit: {limit})")
 
         try:
-            raw_tweets = []
-
-            # Add initial jitter to stagger workers naturally
-            jitter = random.uniform(1, 5)
-            logger.debug(f"Initial jitter: {jitter:.1f}s")
-            await asyncio.sleep(jitter)
-
-            logger.info("Starting search...")
-
-            # Manual consumption of the generator to allow inter-page delays
-            # Each worker paces itself independently (they have separate proxies/IPs)
-            async def fetch_with_delays():
-                count = 0
-                async for tweet in api.search(search_query, limit=limit):
-                    raw_tweets.append(tweet)
-                    count += 1
-
-                    # Every ~15 tweets, take a human-like breath
-                    # Pages are ~20 tweets, so this ensures we delay BEFORE each page boundary
-                    # Target: 10-20 seconds between HTTP requests per worker
-                    if count % 15 == 0:
-                        delay = random.uniform(10, 15)
-                        logger.debug(f"Search '{query}': {count} tweets retrieved. Pacing delay {delay:.1f}s...")
-                        await asyncio.sleep(delay)
-                return raw_tweets
-
-            # Still use wait_for to prevent total hangs, but with the manual loop inside
-            await asyncio.wait_for(fetch_with_delays(), timeout=safety_timeout)
-
-            for tweet in raw_tweets:
+            async for tweet in api.search(search_query, limit=limit):
                 try:
                     scraped = ScrapedTweet.from_twscrape(tweet)
                     tweets.append(scraped)
@@ -329,305 +343,97 @@ class TwitterScraper:
             logger.info(f"Retrieved {len(tweets)} tweets for query: {query}")
             return tweets
 
-        except asyncio.TimeoutError:
-            logger.error(f"Safety timeout reached for '{query}' after {safety_timeout}s")
-            logger.error("This suggests a genuine network hang or extremely long rate limit.")
-            return tweets
         except Exception as e:
             logger.error(f"Error searching for '{query}': {e}")
-            # Return empty list instead of crashing
-            return []
+            return tweets
 
     async def get_broad_tweets(
         self,
         topics: list[str],
         limit_per_topic: int = 50,
-    ) -> list[ScrapedTweet]:
+        skip_topics: list[str] | None = None,
+        pipeline_run: str = "",
+        on_topic_complete: Callable[[str, list[ScrapedTweet]], None] | None = None,
+    ) -> int:
         """
-        Gather tweets from multiple broad topics for trend discovery.
-
-        This is the "Scout" phase - casting a wide net to discover what's trending.
+        Search broad topics and store tweets to DB as each completes.
 
         Args:
-            topics: List of broad topics to search (e.g., ["economy", "markets"]).
+            topics: List of broad topics to search.
             limit_per_topic: Number of tweets per topic.
+            skip_topics: Topics to skip (already completed, from checkpoint).
+            pipeline_run: Pipeline run ID for DB storage.
+            on_topic_complete: Optional callback(topic, tweets) after each topic.
 
         Returns:
-            Combined list of tweets from all topics.
+            Total number of tweets stored.
         """
-        logger.info(f"Starting broad search across {len(topics)} topics")
-        all_tweets: list[ScrapedTweet] = []
-
-        # Gather tweets from all topics concurrently
-        tasks = [
-            self.search_tweets(topic, limit=limit_per_topic, worker_id=i)
-            for i, topic in enumerate(topics)
-        ]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for topic, result in zip(topics, results):
-            if isinstance(result, Exception):
-                logger.error(f"Failed to scrape topic '{topic}': {result}")
-                continue
-            all_tweets.extend(result)
-            logger.info(f"Topic '{topic}': {len(result)} tweets")
-
-        logger.info(f"Broad search complete: {len(all_tweets)} total tweets")
-        return all_tweets
-
-    async def get_broad_tweets_incremental(
-        self,
-        topics: list[str],
-        limit_per_topic: int = 50,
-        on_topic_complete: callable = None,
-        skip_topics: list[str] = None,
-        timeout: int = 300,
-    ) -> list[ScrapedTweet]:
-        """
-        Gather tweets incrementally using rotating worker batches for load balancing.
-
-        Uses a round-robin approach where worker pairs rotate through available
-        account slots, allowing previously used accounts to cool down.
-
-        Args:
-            topics: List of topics to search.
-            limit_per_topic: Number of tweets per topic.
-            on_topic_complete: Callback(topic, tweets) called after each topic.
-            skip_topics: Topics to skip (already completed).
-            timeout: Maximum time in seconds to wait per topic (default: 300s/5min).
-
-        Returns:
-            Combined list of tweets from all topics.
-        """
-        skip_topics = skip_topics or []
-        all_tweets: list[ScrapedTweet] = []
-        remaining = [t for t in topics if t not in skip_topics]
+        skip = set(skip_topics or [])
+        remaining = [t for t in topics if t not in skip]
 
         if not remaining:
             logger.info("No topics remaining to scrape.")
-            return []
+            return 0
 
-        # Get account count for rotation
-        stats = await self.get_account_stats()
-        active_count = stats.get("active", 1)
+        logger.info(f"Broad search: {len(remaining)} topics remaining (skipping {len(skip)})")
 
-        # Use 2 concurrent workers per batch, but rotate through all available account slots
-        # This allows accounts to cool down between batches
-        workers_per_batch = min(active_count, 2)
-        total_slots = active_count  # Total account slots to rotate through
+        total_stored = 0
+        for topic in remaining:
+            tweets = await self.search_tweets(topic, limit=limit_per_topic)
 
-        logger.info(
-            f"Incremental scrape: {len(remaining)} topics remaining. "
-            f"Using {workers_per_batch} concurrent workers, rotating through {total_slots} account slots."
-        )
+            stored = await store_tweets(tweets, source_query=topic, pipeline_run=pipeline_run)
+            total_stored += stored
+            logger.info(f"Topic '{topic}': {len(tweets)} tweets, {stored} stored")
 
-        topic_index = 0
-        batch_number = 0
+            if on_topic_complete:
+                on_topic_complete(topic, tweets)
 
-        while topic_index < len(remaining):
-            # Calculate which worker slots to use this batch (round-robin through all slots)
-            # Example with 5 accounts, 2 workers per batch:
-            # Batch 0: workers 0, 1
-            # Batch 1: workers 2, 3
-            # Batch 2: workers 4, 0 (wraps around)
-            # Batch 3: workers 1, 2
-            base_slot = (batch_number * workers_per_batch) % total_slots
-            worker_slots = [(base_slot + i) % total_slots for i in range(workers_per_batch)]
-
-            # Get topics for this batch
-            batch_topics = remaining[topic_index:topic_index + workers_per_batch]
-            if not batch_topics:
-                break
-
-            logger.info(f"Batch {batch_number}: Using worker slots {worker_slots} for {len(batch_topics)} topics")
-
-            # Create tasks for this batch
-            async def process_topic(wid: int, topic: str):
-                worker_context.set(wid)
-                logger.info(f"Scraping topic: {topic}")
-
-                try:
-                    tweets = await self.search_tweets(
-                        topic, limit=limit_per_topic, timeout=timeout, worker_id=wid
-                    )
-                    all_tweets.extend(tweets)
-
-                    if on_topic_complete:
-                        on_topic_complete(topic, tweets)
-
-                    logger.info(f"Topic '{topic}': {len(tweets)} tweets")
-                    return tweets
-
-                except Exception as e:
-                    logger.error(f"Failed to scrape topic '{topic}': {e}")
-                    if on_topic_complete:
-                        on_topic_complete(topic, [])
-                    return []
-
-            # Run batch concurrently
-            tasks = [
-                process_topic(worker_slots[i], topic)
-                for i, topic in enumerate(batch_topics)
-            ]
-            await asyncio.gather(*tasks)
-
-            topic_index += len(batch_topics)
-            batch_number += 1
-
-            # Add cooldown between batches to let accounts rest
-            # Only if there are more topics to process
-            if topic_index < len(remaining):
-                cooldown = 5  # seconds between batches
-                logger.debug(f"Batch cooldown: {cooldown}s before next batch")
-                await asyncio.sleep(cooldown)
-
-        logger.info(f"Incremental scrape complete: {len(all_tweets)} tweets from {len(remaining)} topics")
-        return all_tweets
+        logger.info(f"Broad search complete: {total_stored} tweets stored")
+        return total_stored
 
     async def get_specific_sentiment(
         self,
         trends: list[str],
         limit_per_trend: int = 20,
-    ) -> dict[str, list[ScrapedTweet]]:
+        skip_trends: list[str] | None = None,
+        pipeline_run: str = "",
+        on_trend_complete: Callable[[str, list[ScrapedTweet]], None] | None = None,
+    ) -> int:
         """
-        Deep dive into specific trending entities for detailed sentiment.
-
-        This is the "Deep Dive" phase - targeted scraping for context.
+        Deep dive into specific trends and store tweets to DB as each completes.
 
         Args:
             trends: List of trending entity names to investigate.
             limit_per_trend: Number of tweets per trend.
+            skip_trends: Trends to skip (already completed, from checkpoint).
+            pipeline_run: Pipeline run ID for DB storage.
+            on_trend_complete: Optional callback(trend, tweets) after each trend.
 
         Returns:
-            Dictionary mapping trend names to their tweets.
+            Total number of tweets stored.
         """
-        logger.info(f"Starting deep dive into {len(trends)} trends")
-        trend_tweets: dict[str, list[ScrapedTweet]] = {}
-
-        # Search for each trend concurrently
-        tasks = [
-            self.search_tweets(trend, limit=limit_per_trend, worker_id=i)
-            for i, trend in enumerate(trends)
-        ]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for trend, result in zip(trends, results):
-            if isinstance(result, Exception):
-                logger.error(f"Failed to scrape trend '{trend}': {result}")
-                trend_tweets[trend] = []
-                continue
-            trend_tweets[trend] = result
-            logger.info(f"Trend '{trend}': {len(result)} tweets")
-
-        total_tweets = sum(len(t) for t in trend_tweets.values())
-        logger.info(f"Deep dive complete: {total_tweets} total tweets")
-
-        return trend_tweets
-
-    async def get_specific_sentiment_incremental(
-        self,
-        trends: list[str],
-        limit_per_trend: int = 20,
-        on_trend_complete: callable = None,
-        skip_trends: list[str] = None,
-        timeout: int = 300,
-    ) -> dict[str, list[ScrapedTweet]]:
-        """
-        Deep dive incrementally using rotating worker batches for load balancing.
-
-        Uses a round-robin approach where worker pairs rotate through available
-        account slots, allowing previously used accounts to cool down.
-
-        Args:
-            trends: List of trends to search.
-            limit_per_trend: Number of tweets per trend.
-            on_trend_complete: Callback(trend, tweets) called after each trend.
-            skip_trends: Trends to skip (already completed).
-            timeout: Maximum time in seconds to wait per trend (default: 300s/5min).
-
-        Returns:
-            Dictionary mapping trend names to their tweets.
-        """
-        skip_trends = skip_trends or []
-        trend_tweets: dict[str, list[ScrapedTweet]] = {}
-        remaining = [t for t in trends if t not in skip_trends]
+        skip = set(skip_trends or [])
+        remaining = [t for t in trends if t not in skip]
 
         if not remaining:
             logger.info("No trends remaining to scrape.")
-            return {}
+            return 0
 
-        # Get account count for rotation
-        stats = await self.get_account_stats()
-        active_count = stats.get("active", 1)
+        logger.info(f"Deep dive: {len(remaining)} trends remaining (skipping {len(skip)})")
 
-        # Use 2 concurrent workers per batch, but rotate through all available account slots
-        workers_per_batch = min(active_count, 2)
-        total_slots = active_count
+        total_stored = 0
+        for trend in remaining:
+            tweets = await self.search_tweets(trend, limit=limit_per_trend)
 
-        logger.info(
-            f"Incremental deep dive: {len(remaining)} trends remaining. "
-            f"Using {workers_per_batch} concurrent workers, rotating through {total_slots} account slots."
-        )
+            stored = await store_tweets(tweets, source_query=trend, pipeline_run=pipeline_run)
+            total_stored += stored
+            logger.info(f"Trend '{trend}': {len(tweets)} tweets, {stored} stored")
 
-        trend_index = 0
-        batch_number = 0
+            if on_trend_complete:
+                on_trend_complete(trend, tweets)
 
-        while trend_index < len(remaining):
-            # Calculate which worker slots to use this batch (round-robin)
-            base_slot = (batch_number * workers_per_batch) % total_slots
-            worker_slots = [(base_slot + i) % total_slots for i in range(workers_per_batch)]
-
-            # Get trends for this batch
-            batch_trends = remaining[trend_index:trend_index + workers_per_batch]
-            if not batch_trends:
-                break
-
-            logger.info(f"Batch {batch_number}: Using worker slots {worker_slots} for {len(batch_trends)} trends")
-
-            # Create tasks for this batch
-            async def process_trend(wid: int, trend: str):
-                worker_context.set(wid)
-                logger.info(f"Scraping trend: {trend}")
-
-                try:
-                    tweets = await self.search_tweets(
-                        trend, limit=limit_per_trend, timeout=timeout, worker_id=wid
-                    )
-                    trend_tweets[trend] = tweets
-
-                    if on_trend_complete:
-                        on_trend_complete(trend, tweets)
-
-                    return tweets
-
-                except Exception as e:
-                    logger.error(f"Failed to scrape trend '{trend}': {e}")
-                    trend_tweets[trend] = []
-                    if on_trend_complete:
-                        on_trend_complete(trend, [])
-                    return []
-
-            # Run batch concurrently
-            tasks = [
-                process_trend(worker_slots[i], trend)
-                for i, trend in enumerate(batch_trends)
-            ]
-            await asyncio.gather(*tasks)
-
-            trend_index += len(batch_trends)
-            batch_number += 1
-
-            # Add cooldown between batches
-            if trend_index < len(remaining):
-                cooldown = 5
-                logger.debug(f"Batch cooldown: {cooldown}s before next batch")
-                await asyncio.sleep(cooldown)
-
-        total = sum(len(t) for t in trend_tweets.values())
-        logger.info(f"Incremental deep dive complete: {total} tweets from {len(remaining)} trends")
-        return trend_tweets
+        logger.info(f"Deep dive complete: {total_stored} tweets stored")
+        return total_stored
 
     async def close(self) -> None:
         """Clean up resources."""

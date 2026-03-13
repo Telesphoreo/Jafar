@@ -24,7 +24,7 @@ EMBEDDING_DIM = 3072
 
 
 class VectorType(UserDefinedType):
-    """Custom SQLAlchemy type for pgvecto.rs vector columns."""
+    """Custom SQLAlchemy type for pgvector/VectorChord vector columns."""
 
     cache_ok = True
 
@@ -95,7 +95,7 @@ class Tweet(Base):
     __tablename__ = "tweets"
     __table_args__ = (
         Index("ix_tweets_username_created_at", "username", "created_at"),
-        Index("ix_tweets_pipeline_run", "pipeline_run"),
+        Index("ix_tweets_pipeline_run_source_query", "pipeline_run", "source_query"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)

@@ -4,23 +4,24 @@ Checkpoint System for Pipeline State Persistence.
 Saves progress after each major step so the pipeline can:
 - Resume after interruption (Ctrl+C, crash, rate limits)
 - Skip already-completed steps
-- Preserve collected tweets across runs
+- Track which topics/trends have been scraped (tweets live in the DB)
 """
 
 import json
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, fields, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
-
-from .scraper import ScrapedTweet
+from typing import Optional
 
 logger = logging.getLogger("jafar.checkpoint")
 
 # Runtime directory for checkpoint files
 RUN_DIR = Path(".run")
 CHECKPOINT_FILE = str(RUN_DIR / "pipeline_checkpoint.json")
+
+
+SCHEMA_VERSION = 2  # Bump when step semantics change
 
 
 @dataclass
@@ -30,6 +31,7 @@ class PipelineState:
     # Run identification
     run_id: str  # Date-based ID
     started_at: str
+    schema_version: int = SCHEMA_VERSION
 
     # Step completion flags
     step1_complete: bool = False  # Broad scraping
@@ -39,16 +41,14 @@ class PipelineState:
     step5_complete: bool = False  # Email sent
     step6_complete: bool = False  # History stored
 
-    # Step 1: Broad scraping progress
+    # Step 1: Which topics have been scraped (tweets are in DB)
     topics_completed: list[str] = field(default_factory=list)
-    topics_remaining: list[str] = field(default_factory=list)
-    broad_tweets: list[dict] = field(default_factory=list)  # Serialized tweets
 
     # Step 2: Discovered trends
     trends: list[str] = field(default_factory=list)
 
-    # Step 3: Deep dive tweets
-    trend_tweets: dict[str, list[dict]] = field(default_factory=dict)
+    # Step 3: Which trends have been scraped (tweets are in DB)
+    trends_completed: list[str] = field(default_factory=list)
 
     # Step 4: Analysis results
     analysis: str = ""
@@ -59,7 +59,6 @@ class PipelineState:
     # Metadata
     last_updated: str = ""
     error: str = ""
-    retry_counts: dict[str, int] = field(default_factory=dict)  # Track retries for empty results
 
 
 class CheckpointManager:
@@ -74,48 +73,27 @@ class CheckpointManager:
 
         logger.info(f"CheckpointManager initialized: {checkpoint_file}")
 
-    def _serialize_tweet(self, tweet: ScrapedTweet) -> dict:
-        """Convert a ScrapedTweet to a JSON-serializable dict."""
-        return {
-            "id": tweet.id,
-            "text": tweet.text,
-            "username": tweet.username,
-            "display_name": tweet.display_name,
-            "created_at": tweet.created_at.isoformat() if tweet.created_at else None,
-            "likes": tweet.likes,
-            "retweets": tweet.retweets,
-            "replies": tweet.replies,
-            "views": tweet.views,
-            "language": tweet.language,
-            "hashtags": tweet.hashtags,
-            "is_retweet": tweet.is_retweet,
-        }
+    def _migrate_state(self, data: dict) -> dict | None:
+        """Strip unknown fields from old checkpoint formats.
 
-    def _deserialize_tweet(self, data: dict) -> ScrapedTweet:
-        """Convert a dict back to a ScrapedTweet."""
-        return ScrapedTweet(
-            id=data["id"],
-            text=data["text"],
-            username=data["username"],
-            display_name=data.get("display_name", "Unknown"),
-            created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else None,
-            likes=data["likes"],
-            retweets=data["retweets"],
-            replies=data["replies"],
-            views=data.get("views"),
-            language=data.get("language"),
-            hashtags=data.get("hashtags", []),
-            is_retweet=data["is_retweet"],
-        )
+        Returns None if the checkpoint is from an incompatible schema version.
+        """
+        if data.get("schema_version", 0) < SCHEMA_VERSION:
+            logger.warning(
+                f"Checkpoint schema version {data.get('schema_version', 0)} "
+                f"is older than current ({SCHEMA_VERSION}), discarding"
+            )
+            return None
+        known = {f.name for f in fields(PipelineState)}
+        return {k: v for k, v in data.items() if k in known}
 
-    def start_new_run(self, topics: list[str]) -> PipelineState:
+    def start_new_run(self) -> PipelineState:
         """Start a fresh pipeline run."""
         today = datetime.now().strftime("%Y%m%d")
 
         self._state = PipelineState(
             run_id=today,
             started_at=datetime.now().isoformat(),
-            topics_remaining=topics.copy(),
             last_updated=datetime.now().isoformat(),
         )
 
@@ -133,6 +111,9 @@ class CheckpointManager:
             with open(self.checkpoint_file, "r") as f:
                 data = json.load(f)
 
+            data = self._migrate_state(data)
+            if data is None:
+                return None
             self._state = PipelineState(**data)
             logger.info(f"Loaded checkpoint from run: {self._state.run_id}")
             return self._state
@@ -178,41 +159,13 @@ class CheckpointManager:
         return self._state
 
     # Step 1: Broad scraping
-    def mark_topic_complete(self, topic: str, tweets: list[ScrapedTweet]) -> None:
-        """
-        Mark a topic as scraped and save its tweets.
-        Retries up to 3 times if 0 tweets are returned.
-        """
+    def mark_topic_done(self, topic: str) -> None:
+        """Mark a topic as scraped (tweets are stored in DB)."""
         state = self.get_state()
-        MAX_RETRIES = 3
-
-        if not tweets:
-            # Increment retry count
-            current_retries = state.retry_counts.get(topic, 0)
-            if current_retries < MAX_RETRIES:
-                state.retry_counts[topic] = current_retries + 1
-                self.save()
-                logger.warning(f"Topic '{topic}' returned 0 tweets. Retry {current_retries + 1}/{MAX_RETRIES} scheduled.")
-                return
-            else:
-                logger.error(f"Topic '{topic}' failed {MAX_RETRIES} times. Marking as complete (empty).")
-
-        if topic in state.topics_remaining:
-            state.topics_remaining.remove(topic)
         if topic not in state.topics_completed:
             state.topics_completed.append(topic)
-
-        # Add tweets to collection
-        for tweet in tweets:
-            state.broad_tweets.append(self._serialize_tweet(tweet))
-
         self.save()
-        logger.info(f"Topic complete: {topic} ({len(tweets)} tweets)")
-
-    def get_broad_tweets(self) -> list[ScrapedTweet]:
-        """Get all collected broad tweets."""
-        state = self.get_state()
-        return [self._deserialize_tweet(t) for t in state.broad_tweets]
+        logger.info(f"Topic complete: {topic}")
 
     def complete_step1(self) -> None:
         """Mark step 1 as complete."""
@@ -231,37 +184,13 @@ class CheckpointManager:
         logger.info(f"Step 2 complete: {len(trends)} trends discovered")
 
     # Step 3: Deep dive
-    def mark_trend_scraped(self, trend: str, tweets: list[ScrapedTweet]) -> None:
-        """
-        Save tweets for a specific trend.
-        Retries up to 3 times if 0 tweets are returned.
-        """
+    def mark_trend_done(self, trend: str) -> None:
+        """Mark a trend as scraped (tweets are stored in DB)."""
         state = self.get_state()
-        MAX_RETRIES = 3
-        
-        if not tweets:
-            # Increment retry count
-            current_retries = state.retry_counts.get(trend, 0)
-            if current_retries < MAX_RETRIES:
-                state.retry_counts[trend] = current_retries + 1
-                self.save()
-                logger.warning(f"Trend '{trend}' returned 0 tweets. Retry {current_retries + 1}/{MAX_RETRIES} scheduled.")
-                # Do NOT add to trend_tweets, so scraper will retry it
-                return
-            else:
-                logger.error(f"Trend '{trend}' failed {MAX_RETRIES} times. Marking as complete (empty).")
-
-        state.trend_tweets[trend] = [self._serialize_tweet(t) for t in tweets]
+        if trend not in state.trends_completed:
+            state.trends_completed.append(trend)
         self.save()
-        logger.info(f"Trend scraped: {trend} ({len(tweets)} tweets)")
-
-    def get_trend_tweets(self) -> dict[str, list[ScrapedTweet]]:
-        """Get all trend tweets."""
-        state = self.get_state()
-        return {
-            trend: [self._deserialize_tweet(t) for t in tweets]
-            for trend, tweets in state.trend_tweets.items()
-        }
+        logger.info(f"Trend complete: {trend}")
 
     def complete_step3(self) -> None:
         """Mark step 3 as complete."""

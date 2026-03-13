@@ -395,7 +395,7 @@ async def create_memory_manager(
     """
     Factory function to create a configured MemoryManager.
 
-    Uses Gemini embeddings and pgvecto.rs (Postgres) for vector storage.
+    Uses Gemini embeddings and VectorChord (Postgres) for vector storage.
     The database must already be initialized via src.database.init_db().
 
     Args:
@@ -416,7 +416,7 @@ async def create_memory_manager(
         dimensions=embedding_dimensions,
     )
 
-    # Create pgvecto.rs vector store
+    # Create VectorChord vector store
     from .pgvector_store import PgVectorStore
     vector_store = PgVectorStore(
         embedding_dimension=embedding_service.dimension,

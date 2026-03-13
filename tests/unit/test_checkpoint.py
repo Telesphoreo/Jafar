@@ -1,7 +1,7 @@
 """
 Unit tests for src/checkpoint.py
 
-Tests checkpoint persistence, serialization, and pipeline state management.
+Tests checkpoint persistence and pipeline state management.
 """
 
 import json
@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 
 from src.checkpoint import CheckpointManager, PipelineState
-from src.scraper import ScrapedTweet
 
 
 class TestPipelineState:
@@ -31,9 +30,8 @@ class TestPipelineState:
         assert state.step5_complete is False
         assert state.step6_complete is False
         assert state.topics_completed == []
-        assert state.topics_remaining == []
-        assert state.broad_tweets == []
         assert state.trends == []
+        assert state.trends_completed == []
 
     def test_state_with_data(self):
         """Test PipelineState with populated data."""
@@ -63,21 +61,19 @@ class TestCheckpointManager:
     def test_start_new_run(self, temp_checkpoint_file):
         """Test starting a new pipeline run."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        topics = ["fintwit", "markets", "trading"]
 
-        state = manager.start_new_run(topics)
+        state = manager.start_new_run()
 
         assert state.run_id == datetime.now().strftime("%Y%m%d")
-        assert state.topics_remaining == topics
         assert state.topics_completed == []
+        assert state.trends_completed == []
         assert temp_checkpoint_file.exists()
 
     def test_save_and_load(self, temp_checkpoint_file):
         """Test saving and loading checkpoint state."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        topics = ["fintwit", "markets"]
 
-        manager.start_new_run(topics)
+        manager.start_new_run()
         manager.get_state().step1_complete = True
         manager.save()
 
@@ -87,78 +83,78 @@ class TestCheckpointManager:
 
         assert loaded_state is not None
         assert loaded_state.step1_complete is True
-        assert loaded_state.topics_remaining == topics
 
     def test_load_returns_none_if_no_file(self, temp_checkpoint_file):
         """Test that load returns None when no checkpoint exists."""
         manager = CheckpointManager(str(temp_checkpoint_file))
         assert manager.load() is None
 
-    def test_serialize_tweet(self, temp_checkpoint_file, sample_tweet):
-        """Test tweet serialization."""
+    def test_migrate_state_rejects_old_schema(self, temp_checkpoint_file):
+        """Test that old checkpoint formats are rejected due to schema version mismatch."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        serialized = manager._serialize_tweet(sample_tweet)
 
-        assert serialized["id"] == sample_tweet.id
-        assert serialized["text"] == sample_tweet.text
-        assert serialized["username"] == sample_tweet.username
-        assert serialized["likes"] == sample_tweet.likes
+        # Write an old-format checkpoint without schema_version
+        old_data = {
+            "run_id": datetime.now().strftime("%Y%m%d"),
+            "started_at": "2024-01-01T12:00:00",
+            "step1_complete": True,
+            "topics_completed": ["fintwit"],
+            "topics_remaining": ["markets", "trading"],
+            "broad_tweets": [{"id": 1, "text": "test"}],
+        }
+        with open(temp_checkpoint_file, "w") as f:
+            json.dump(old_data, f)
 
-    def test_deserialize_tweet(self, temp_checkpoint_file, sample_tweet):
-        """Test tweet deserialization."""
+        loaded = manager.load()
+        assert loaded is None  # Old schema is discarded
+
+    def test_migrate_state_strips_unknown_fields(self, temp_checkpoint_file):
+        """Test that current-schema checkpoints with extra fields load correctly."""
+        from src.checkpoint import SCHEMA_VERSION
         manager = CheckpointManager(str(temp_checkpoint_file))
-        serialized = manager._serialize_tweet(sample_tweet)
-        deserialized = manager._deserialize_tweet(serialized)
 
-        assert deserialized.id == sample_tweet.id
-        assert deserialized.text == sample_tweet.text
-        assert deserialized.username == sample_tweet.username
-        assert deserialized.likes == sample_tweet.likes
+        # Write a checkpoint with current schema but some unknown extra field
+        data = {
+            "run_id": datetime.now().strftime("%Y%m%d"),
+            "started_at": "2024-01-01T12:00:00",
+            "schema_version": SCHEMA_VERSION,
+            "step1_complete": True,
+            "topics_completed": ["fintwit"],
+            "some_future_field": "should be stripped",
+        }
+        with open(temp_checkpoint_file, "w") as f:
+            json.dump(data, f)
 
-    def test_mark_topic_complete(self, temp_checkpoint_file, sample_tweets):
-        """Test marking a topic as complete with tweets."""
+        loaded = manager.load()
+        assert loaded is not None
+        assert loaded.step1_complete is True
+        assert loaded.topics_completed == ["fintwit"]
+
+    def test_mark_topic_done(self, temp_checkpoint_file):
+        """Test marking a topic as done."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit", "markets"])
+        manager.start_new_run()
 
-        manager.mark_topic_complete("fintwit", sample_tweets[:5])
+        manager.mark_topic_done("fintwit")
         state = manager.get_state()
 
         assert "fintwit" in state.topics_completed
-        assert "fintwit" not in state.topics_remaining
-        assert len(state.broad_tweets) == 5
 
-    def test_mark_topic_complete_empty_tweets_triggers_retry(
-        self, temp_checkpoint_file
-    ):
-        """Test that empty tweets trigger retry mechanism."""
+    def test_mark_topic_done_idempotent(self, temp_checkpoint_file):
+        """Test that marking the same topic twice doesn't duplicate."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
 
-        # First call with empty tweets - should trigger retry
-        manager.mark_topic_complete("fintwit", [])
+        manager.mark_topic_done("fintwit")
+        manager.mark_topic_done("fintwit")
         state = manager.get_state()
 
-        # Topic should still be remaining (not completed) due to retry
-        assert "fintwit" in state.topics_remaining
-        assert "fintwit" not in state.topics_completed
-        assert state.retry_counts.get("fintwit") == 1
-
-    def test_get_broad_tweets(self, temp_checkpoint_file, sample_tweets):
-        """Test retrieving all broad tweets."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit", "markets"])
-
-        manager.mark_topic_complete("fintwit", sample_tweets[:5])
-        manager.mark_topic_complete("markets", sample_tweets[5:])
-
-        tweets = manager.get_broad_tweets()
-        assert len(tweets) == len(sample_tweets)
-        assert all(isinstance(t, ScrapedTweet) for t in tweets)
+        assert state.topics_completed.count("fintwit") == 1
 
     def test_save_trends(self, temp_checkpoint_file):
         """Test saving discovered trends."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
 
         trends = ["$NVDA", "Silver", "#inflation"]
         manager.save_trends(trends)
@@ -167,22 +163,32 @@ class TestCheckpointManager:
         assert state.trends == trends
         assert state.step2_complete is True
 
-    def test_mark_trend_scraped(self, temp_checkpoint_file, sample_tweets):
-        """Test marking a trend as scraped."""
+    def test_mark_trend_done(self, temp_checkpoint_file):
+        """Test marking a trend as done."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
         manager.save_trends(["$NVDA"])
 
-        manager.mark_trend_scraped("$NVDA", sample_tweets[:3])
-        trend_tweets = manager.get_trend_tweets()
+        manager.mark_trend_done("$NVDA")
+        state = manager.get_state()
 
-        assert "$NVDA" in trend_tweets
-        assert len(trend_tweets["$NVDA"]) == 3
+        assert "$NVDA" in state.trends_completed
+
+    def test_mark_trend_done_idempotent(self, temp_checkpoint_file):
+        """Test that marking the same trend twice doesn't duplicate."""
+        manager = CheckpointManager(str(temp_checkpoint_file))
+        manager.start_new_run()
+
+        manager.mark_trend_done("$NVDA")
+        manager.mark_trend_done("$NVDA")
+        state = manager.get_state()
+
+        assert state.trends_completed.count("$NVDA") == 1
 
     def test_save_analysis(self, temp_checkpoint_file):
         """Test saving analysis results."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
 
         manager.save_analysis(
             analysis="Test analysis content",
@@ -201,7 +207,7 @@ class TestCheckpointManager:
     def test_complete_steps(self, temp_checkpoint_file):
         """Test completing various pipeline steps."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
 
         manager.complete_step1()
         assert manager.get_state().step1_complete is True
@@ -218,7 +224,7 @@ class TestCheckpointManager:
     def test_should_resume_same_day(self, temp_checkpoint_file):
         """Test resume detection for same-day incomplete run."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
         manager.complete_step1()
 
         # New manager should detect resumable state
@@ -228,7 +234,7 @@ class TestCheckpointManager:
     def test_should_not_resume_completed_run(self, temp_checkpoint_file):
         """Test that completed runs don't trigger resume."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
         manager.complete_step6()  # Mark as fully complete
 
         manager2 = CheckpointManager(str(temp_checkpoint_file))
@@ -237,7 +243,7 @@ class TestCheckpointManager:
     def test_clear(self, temp_checkpoint_file):
         """Test clearing checkpoint file."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
         assert temp_checkpoint_file.exists()
 
         manager.clear()
@@ -246,7 +252,7 @@ class TestCheckpointManager:
     def test_set_error(self, temp_checkpoint_file):
         """Test recording an error."""
         manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run(["fintwit"])
+        manager.start_new_run()
 
         manager.set_error("Test error message")
         state = manager.get_state()

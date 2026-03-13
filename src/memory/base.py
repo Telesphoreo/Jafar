@@ -99,7 +99,7 @@ class VectorStore(ABC):
     """
     Abstract interface for vector storage backends.
 
-    Implementations: ChromaDB (local), pgvector (production)
+    Implementations: ChromaDB (local), VectorChord (production)
     """
 
     @abstractmethod
