@@ -115,7 +115,7 @@ async def store_tweets(tweets: list[ScrapedTweet], source_query: str, pipeline_r
                     username=tweet.username,
                     display_name=tweet.display_name,
                     content=tweet.text,
-                    created_at=tweet.created_at,
+                    created_at=tweet.created_at.replace(tzinfo=None) if tweet.created_at and tweet.created_at.tzinfo else tweet.created_at,
                     likes=tweet.likes,
                     retweets=tweet.retweets,
                     replies=tweet.replies,
