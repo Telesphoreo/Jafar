@@ -100,7 +100,7 @@
                             <span class="badge badge-unsure">{{ run.status }}</span>
                         {% endif %}
                     </td>
-                    <td style="font-family: monospace; font-size: 11px;">
+                    <td style="font-size: 11px;">
                         {{ [run.step1_complete, run.step2_complete, run.step3_complete, run.step4_complete, run.step5_complete, run.step6_complete] | select | list | length }}/6
                     </td>
                     <td style="font-size: 12px; color: #666;">{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '—' }}</td>
