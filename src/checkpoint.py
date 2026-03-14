@@ -360,7 +360,26 @@ class CheckpointManager:
             await session.close()
 
     async def close(self) -> None:
-        """Release the advisory lock and clean up."""
+        """Mark incomplete runs as interrupted, then release the advisory lock."""
+        # If the run is still "running" at close time, it didn't complete or
+        # explicitly fail -- mark it as interrupted so the dashboard is accurate.
+        if self._state:
+            session = await get_session()
+            try:
+                async with session.begin():
+                    run = await session.get(PipelineRun, self._state.run_id)
+                    if run and run.status == "running":
+                        run.status = "interrupted"
+                        run.last_updated = datetime.now()
+                        logger.info(
+                            f"Run {self._state.run_id} still 'running' at close — "
+                            "marked as interrupted"
+                        )
+            except Exception as e:
+                logger.warning(f"Could not update run status on close: {e}")
+            finally:
+                await session.close()
+
         if self._lock_conn:
             await self._lock_conn.close()
             self._lock_conn = None

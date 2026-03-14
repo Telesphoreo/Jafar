@@ -30,6 +30,7 @@ import asyncio
 import logging
 import random
 import re
+import signal
 import sys
 from datetime import datetime
 
@@ -1559,8 +1560,15 @@ async def run_pipeline() -> bool:
         await close_db()
 
 
+def _handle_sigterm(signum, frame):
+    """Convert SIGTERM into SystemExit so the finally block runs."""
+    raise SystemExit(143)
+
+
 def main():
     """Entry point for the application."""
+    signal.signal(signal.SIGTERM, _handle_sigterm)
+
     print("""
     ==============================================================
     |     Twitter/X Economic Sentiment Analysis                  |
@@ -1574,6 +1582,8 @@ def main():
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         sys.exit(130)
+    except SystemExit:
+        raise
     except Exception as e:
         print(f"\nFatal error: {e}")
         sys.exit(1)
