@@ -152,11 +152,6 @@ class AppConfig:
         default_factory=lambda: _get_yaml("app", "spacy_model", "en_core_web_sm")
     )
 
-    # ML diagnostics email frequency (days between ML sections in digest)
-    ml_diagnostics_interval_days: int = field(
-        default_factory=lambda: _get_yaml("ml", "diagnostics_interval_days", 3)
-    )
-
     # Broad search topics
     broad_topics: list[str] = field(default_factory=lambda: _get_broad_topics())
 

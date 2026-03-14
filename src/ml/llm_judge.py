@@ -16,45 +16,40 @@ from google.genai import types
 
 logger = logging.getLogger("jafar.ml.llm_judge")
 
-BOT_JUDGE_SYSTEM_PROMPT = """You are an expert Twitter bot detection analyst. Your job is to analyze a Twitter account's behavior and determine if it is likely a bot or automated account.
+BOT_JUDGE_SYSTEM_PROMPT = """You are a signal quality analyst for an economic intelligence system. Your job is NOT to detect bots vs humans — it's to determine whether an account produces valuable signal or worthless garbage.
 
-Analyze the following signals:
+THE QUESTION: "If this account's tweets showed up in our economic trend analysis, would they add signal or noise?"
 
-STRONG BOT INDICATORS:
-- Extremely regular posting intervals (humans are irregular)
-- High volume of tweets with near-identical structure or templates
-- Tweets that are primarily links with minimal original commentary
-- Engagement patterns that don't match content quality (e.g., zero engagement consistently)
-- Posting at all hours with no sleep pattern
-- Content that reads like automated summaries or RSS feeds
+GARBAGE — discard these accounts entirely:
+- Crypto pump/spam accounts pushing coins with zero substance
+- Follower farm accounts that repost templates with no original content
+- Accounts with hundreds of tweets and zero engagement (nobody reads them)
+- Automated spam that adds no informational value whatsoever
+- Scam accounts, fake giveaways, engagement bait factories
 
-STRONG HUMAN INDICATORS:
-- Irregular posting patterns with natural gaps
-- Original analysis, opinions, or personal experiences
-- Conversational replies and engagement with others
-- Varied content style and topics
-- Natural language patterns including typos, slang, emotional expression
-- Engagement that correlates with content quality
+SIGNAL — keep these accounts, even if automated:
+- News aggregators (@unusual_whales, @DeItaone) — they surface real market data
+- Government/institutional accounts (@WhiteHouse, @FedReserve) — primary sources
+- Journalists, analysts, commentators — even controversial ones
+- Grifters with actual takes — hot takes are signal, even bad ones
+- Industry insiders posting about their sector (retail workers, truck drivers, etc.)
+- Prediction markets, data feeds — they reflect real sentiment
 
-NUANCE:
-- News aggregator accounts may look bot-like but serve a purpose — still flag them as automated
-- Some humans post very regularly — look at content originality as the tiebreaker
-- High-frequency posters aren't necessarily bots if content is original
-- Consider the COMBINATION of signals, not any single indicator
+KEY PRINCIPLE: We WANT grifters, provocateurs, and opinionated accounts. We want to see the crazy. What we DON'T want is soulless spam that nobody reads. An account being automated does NOT make it garbage — @DeItaone is automated and it's one of the most valuable feeds on Twitter.
 
 You must respond with valid JSON only, no other text."""
 
 RESPONSE_FORMAT = """Respond with this exact JSON structure:
 {
-    "bot_probability": <float 0-1>,
+    "garbage_probability": <float 0-1, where 1.0 = pure spam/garbage>,
     "confidence": <float 0-1>,
-    "classification": "<bot|likely_bot|uncertain|likely_human|human>",
-    "reasoning": "<2-3 sentence explanation>",
+    "classification": "<garbage|likely_garbage|uncertain|likely_signal|signal>",
+    "reasoning": "<2-3 sentence explanation of WHY this account is or isn't valuable>",
     "signals": ["<signal 1>", "<signal 2>", ...]
 }"""
 
-# Threshold for classifying as "bot" in binary comparisons
-BOT_THRESHOLD = 0.6
+# Threshold for classifying as "garbage" in binary comparisons
+GARBAGE_THRESHOLD = 0.6
 
 
 class BotJudge:
@@ -161,7 +156,7 @@ class BotJudge:
             ml_features: Optional ML-extracted features for context.
 
         Returns:
-            Dict with bot_probability, confidence, reasoning, signals,
+            Dict with garbage_probability, confidence, reasoning, signals,
             and classification.
         """
         user_message = self._format_account_for_judgment(
@@ -188,7 +183,7 @@ class BotJudge:
                 response.text,
             )
             result = {
-                "bot_probability": 0.5,
+                "garbage_probability": 0.5,
                 "confidence": 0.0,
                 "classification": "uncertain",
                 "reasoning": f"Failed to parse LLM response: {e}",
@@ -196,24 +191,27 @@ class BotJudge:
             }
 
         # Validate and normalize the result
-        result.setdefault("bot_probability", 0.5)
+        # Support both old "bot_probability" and new "garbage_probability" keys
+        if "bot_probability" in result and "garbage_probability" not in result:
+            result["garbage_probability"] = result.pop("bot_probability")
+        result.setdefault("garbage_probability", 0.5)
         result.setdefault("confidence", 0.0)
         result.setdefault("classification", "uncertain")
         result.setdefault("reasoning", "")
         result.setdefault("signals", [])
 
         # Clamp probabilities to [0, 1]
-        result["bot_probability"] = max(0.0, min(1.0, float(result["bot_probability"])))
+        result["garbage_probability"] = max(0.0, min(1.0, float(result["garbage_probability"])))
         result["confidence"] = max(0.0, min(1.0, float(result["confidence"])))
 
         # Validate classification
-        valid_classifications = {"bot", "likely_bot", "uncertain", "likely_human", "human"}
+        valid_classifications = {"garbage", "likely_garbage", "uncertain", "likely_signal", "signal"}
         if result["classification"] not in valid_classifications:
             result["classification"] = "uncertain"
 
         return {
             "username": username,
-            "bot_probability": result["bot_probability"],
+            "garbage_probability": result["garbage_probability"],
             "confidence": result["confidence"],
             "reasoning": result["reasoning"],
             "signals": result["signals"],
@@ -256,7 +254,7 @@ class BotJudge:
                 judgments.append(
                     {
                         "username": username,
-                        "bot_probability": 0.5,
+                        "garbage_probability": 0.5,
                         "confidence": 0.0,
                         "reasoning": f"Error during judgment: {result}",
                         "signals": [],
@@ -280,7 +278,7 @@ class BotJudge:
 
         Args:
             ml_scores: List of dicts from BotScorer.score_all_accounts(),
-                each with 'username', 'bot_score', and 'features' keys.
+                each with 'username', 'garbage_score', and 'features' keys.
                 Must also include a 'tweets' key with tweet data for LLM judgment.
             sample_size: Number of accounts to sample for evaluation.
 
@@ -314,9 +312,9 @@ class BotJudge:
 
         for s in sample:
             username = s["username"]
-            ml_is_bot = s["bot_score"] > BOT_THRESHOLD
+            ml_is_bot = s["garbage_score"] > GARBAGE_THRESHOLD
             llm_result = llm_by_user.get(username, {})
-            llm_is_bot = llm_result.get("bot_probability", 0.5) > BOT_THRESHOLD
+            llm_is_bot = llm_result.get("garbage_probability", 0.5) > GARBAGE_THRESHOLD
 
             if ml_is_bot and llm_is_bot:
                 tp += 1
@@ -325,8 +323,8 @@ class BotJudge:
                 disagreements.append(
                     {
                         "username": username,
-                        "ml_bot_score": s["bot_score"],
-                        "llm_bot_probability": llm_result.get("bot_probability"),
+                        "ml_garbage_score": s["garbage_score"],
+                        "llm_garbage_probability": llm_result.get("garbage_probability"),
                         "llm_classification": llm_result.get("classification"),
                         "llm_reasoning": llm_result.get("reasoning"),
                         "type": "false_positive",
@@ -337,8 +335,8 @@ class BotJudge:
                 disagreements.append(
                     {
                         "username": username,
-                        "ml_bot_score": s["bot_score"],
-                        "llm_bot_probability": llm_result.get("bot_probability"),
+                        "ml_garbage_score": s["garbage_score"],
+                        "llm_garbage_probability": llm_result.get("garbage_probability"),
                         "llm_classification": llm_result.get("classification"),
                         "llm_reasoning": llm_result.get("reasoning"),
                         "type": "false_negative",

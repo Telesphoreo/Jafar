@@ -11,7 +11,7 @@
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-body" style="padding: 12px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
         <span style="font-family: monospace; font-size: 11px; color: #888;">Sort:</span>
-        {% for col, label in [('tweet_count', 'Tweets'), ('avg_likes', 'Avg likes'), ('bot_score', 'Bot score'), ('signal_score', 'Signal'), ('username', 'Name')] %}
+        {% for col, label in [('tweet_count', 'Tweets'), ('avg_likes', 'Avg likes'), ('garbage_score', 'Garbage score'), ('signal_score', 'Signal'), ('username', 'Name')] %}
             <a href="{{ url_for('accounts', sort=col, order='desc' if sort != col or order == 'asc' else 'asc', page=1, filter=filter) }}"
                class="btn {% if sort == col %}btn-active{% endif %}"
                style="font-size: 11px;">
@@ -21,8 +21,8 @@
         <span style="margin-left: auto; font-family: monospace; font-size: 11px; color: #888;">Filter:</span>
         <a href="{{ url_for('accounts', sort=sort, order=order, filter='all') }}" class="btn {% if filter == 'all' %}btn-active{% endif %}" style="font-size: 11px;">All</a>
         <a href="{{ url_for('accounts', sort=sort, order=order, filter='unlabeled') }}" class="btn {% if filter == 'unlabeled' %}btn-active{% endif %}" style="font-size: 11px;">Unlabeled</a>
-        <a href="{{ url_for('accounts', sort=sort, order=order, filter='suspects') }}" class="btn btn-bot {% if filter == 'suspects' %}btn-active{% endif %}" style="font-size: 11px;">Bot suspects</a>
-        <a href="{{ url_for('accounts', sort=sort, order=order, filter='human') }}" class="btn btn-human {% if filter == 'human' %}btn-active{% endif %}" style="font-size: 11px;">Human</a>
+        <a href="{{ url_for('accounts', sort=sort, order=order, filter='suspects') }}" class="btn btn-garbage {% if filter == 'suspects' %}btn-active{% endif %}" style="font-size: 11px;">Garbage</a>
+        <a href="{{ url_for('accounts', sort=sort, order=order, filter='signal') }}" class="btn btn-signal {% if filter == 'signal' %}btn-active{% endif %}" style="font-size: 11px;">Signal</a>
     </div>
 </div>
 
@@ -34,7 +34,7 @@
                     <th>Account</th>
                     <th>Tweets</th>
                     <th>Avg likes</th>
-                    <th>Bot score</th>
+                    <th>Garbage score</th>
                     <th>Signal score</th>
                     <th>Cluster</th>
                     <th>Label</th>
@@ -47,13 +47,13 @@
                     <td style="font-family: monospace;">{{ acct.tweet_count }}</td>
                     <td style="font-family: monospace;">{{ "%.0f"|format(acct.avg_likes) }}</td>
                     <td style="font-family: monospace;">
-                        {% if acct.bot_score is not none %}
-                            {% if acct.bot_score > 0.7 %}
-                                <strong style="color: #c00;">{{ "%.2f"|format(acct.bot_score) }}</strong>
-                            {% elif acct.bot_score > 0.4 %}
-                                <span style="color: #c80;">{{ "%.2f"|format(acct.bot_score) }}</span>
+                        {% if acct.garbage_score is not none %}
+                            {% if acct.garbage_score > 0.7 %}
+                                <strong style="color: #c00;">{{ "%.2f"|format(acct.garbage_score) }}</strong>
+                            {% elif acct.garbage_score > 0.4 %}
+                                <span style="color: #c80;">{{ "%.2f"|format(acct.garbage_score) }}</span>
                             {% else %}
-                                {{ "%.2f"|format(acct.bot_score) }}
+                                {{ "%.2f"|format(acct.garbage_score) }}
                             {% endif %}
                         {% else %}
                             <span style="color: #ccc;">—</span>

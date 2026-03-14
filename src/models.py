@@ -116,35 +116,23 @@ class Tweet(Base):
     pipeline_run: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
 
-class BotJudgment(Base):
-    """Stores LLM bot judgments for building labeled datasets."""
+class SignalJudgment(Base):
+    """Stores LLM signal/garbage judgments for account quality classification."""
 
-    __tablename__ = "bot_judgments"
+    __tablename__ = "signal_judgments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    bot_probability: Mapped[float] = mapped_column(Float, nullable=False)
+    garbage_probability: Mapped[float] = mapped_column(Float, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     classification: Mapped[str] = mapped_column(String(20), nullable=False)
     reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     signals: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
-    ml_bot_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    ml_garbage_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     judged_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
-    pipeline_run: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
-
-class AppState(Base):
-    """Simple key-value store for pipeline state."""
-
-    __tablename__ = "app_state"
-
-    key: Mapped[str] = mapped_column(String(255), primary_key=True)
-    value: Mapped[str] = mapped_column(Text, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
-    )
 
 
 class PipelineRun(Base):
@@ -194,7 +182,7 @@ class AccountScore(Base):
     __tablename__ = "account_scores"
 
     username: Mapped[str] = mapped_column(String(255), primary_key=True)
-    bot_score: Mapped[float] = mapped_column(Float, default=0.0)
+    garbage_score: Mapped[float] = mapped_column(Float, default=0.0)
     is_anomaly: Mapped[bool] = mapped_column(Boolean, default=False)
     signal_score: Mapped[float] = mapped_column(Float, default=0.0)
     cluster_label: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
@@ -256,7 +244,7 @@ class HumanLabel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    label: Mapped[str] = mapped_column(String(20), nullable=False)  # bot, human, unsure
+    label: Mapped[str] = mapped_column(String(20), nullable=False)  # signal, garbage, unsure
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     labeled_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now()

@@ -24,7 +24,7 @@ from src.models import (
     AccountScore,
     Base,
     BlockedAccount,
-    BotJudgment,
+    SignalJudgment,
     HumanLabel,
     PipelineRun,
     Tweet,
@@ -159,7 +159,7 @@ def create_app() -> Flask:
 
             # Judge stats
             total_judged = s.execute(
-                select(func.count(func.distinct(BotJudgment.username)))
+                select(func.count(func.distinct(SignalJudgment.username)))
             ).scalar_one()
             total_blocked = s.execute(
                 select(func.count()).select_from(BlockedAccount)
@@ -238,7 +238,7 @@ def create_app() -> Flask:
                         ).scalar_one_or_none()
 
                         score_data = dict(
-                            bot_score=bot_info.get("bot_score", 0.0),
+                            garbage_score=bot_info.get("garbage_score", 0.0),
                             is_anomaly=bot_info.get("anomaly", False),
                             signal_score=acct.get("signal_score", 0.0),
                             cluster_label=acct.get("cluster_label"),
@@ -302,7 +302,7 @@ def create_app() -> Flask:
                 await init_db(os.environ.get("DATABASE_URL", ""))
 
                 from src.ml.llm_judge import BotJudge
-                from src.models import AccountScore as AS, BotJudgment as BJ, Tweet as TW
+                from src.models import AccountScore as AS, SignalJudgment as SJ, Tweet as TW
                 from sqlalchemy import select as asel
 
                 from src.config import config
@@ -317,14 +317,14 @@ def create_app() -> Flask:
                 session = await async_get_session()
                 try:
                     # Get already-judged usernames
-                    judged_q = asel(BJ.username).distinct()
+                    judged_q = asel(SJ.username).distinct()
                     judged_rows = (await session.execute(judged_q)).scalars().all()
                     judged_set = set(judged_rows)
 
                     # Get scored accounts, prioritize anomalies
                     scored_q = (
                         asel(AS)
-                        .order_by(AS.is_anomaly.desc(), AS.bot_score.desc())
+                        .order_by(AS.is_anomaly.desc(), AS.garbage_score.desc())
                     )
                     scored = (await session.execute(scored_q)).scalars().all()
                 finally:
@@ -409,14 +409,14 @@ def create_app() -> Flask:
                     # Store judgment immediately (partial progress)
                     session = await async_get_session()
                     async with session.begin():
-                        session.add(BJ(
+                        session.add(SJ(
                             username=acct.username,
-                            bot_probability=judgment["bot_probability"],
+                            garbage_probability=judgment["garbage_probability"],
                             confidence=judgment["confidence"],
                             classification=judgment["classification"],
                             reasoning=judgment["reasoning"],
                             signals=judgment["signals"],
-                            ml_bot_score=acct.bot_score,
+                            ml_garbage_score=acct.garbage_score,
                         ))
                     await session.close()
                     judged_count += 1
@@ -426,9 +426,9 @@ def create_app() -> Flask:
                         f"(conf: {judgment['confidence']:.2f})"
                     )
 
-                    # Auto-block high-confidence bots
+                    # Auto-block high-confidence garbage
                     if judgment["confidence"] >= 0.8:
-                        if judgment["classification"] in ("bot", "likely_bot"):
+                        if judgment["classification"] in ("garbage", "likely_garbage"):
                             with get_session() as s:
                                 exists = s.execute(
                                     select(BlockedAccount)
@@ -481,7 +481,7 @@ def create_app() -> Flask:
 
         allowed_sorts = {
             "tweet_count", "avg_likes", "avg_retweets",
-            "total_views", "username", "bot_score", "signal_score",
+            "total_views", "username", "garbage_score", "signal_score",
         }
         if sort not in allowed_sorts:
             sort = "tweet_count"
@@ -507,7 +507,7 @@ def create_app() -> Flask:
                     acct_stats.c.avg_likes,
                     acct_stats.c.avg_retweets,
                     acct_stats.c.total_views,
-                    AccountScore.bot_score,
+                    AccountScore.garbage_score,
                     AccountScore.signal_score,
                     AccountScore.cluster_label,
                     HumanLabel.label,
@@ -519,10 +519,10 @@ def create_app() -> Flask:
             # Filter
             if filter_ == "unlabeled":
                 q = q.where(HumanLabel.label.is_(None))
-            elif filter_ == "bot":
-                q = q.where(HumanLabel.label == "bot")
-            elif filter_ == "human":
-                q = q.where(HumanLabel.label == "human")
+            elif filter_ == "garbage":
+                q = q.where(HumanLabel.label == "garbage")
+            elif filter_ == "signal":
+                q = q.where(HumanLabel.label == "signal")
             elif filter_ == "suspects":
                 q = q.where(AccountScore.is_anomaly.is_(True))
 
@@ -533,7 +533,7 @@ def create_app() -> Flask:
                 "avg_retweets": acct_stats.c.avg_retweets,
                 "total_views": acct_stats.c.total_views,
                 "username": acct_stats.c.username,
-                "bot_score": AccountScore.bot_score,
+                "garbage_score": AccountScore.garbage_score,
                 "signal_score": AccountScore.signal_score,
             }
             sort_col = sort_map.get(sort, acct_stats.c.tweet_count)
@@ -556,7 +556,7 @@ def create_app() -> Flask:
                     "avg_likes": r.avg_likes or 0,
                     "avg_retweets": r.avg_retweets or 0,
                     "total_views": r.total_views or 0,
-                    "bot_score": r.bot_score,
+                    "garbage_score": r.garbage_score,
                     "signal_score": r.signal_score,
                     "cluster_label": r.cluster_label,
                     "label": r.label,
@@ -606,9 +606,9 @@ def create_app() -> Flask:
             ).scalars().all()
 
             judgment = s.execute(
-                select(BotJudgment)
-                .where(BotJudgment.username == username)
-                .order_by(BotJudgment.judged_at.desc())
+                select(SignalJudgment)
+                .where(SignalJudgment.username == username)
+                .order_by(SignalJudgment.judged_at.desc())
                 .limit(1)
             ).scalar_one_or_none()
 
@@ -667,8 +667,8 @@ def create_app() -> Flask:
 
             # Count uncertain LLM judgments (need HITL)
             total_uncertain = s.execute(
-                select(func.count(func.distinct(BotJudgment.username)))
-                .where(BotJudgment.classification == "uncertain")
+                select(func.count(func.distinct(SignalJudgment.username)))
+                .where(SignalJudgment.classification == "uncertain")
             ).scalar_one()
 
             counts = {
@@ -695,30 +695,30 @@ def create_app() -> Flask:
                     acct_stats.c.username,
                     acct_stats.c.tweet_count,
                     acct_stats.c.avg_likes,
-                    AccountScore.bot_score,
+                    AccountScore.garbage_score,
                     AccountScore.signal_score,
                     AccountScore.cluster_label,
-                    BotJudgment.classification.label("llm_classification"),
-                    BotJudgment.confidence.label("llm_confidence"),
-                    BotJudgment.reasoning.label("llm_reasoning"),
+                    SignalJudgment.classification.label("llm_classification"),
+                    SignalJudgment.confidence.label("llm_confidence"),
+                    SignalJudgment.reasoning.label("llm_reasoning"),
                     HumanLabel.label,
                 )
                 .outerjoin(AccountScore, acct_stats.c.username == AccountScore.username)
-                .outerjoin(BotJudgment, acct_stats.c.username == BotJudgment.username)
+                .outerjoin(SignalJudgment, acct_stats.c.username == SignalJudgment.username)
                 .outerjoin(HumanLabel, acct_stats.c.username == HumanLabel.username)
             )
 
             if filter_ == "unlabeled":
                 q = q.where(HumanLabel.label.is_(None))
             elif filter_ == "uncertain":
-                q = q.where(BotJudgment.classification == "uncertain")
+                q = q.where(SignalJudgment.classification == "uncertain")
             elif filter_ == "scored":
-                q = q.where(AccountScore.bot_score.isnot(None))
+                q = q.where(AccountScore.garbage_score.isnot(None))
 
             # Sort: uncertain LLM judgments first (need HITL), then anomalies, then by tweets
             q = q.order_by(
-                case((BotJudgment.classification == "uncertain", 0), else_=1),
-                desc(AccountScore.bot_score).nullslast(),
+                case((SignalJudgment.classification == "uncertain", 0), else_=1),
+                desc(AccountScore.garbage_score).nullslast(),
                 desc(acct_stats.c.tweet_count),
             )
 
@@ -742,7 +742,7 @@ def create_app() -> Flask:
                     "username": r.username,
                     "tweet_count": r.tweet_count,
                     "avg_likes": r.avg_likes or 0,
-                    "bot_score": r.bot_score,
+                    "garbage_score": r.garbage_score,
                     "signal_score": r.signal_score,
                     "cluster_label": r.cluster_label,
                     "llm_classification": r.llm_classification,
@@ -786,7 +786,8 @@ def create_app() -> Flask:
         notes = request.form.get("notes", "").strip()
         redirect_url = request.form.get("redirect", url_for("review"))
 
-        if not username or label not in ("bot", "human", "unsure"):
+        valid_labels = {"signal", "garbage", "unsure"}
+        if not username or label not in valid_labels:
             flash("Invalid label request", "error")
             return redirect(redirect_url)
 

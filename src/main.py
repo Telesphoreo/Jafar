@@ -54,45 +54,6 @@ import time
 logger = logging.getLogger("jafar.main")
 
 
-async def should_send_ml_diagnostics(interval_days: int = 3) -> bool:
-    """Check if enough time has passed since last ML diagnostics email."""
-    from .database import get_session
-    from .models import AppState
-    from sqlalchemy import select
-    from datetime import timedelta
-
-    session = await get_session()
-    try:
-        result = await session.execute(
-            select(AppState).where(AppState.key == "last_ml_email")
-        )
-        state = result.scalar_one_or_none()
-
-        if state is None:
-            return True  # Never sent, send now
-
-        last_sent = datetime.fromisoformat(state.value)
-        return datetime.now() - last_sent >= timedelta(days=interval_days)
-    finally:
-        await session.close()
-
-
-async def mark_ml_diagnostics_sent() -> None:
-    """Record that ML diagnostics email was sent."""
-    from .database import get_session
-    from .models import AppState
-
-    session = await get_session()
-    try:
-        async with session.begin():
-            await session.merge(AppState(
-                key="last_ml_email",
-                value=datetime.now().isoformat(),
-            ))
-    finally:
-        await session.close()
-
-
 def sanitize_llm_output(text: str) -> str:
     """Clean up common LLM formatting issues.
 
@@ -773,7 +734,7 @@ async def _get_bot_usernames() -> set[str]:
     session = await get_session()
     try:
         blocked_q = select(BlockedAccount.username)
-        labeled_q = select(HumanLabel.username).where(HumanLabel.label == "bot")
+        labeled_q = select(HumanLabel.username).where(HumanLabel.label.in_(["bot", "garbage"]))
         anomaly_q = select(AccountScore.username).where(AccountScore.is_anomaly.is_(True))
 
         combined = union(blocked_q, labeled_q, anomaly_q)

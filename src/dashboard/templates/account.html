@@ -50,8 +50,8 @@
                 <input type="hidden" name="username" value="{{ username }}">
                 <input type="hidden" name="redirect" value="{{ url_for('account_detail', username=username) }}">
                 <div class="label-form" style="flex-wrap: wrap;">
-                    <button type="submit" name="label" value="human" class="btn btn-human {% if current_label and current_label.label == 'human' %}btn-active{% endif %}">Human</button>
-                    <button type="submit" name="label" value="bot" class="btn btn-bot {% if current_label and current_label.label == 'bot' %}btn-active{% endif %}">Bot</button>
+                    <button type="submit" name="label" value="signal" class="btn btn-signal {% if current_label and current_label.label == 'signal' %}btn-active{% endif %}">Signal</button>
+                    <button type="submit" name="label" value="garbage" class="btn btn-garbage {% if current_label and current_label.label == 'garbage' %}btn-active{% endif %}">Garbage</button>
                     <button type="submit" name="label" value="unsure" class="btn btn-unsure {% if current_label and current_label.label == 'unsure' %}btn-active{% endif %}">Unsure</button>
                     <input type="text" name="notes" placeholder="Notes..." value="{{ current_label.notes or '' if current_label else '' }}" style="margin-left: 4px;">
                 </div>
@@ -70,13 +70,13 @@
                     <form action="{{ url_for('watch_account') }}" method="POST" style="display: inline;">
                         <input type="hidden" name="username" value="{{ username }}">
                         <input type="hidden" name="redirect" value="{{ url_for('account_detail', username=username) }}">
-                        <button type="submit" class="btn btn-human" style="font-size: 11px;">Watch (scrape every run)</button>
+                        <button type="submit" class="btn btn-signal" style="font-size: 11px;">Watch (scrape every run)</button>
                         <input type="text" name="reason" placeholder="Reason..." style="margin-left: 4px; padding: 4px 8px; border: 1px solid #ddd; font-size: 11px; font-family: monospace;">
                     </form>
                 {% endif %}
 
                 {% if is_blocked %}
-                    <span class="badge badge-bot" style="margin-right: 4px;">blocked</span>
+                    <span class="badge badge-garbage" style="margin-right: 4px;">blocked</span>
                     <form action="{{ url_for('unblock_account') }}" method="POST" style="display: inline;">
                         <input type="hidden" name="username" value="{{ username }}">
                         <input type="hidden" name="redirect" value="{{ url_for('account_detail', username=username) }}">
@@ -86,7 +86,7 @@
                     <form action="{{ url_for('block_account') }}" method="POST" style="display: inline;">
                         <input type="hidden" name="username" value="{{ username }}">
                         <input type="hidden" name="redirect" value="{{ url_for('account_detail', username=username) }}">
-                        <button type="submit" class="btn btn-bot" style="font-size: 11px;">Block (discard forever)</button>
+                        <button type="submit" class="btn btn-garbage" style="font-size: 11px;">Block (discard forever)</button>
                     </form>
                 {% endif %}
             </div>
@@ -101,13 +101,13 @@
     <div class="card-body">
         <div style="display: flex; gap: 32px; margin-bottom: 16px;">
             <div style="font-family: monospace; font-size: 14px;">
-                <span style="color: #888;">Bot score:</span>
-                {% if score.bot_score > 0.7 %}
-                    <strong style="color: #c00;">{{ "%.3f"|format(score.bot_score) }}</strong>
-                {% elif score.bot_score > 0.4 %}
-                    <strong style="color: #c80;">{{ "%.3f"|format(score.bot_score) }}</strong>
+                <span style="color: #888;">Garbage score:</span>
+                {% if score.garbage_score > 0.7 %}
+                    <strong style="color: #c00;">{{ "%.3f"|format(score.garbage_score) }}</strong>
+                {% elif score.garbage_score > 0.4 %}
+                    <strong style="color: #c80;">{{ "%.3f"|format(score.garbage_score) }}</strong>
                 {% else %}
-                    <strong>{{ "%.3f"|format(score.bot_score) }}</strong>
+                    <strong>{{ "%.3f"|format(score.garbage_score) }}</strong>
                 {% endif %}
             </div>
             <div style="font-family: monospace; font-size: 14px;">
@@ -136,20 +136,20 @@
 </div>
 {% endif %}
 
-<!-- Bot Judgment -->
+<!-- LLM Judgment -->
 {% if judgment %}
 <div class="card">
-    <div class="card-header">LLM bot judgment</div>
+    <div class="card-header">LLM signal judgment</div>
     <div class="card-body">
         <div style="display: flex; gap: 24px; margin-bottom: 12px;">
             <div>
                 <span style="font-size: 12px; color: #888;">Classification:</span>
-                <span class="badge badge-{{ 'bot' if 'bot' in judgment.classification else 'human' if 'human' in judgment.classification else 'unsure' }}">
+                <span class="badge badge-{{ 'garbage' if 'garbage' in judgment.classification else 'signal' if 'signal' in judgment.classification else 'unsure' }}">
                     {{ judgment.classification }}
                 </span>
             </div>
             <div style="font-family: monospace; font-size: 13px;">
-                <span style="color: #888;">Bot probability:</span> <strong>{{ "%.2f"|format(judgment.bot_probability) }}</strong>
+                <span style="color: #888;">Garbage probability:</span> <strong>{{ "%.2f"|format(judgment.garbage_probability) }}</strong>
             </div>
             <div style="font-family: monospace; font-size: 13px;">
                 <span style="color: #888;">Confidence:</span> <strong>{{ "%.2f"|format(judgment.confidence) }}</strong>

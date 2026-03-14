@@ -35,7 +35,7 @@
     <div class="card-body">
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
             <form action="{{ url_for('run_ml') }}" method="POST" style="display: inline;">
-                <button type="submit" class="btn btn-primary">Run bot detection + signal scoring</button>
+                <button type="submit" class="btn btn-primary">Run garbage detection + signal scoring</button>
             </form>
             <span style="font-size: 12px; color: #888;">
                 {% if last_scored %}
@@ -81,9 +81,9 @@
                         <td style="font-family: monospace;">{{ run.run_id }}</td>
                         <td>
                             {% if run.status == 'completed' %}
-                                <span class="badge badge-human">completed</span>
+                                <span class="badge badge-signal">completed</span>
                             {% elif run.status == 'failed' %}
-                                <span class="badge badge-bot">failed</span>
+                                <span class="badge badge-garbage">failed</span>
                             {% else %}
                                 <span class="badge badge-unsure">{{ run.status }}</span>
                             {% endif %}

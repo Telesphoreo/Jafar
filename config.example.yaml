@@ -233,13 +233,6 @@ temporal:
   # Recommended: 14 (two-week gaps indicate distinct events)
   gap_threshold_days: 14
 
-# ML Analysis Settings
-ml:
-  # How often to include ML diagnostics (bot detection, account scoring) in the digest email.
-  # The ML analysis always runs to build the dataset, but the email section is only
-  # included every N days to reduce noise. Set to 1 to include every run.
-  diagnostics_interval_days: 3
-
 # Logging
 logging:
   # Level: DEBUG, INFO, WARNING, ERROR, CRITICAL

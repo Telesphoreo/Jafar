@@ -89,13 +89,6 @@ class TestAppConfig:
         assert config.min_trend_authors > 0
         assert config.broad_tweet_limit > 0  # already checked above, just a placeholder
 
-    def test_ml_diagnostics_interval_days_default(self):
-        """Test that ml_diagnostics_interval_days defaults to 3."""
-        from src.config import AppConfig
-
-        config = AppConfig()
-        assert config.ml_diagnostics_interval_days == 3
-
     def test_broad_topics_has_entries(self):
         """Test that broad_topics has entries."""
         from src.config import AppConfig

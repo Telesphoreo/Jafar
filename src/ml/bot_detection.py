@@ -228,7 +228,7 @@ class BotScorer:
             for row in rows
         ]
 
-    def _raw_score_to_bot_score(self, decision_score: float) -> float:
+    def _raw_score_to_garbage_score(self, decision_score: float) -> float:
         """Convert IsolationForest decision_function output to a 0-1 bot score.
 
         IsolationForest.decision_function returns negative values for anomalies
@@ -333,7 +333,7 @@ class BotScorer:
 
         return {
             "username": username,
-            "bot_score": self._raw_score_to_bot_score(decision),
+            "garbage_score": self._raw_score_to_garbage_score(decision),
             "anomaly": prediction == -1,
             "features": features,
         }
@@ -343,7 +343,7 @@ class BotScorer:
     ) -> list[dict]:
         """Score every account with enough tweets.
 
-        Returns a list sorted by bot_score descending.
+        Returns a list sorted by garbage_score descending.
         """
         if self.model is None:
             logger.warning("Model not trained — call train() first.")
@@ -368,11 +368,11 @@ class BotScorer:
             results.append(
                 {
                     "username": username,
-                    "bot_score": self._raw_score_to_bot_score(decision),
+                    "garbage_score": self._raw_score_to_garbage_score(decision),
                     "anomaly": prediction == -1,
                     "features": features,
                 }
             )
 
-        results.sort(key=lambda r: r["bot_score"], reverse=True)
+        results.sort(key=lambda r: r["garbage_score"], reverse=True)
         return results

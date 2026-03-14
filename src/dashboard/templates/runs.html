@@ -29,9 +29,9 @@
                     <td style="font-family: monospace; font-weight: 600;">{{ run.run_id }}</td>
                     <td>
                         {% if run.status == 'completed' %}
-                            <span class="badge badge-human">completed</span>
+                            <span class="badge badge-signal">completed</span>
                         {% elif run.status == 'failed' %}
-                            <span class="badge badge-bot">failed</span>
+                            <span class="badge badge-garbage">failed</span>
                         {% elif run.status == 'running' %}
                             <span class="badge badge-unsure">running</span>
                         {% else %}

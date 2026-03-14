@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-header">
     <h1>Review queue</h1>
-    <p>Accounts the LLM couldn't classify with confidence are shown first. Everything else is sorted by bot score.</p>
+    <p>Accounts the LLM couldn't classify with confidence are shown first. Everything else is sorted by garbage score.</p>
 </div>
 
 <!-- Filter tabs -->
@@ -30,14 +30,14 @@
                 </span>
 
                 <!-- ML scores -->
-                {% if item.bot_score is not none %}
+                {% if item.garbage_score is not none %}
                 <span style="margin-left: 8px;">
-                    {% if item.bot_score > 0.7 %}
-                        <span class="badge badge-bot">bot: {{ "%.2f"|format(item.bot_score) }}</span>
-                    {% elif item.bot_score > 0.4 %}
-                        <span class="badge badge-unsure">bot: {{ "%.2f"|format(item.bot_score) }}</span>
+                    {% if item.garbage_score > 0.7 %}
+                        <span class="badge badge-garbage">garbage: {{ "%.2f"|format(item.garbage_score) }}</span>
+                    {% elif item.garbage_score > 0.4 %}
+                        <span class="badge badge-unsure">garbage: {{ "%.2f"|format(item.garbage_score) }}</span>
                     {% else %}
-                        <span style="font-family: monospace; font-size: 11px; color: #888;">bot: {{ "%.2f"|format(item.bot_score) }}</span>
+                        <span style="font-family: monospace; font-size: 11px; color: #888;">garbage: {{ "%.2f"|format(item.garbage_score) }}</span>
                     {% endif %}
                 </span>
                 {% endif %}
@@ -52,10 +52,10 @@
                 <span style="margin-left: 8px;">
                     {% if item.llm_classification == 'uncertain' %}
                         <span class="badge badge-unsure">LLM: uncertain</span>
-                    {% elif 'bot' in item.llm_classification %}
-                        <span class="badge badge-bot">LLM: {{ item.llm_classification }}</span>
-                    {% elif 'human' in item.llm_classification %}
-                        <span class="badge badge-human">LLM: {{ item.llm_classification }}</span>
+                    {% elif 'garbage' in item.llm_classification %}
+                        <span class="badge badge-garbage">LLM: {{ item.llm_classification }}</span>
+                    {% elif 'signal' in item.llm_classification %}
+                        <span class="badge badge-signal">LLM: {{ item.llm_classification }}</span>
                     {% endif %}
                     {% if item.llm_confidence is not none %}
                         <span style="font-family: monospace; font-size: 11px; color: #888;">({{ "%.0f"|format(item.llm_confidence * 100) }}%)</span>
@@ -67,8 +67,8 @@
             <form action="{{ url_for('label_account') }}" method="POST" class="label-form">
                 <input type="hidden" name="username" value="{{ item.username }}">
                 <input type="hidden" name="redirect" value="{{ url_for('review', filter=filter, page=page) }}">
-                <button type="submit" name="label" value="human" class="btn btn-human {% if item.label == 'human' %}btn-active{% endif %}">Human</button>
-                <button type="submit" name="label" value="bot" class="btn btn-bot {% if item.label == 'bot' %}btn-active{% endif %}">Bot</button>
+                <button type="submit" name="label" value="signal" class="btn btn-signal {% if item.label == 'signal' %}btn-active{% endif %}">Signal</button>
+                <button type="submit" name="label" value="garbage" class="btn btn-garbage {% if item.label == 'garbage' %}btn-active{% endif %}">Garbage</button>
                 <button type="submit" name="label" value="unsure" class="btn btn-unsure {% if item.label == 'unsure' %}btn-active{% endif %}">Unsure</button>
             </form>
         </div>
