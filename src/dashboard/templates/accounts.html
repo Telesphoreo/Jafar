@@ -26,6 +26,7 @@
             <a href="{{ url_for('accounts', sort=sort, order=order, filter='unlabeled') }}" class="btn {% if filter == 'unlabeled' %}btn-active{% endif %}" style="font-size: 11px;">unlabeled</a>
             <a href="{{ url_for('accounts', sort=sort, order=order, filter='signal') }}" class="btn btn-signal {% if filter == 'signal' %}btn-active{% endif %}" style="font-size: 11px;">labeled signal</a>
             <a href="{{ url_for('accounts', sort=sort, order=order, filter='garbage') }}" class="btn btn-garbage {% if filter == 'garbage' %}btn-active{% endif %}" style="font-size: 11px;">labeled garbage</a>
+            <a href="{{ url_for('accounts', sort=sort, order=order, filter='unsure') }}" class="btn btn-unsure {% if filter == 'unsure' %}btn-active{% endif %}" style="font-size: 11px;">deferred</a>
             <a href="{{ url_for('accounts', sort=sort, order=order, filter='suspects') }}" class="btn {% if filter == 'suspects' %}btn-active{% endif %}" style="font-size: 11px;">anomalies (ml-flagged)</a>
         </div>
     </div>
@@ -39,10 +40,10 @@
                     <th>Account</th>
                     <th>Tweets</th>
                     <th>Avg likes</th>
-                    <th>Garbage score</th>
-                    <th>Signal score</th>
-                    <th>Cluster</th>
-                    <th>Label</th>
+                    <th title="isolationforest anomaly score. needs 5+ tweets. higher = more anomalous." style="cursor: help;">garbage score</th>
+                    <th title="percentile rank of signal quality among all scored accounts." style="cursor: help;">signal score</th>
+                    <th title="kmeans cluster based on behavioral features." style="cursor: help;">cluster</th>
+                    <th title="signal/garbage classification from llm judge or manual hitl review." style="cursor: help;">label</th>
                 </tr>
             </thead>
             <tbody>
@@ -53,20 +54,24 @@
                     <td class="mono">{{ "%.0f"|format(acct.avg_likes) }}</td>
                     <td class="mono">
                         {% if acct.garbage_score is not none %}
-                            {% if acct.garbage_score > 0.7 %}
-                                <strong style="color: #c00;">{{ "%.2f"|format(acct.garbage_score) }}</strong>
-                            {% elif acct.garbage_score > 0.4 %}
-                                <span style="color: #c80;">{{ "%.2f"|format(acct.garbage_score) }}</span>
+                            {% if acct.garbage_score == 0 and acct.tweet_count < 5 %}
+                                <span style="color: #aaa; cursor: help;" title="needs 5+ tweets for garbage scoring (has {{ acct.tweet_count }})">n/a</span>
+                            {% elif acct.garbage_score >= 0.90 %}
+                                <span style="color: #b00;">{{ "%.2f"|format(acct.garbage_score) }}</span>
                             {% else %}
                                 {{ "%.2f"|format(acct.garbage_score) }}
                             {% endif %}
                         {% else %}
-                            <span style="color: #ccc;">—</span>
+                            <span style="color: #ccc;" title="run ml analysis first">—</span>
                         {% endif %}
                     </td>
                     <td class="mono">
                         {% if acct.signal_score is not none %}
-                            {{ "%.2f"|format(acct.signal_score) }}
+                            {% if acct.signal_score >= 0.90 %}
+                                <span style="color: #1a6e1a;">{{ "%.2f"|format(acct.signal_score) }}</span>
+                            {% else %}
+                                {{ "%.2f"|format(acct.signal_score) }}
+                            {% endif %}
                         {% else %}
                             <span style="color: #ccc;">—</span>
                         {% endif %}

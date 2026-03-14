@@ -113,6 +113,20 @@ def create_app() -> Flask:
     def feature_name_filter(value):
         return FEATURE_DISPLAY.get(value, value.replace("_", " "))
 
+    @app.template_filter("compact_number")
+    def compact_number_filter(value):
+        try:
+            n = float(value)
+        except (TypeError, ValueError):
+            return value
+        if n >= 1_000_000_000:
+            return f"{n / 1_000_000_000:.1f}b"
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}m"
+        if n >= 1_000:
+            return f"{n / 1_000:.1f}k"
+        return f"{n:.0f}"
+
     # ------------------------------------------------------------------
     # Overview
     # ------------------------------------------------------------------
@@ -525,6 +539,10 @@ def create_app() -> Flask:
 
                 logger.info(f"LLM judge complete: {judged_count}/{len(to_judge)} accounts judged")
 
+                # Auto-apply any pending actions from this and previous runs
+                _ml_status["progress"] = "applying pending actions..."
+                _apply_pending_actions(get_session)
+
             except Exception as e:
                 logger.error(f"LLM judge failed: {e}", exc_info=True)
                 _ml_status["last_error"] = str(e)
@@ -549,11 +567,9 @@ def create_app() -> Flask:
     # Apply pending auto-actions from existing judgments
     # ------------------------------------------------------------------
 
-    @app.route("/api/apply-judgments", methods=["POST"])
-    def apply_judgments():
-        """One-time catchup: apply auto-block/auto-label to existing judgments."""
-        with get_session() as s:
-            # Get all high-confidence judgments
+    def _apply_pending_actions(session_factory):
+        """Apply auto-block/auto-label to all high-confidence judgments."""
+        with session_factory() as s:
             judgments = s.execute(
                 select(SignalJudgment)
                 .where(SignalJudgment.confidence >= 0.8)
@@ -589,7 +605,11 @@ def create_app() -> Flask:
                         labeled += 1
 
             s.commit()
+            return blocked, labeled
 
+    @app.route("/api/apply-judgments", methods=["POST"])
+    def apply_judgments():
+        blocked, labeled = _apply_pending_actions(get_session)
         flash(f"{blocked} accounts blocked, {labeled} accounts labeled as signal.", "success")
         return redirect(url_for("overview"))
 
@@ -649,6 +669,8 @@ def create_app() -> Flask:
                 q = q.where(HumanLabel.label == "garbage")
             elif filter_ == "signal":
                 q = q.where(HumanLabel.label == "signal")
+            elif filter_ == "unsure":
+                q = q.where(HumanLabel.label == "unsure")
             elif filter_ == "suspects":
                 q = q.where(AccountScore.is_anomaly.is_(True))
 
@@ -818,10 +840,26 @@ def create_app() -> Flask:
 
             if filter_ == "needs_review":
                 # Judged but not blocked and not labeled — the actual backlog
+                # Also include "unsure" accounts that have new tweets since labeling
+                from sqlalchemy import or_
+                unsure_with_new_tweets = select(
+                    HumanLabel.username
+                ).join(
+                    Tweet, Tweet.username == HumanLabel.username
+                ).where(
+                    HumanLabel.label == "unsure",
+                    Tweet.scraped_at > HumanLabel.labeled_at,
+                ).group_by(HumanLabel.username).subquery()
+
                 q = q.where(
                     acct_stats.c.username.notin_(blocked_sq),
-                    HumanLabel.label.is_(None),
+                    or_(
+                        HumanLabel.label.is_(None),
+                        acct_stats.c.username.in_(select(unsure_with_new_tweets)),
+                    ),
                 )
+            elif filter_ == "unsure":
+                q = q.where(HumanLabel.label == "unsure")
             elif filter_ == "resolved":
                 # Already handled (blocked or labeled)
                 q = q  # show all judged, including resolved
@@ -846,12 +884,17 @@ def create_app() -> Flask:
                 )
             )
             count_needs_review = s.execute(needs_review_q).scalar_one()
+            count_unsure = s.execute(
+                select(func.count()).select_from(HumanLabel)
+                .where(HumanLabel.label == "unsure")
+            ).scalar_one()
             count_all_judged = s.execute(
                 select(func.count(func.distinct(SignalJudgment.username)))
             ).scalar_one()
 
             counts = {
                 "needs_review": count_needs_review,
+                "unsure": count_unsure,
                 "all": count_all_judged,
             }
             total_pages = max(1, math.ceil(total / 20))
@@ -905,6 +948,41 @@ def create_app() -> Flask:
         return render_template("runs.html", runs=all_runs)
 
     # ------------------------------------------------------------------
+    # Search
+    # ------------------------------------------------------------------
+
+    @app.route("/search")
+    def search():
+        q = request.args.get("q", "").strip().lstrip("@")
+        if not q:
+            return redirect(url_for("accounts"))
+
+        # Exact match — go straight to account page
+        with get_session() as s:
+            exact = s.execute(
+                select(Tweet.username)
+                .where(Tweet.username == q)
+                .limit(1)
+            ).scalar_one_or_none()
+
+            if exact:
+                return redirect(url_for("account_detail", username=exact))
+
+            # Partial match — find accounts containing the query
+            matches = s.execute(
+                select(Tweet.username, func.count().label("tweet_count"))
+                .where(Tweet.username.ilike(f"%{q}%"))
+                .group_by(Tweet.username)
+                .order_by(desc("tweet_count"))
+                .limit(20)
+            ).all()
+
+        if len(matches) == 1:
+            return redirect(url_for("account_detail", username=matches[0].username))
+
+        return render_template("search.html", query=q, results=matches)
+
+    # ------------------------------------------------------------------
     # HITL labeling
     # ------------------------------------------------------------------
 
@@ -928,6 +1006,7 @@ def create_app() -> Flask:
             if existing:
                 existing.label = label
                 existing.notes = notes or existing.notes
+                existing.labeled_at = datetime.now()
             else:
                 s.add(HumanLabel(
                     username=username,

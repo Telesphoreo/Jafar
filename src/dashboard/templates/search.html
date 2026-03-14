@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}search: {{ query }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>search: {{ query }}</h1>
+    <p>{{ results|length }} accounts found.</p>
+</div>
+
+{% if results %}
+<div class="card">
+    <div class="card-body" style="padding: 0;">
+        <table>
+            <thead>
+                <tr>
+                    <th>account</th>
+                    <th>tweets</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in results %}
+                <tr>
+                    <td><a href="{{ url_for('account_detail', username=r.username) }}" class="username">@{{ r.username }}</a></td>
+                    <td>{{ r.tweet_count }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body" style="text-align: center; padding: 60px; color: #999;">
+        no accounts matching "{{ query }}" found.
+    </div>
+</div>
+{% endif %}
+{% endblock %}
