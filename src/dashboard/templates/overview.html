@@ -178,13 +178,25 @@
     var scoringLabel = btnScoring.textContent;
     var judgingLabel = btnJudging.textContent;
 
-    function showStopButtons() {
-        btnScoring.textContent = 'stop';
-        btnScoring.disabled = false;
-        btnScoring.classList.add('btn-stop');
-        btnJudging.textContent = 'stop';
-        btnJudging.disabled = false;
-        btnJudging.classList.add('btn-stop');
+    var activeTask = null; // 'scoring' or 'judging'
+
+    function showStopButton(task) {
+        activeTask = task || activeTask;
+        if (activeTask === 'scoring') {
+            btnScoring.textContent = 'stop';
+            btnScoring.disabled = false;
+            btnScoring.classList.add('btn-stop');
+            btnJudging.textContent = judgingLabel;
+            btnJudging.disabled = true;
+            btnJudging.classList.remove('btn-stop');
+        } else {
+            btnJudging.textContent = 'stop';
+            btnJudging.disabled = false;
+            btnJudging.classList.add('btn-stop');
+            btnScoring.textContent = scoringLabel;
+            btnScoring.disabled = true;
+            btnScoring.classList.remove('btn-stop');
+        }
     }
 
     function resetButtons() {
@@ -212,7 +224,7 @@
         progressText.style.display = 'block';
         progressText.textContent = (label || 'scoring') + ': starting...';
         progressFill.style.width = '100%';
-        showStopButtons();
+        showStopButton(label === 'llm judge' ? 'judging' : 'scoring');
         polling = setInterval(poll, 2000);
     }
 
@@ -236,7 +248,7 @@
                         progressFill.style.width = '100%';
                     }
 
-                    if (!stopping) showStopButtons();
+                    if (!stopping) showStopButton(data.task === 'judging' ? 'judging' : 'scoring');
                 } else {
                     clearInterval(polling);
                     polling = null;
