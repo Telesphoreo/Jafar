@@ -132,8 +132,8 @@ start() {
 
     cd "$SCRIPT_DIR" || { echo "Error: Cannot change to $SCRIPT_DIR" >&2; exit 1; }
 
-    # Run with nohup, redirect all output to log
-    nohup uv run python -m src.main >> "$log_file" 2>&1 &
+    # Run with nohup in a new process group (setsid) so we can kill the entire tree
+    setsid nohup uv run python -m src.main >> "$log_file" 2>&1 &
     local new_pid=$!
 
     # Verify the process actually started
@@ -172,8 +172,8 @@ stop() {
 
     echo "Stopping pipeline (PID: $pid)..."
 
-    # Graceful shutdown: SIGTERM first
-    kill -TERM "$pid" 2>/dev/null || true
+    # Kill the entire process group (uv + python child) with SIGTERM
+    kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
 
     # Wait for graceful shutdown with timeout
     local waited=0
@@ -183,10 +183,10 @@ stop() {
         echo "Waiting for shutdown... ($waited/${SHUTDOWN_TIMEOUT}s)"
     done
 
-    # If still running, force kill
+    # If still running, force kill the entire process group
     if is_process_running "$pid"; then
         echo "Process did not exit gracefully, sending SIGKILL..."
-        kill -KILL "$pid" 2>/dev/null || true
+        kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
         sleep 1
     fi
 
