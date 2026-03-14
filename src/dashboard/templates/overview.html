@@ -171,6 +171,18 @@
     var polling = null;
     var wasRunning = false;
 
+    function startPolling(label) {
+        if (polling) return;
+        wasRunning = true;
+        progressBar.style.display = 'block';
+        progressText.style.display = 'block';
+        progressText.textContent = (label || 'scoring') + ': starting...';
+        progressFill.style.width = '100%';
+        document.getElementById('btn-scoring').disabled = true;
+        document.getElementById('btn-judging').disabled = true;
+        polling = setInterval(poll, 2000);
+    }
+
     function poll() {
         fetch('{{ url_for("ml_status") }}')
             .then(function(r) { return r.json(); })
@@ -197,7 +209,6 @@
                     clearInterval(polling);
                     polling = null;
                     if (wasRunning) {
-                        // task just finished — reload to get fresh stats
                         window.location.reload();
                     }
                 }
@@ -205,14 +216,24 @@
             .catch(function() {});
     }
 
-    // check once — only poll if running
+    // intercept form submissions to start polling immediately
+    document.getElementById('btn-scoring').closest('form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        startPolling('scoring');
+        fetch(this.action, { method: 'POST' }).catch(function() {});
+    });
+    document.getElementById('btn-judging').closest('form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        startPolling('llm judge');
+        fetch(this.action, { method: 'POST' }).catch(function() {});
+    });
+
+    // check once on load in case a task is already running
     fetch('{{ url_for("ml_status") }}')
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.running) {
-                wasRunning = true;
-                poll();
-                polling = setInterval(poll, 3000);
+                startPolling(data.task === 'judging' ? 'llm judge' : 'scoring');
             }
         })
         .catch(function() {});
