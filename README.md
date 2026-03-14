@@ -25,8 +25,9 @@ You have a mass-produced Roth IRA from Fidelity and a dream. Let's fucking go.
   calls yfinance to check. No data dumping.
 - **Calibrated skepticism.** Most days are boring. "Nothing to report" is a successful output. This alone would
   collapse CNBC.
-- **ML pipeline.** Bot detection, account scoring, self-evaluating. Runs every execution. No quarterly model review
-  committee.
+- **ML dashboard.** Garbage detection, signal scoring, LLM-as-judge, human-in-the-loop review. A full control center
+  with a Windows Aero aesthetic and a green glass progress bar. Run it with `uv run dashboard`. Bloomberg's terminal
+  hasn't been redesigned since the Cold War. Ours has a shimmer animation.
 - **No keyword lists.** Broad topics + statistical NLP. Finds "H200 shortages" by searching "shortage", not by
   hardcoding "H200" into a config last updated by an analyst who left for Citadel.
 - **Vector memory.** Remembers every past digest and finds historical parallels via semantic search. Catches fintwit
@@ -34,9 +35,10 @@ You have a mass-produced Roth IRA from Fidelity and a dream. Let's fucking go.
 
 ## How It Works
 
-Eleven pipeline steps. Does more before you've sat down at your desk with your performative espresso (the one from
-the office's \$4,000 La Marzocca that took you ten minutes because you still haven't figured out all the knobs) than
-Aladdin's entire morning standup accomplishes before lunch.
+Two commands. `uv run jafar` runs the pipeline. `uv run dashboard` opens the ML control center. Does more before
+you've sat down at your desk with your performative espresso (the one from the office's \$4,000 La Marzocca that took
+you ten minutes because you still haven't figured out all the knobs) than Aladdin's entire morning standup accomplishes
+before lunch.
 
 1. **Scout.** Scrapes 30+ broad topics from Twitter ("too expensive", "sold out", "shrinkflation"). Consumer economy,
    not fintwit cashtag echo chambers.
@@ -70,26 +72,45 @@ Aladdin's entire morning standup accomplishes before lunch.
    | `get_trend_timeline(trend)`          | New trend or recycled cope from last month?                                           |
    | `get_weather_forecast(cities)`       | Panic buying in Houston? Checks if there's actually a hurricane.                      |
 
-9. **ML Pipeline.** Bot detection, account signal scoring, LLM-as-judge validation. See below.
+9. **Reporter.** Emails you a formatted HTML digest with signal strength, fact checks, and historical parallels. No ML
+   results in the digest. That's what the dashboard is for. The digest is for humans who don't want to see confusion
+   matrices with their morning coffee.
 
-10. **Reporter.** Emails you a formatted HTML digest with signal strength, fact checks, and historical parallels. Shows
-    its work.
+10. **History.** Stores the digest to vector memory for future semantic search. Admin diagnostics email with run stats.
 
-11. **History.** Stores the digest to vector memory for future semantic search. Admin diagnostics email with run stats.
+The pipeline also filters tweets from blocked accounts before analysis. If the ML dashboard flagged @CryptoSpamBot9000
+as garbage, their tweets never touch the LLM. Saves tokens. Saves dignity.
 
-## ML Pipeline
+## ML Dashboard
 
-Fully autonomous. Trains, evaluates, and reports on itself every run.
+```bash
+uv run dashboard
+```
 
-- **Bot Detection (IsolationForest).** Unsupervised anomaly detection across 16 behavioral features. No labeled data.
-  If your account tweets like it was born in a server rack, we'll notice.
-- **Account Signal Scoring (KMeans).** Clusters accounts into `high_signal`, `news_aggregator`, `casual`,
-  `low_activity`. Finds people who actually know things, not people with blue checkmarks.
-- **LLM-as-Judge.** Gemini validates every ML bot flag with reasoning and confidence scores. Creates pseudo-labeled
-  ground truth. Aladdin's model validation process involves more humans than our codebase has functions.
-- **Self-Evaluating.** Computes precision, recall, and F1 of ML vs LLM every run. Emails you diagnostics every few
-  days so you can see drift without logging into anything or scheduling a "model health review" that three people
-  attend and two of them are on mute.
+That's it. You now have a control center that Bloomberg charges $25,000/yr to approximate poorly.
+
+The dashboard is a Flask app with a UI aesthetic that would make Windows Vista shed a single tear of pride. Dark chrome
+navbar with an amber glow line. Brushed metal card headers. A progress bar that is a 1:1 recreation of the Windows 7
+progress bar, green glass gradient and all, shimmer included, because if you're going to build a dashboard you should
+build one with a soul. No Tailwind. No shadcn. No Lucide icons. No "modern minimal" that looks like every other
+ChatGPT-generated SaaS landing page that will pivot to AI agents next quarter. We went full Aero.
+
+- **Garbage detection.** IsolationForest across 16 behavioral features. Not "bot detection." @DeItaone is automated
+  and invaluable. We classify signal vs garbage.
+- **Signal scoring.** Percentile-ranked composite of engagement, content originality, trend coverage, and recurrence.
+  Finds the retail workers and industry insiders, not the blue checkmarks.
+- **LLM-as-Judge.** Gemini reads actual tweets and classifies. 80%+ confidence auto-applies. Uncertain ones go to
+  your review queue.
+- **HITL review.** Three buttons: signal, garbage, unsure. Simple enough that even an MBA wouldn't need a walkthrough.
+  "Unsure" comes back when new tweets arrive.
+- **Watch list.** High-signal accounts get scraped every pipeline run. Alternative data without the terabytes of
+  satellite imagery and the CNN that thinks tree shadows are Camrys. Ask me how I fucking know this.
+- **Block list.** Crypto spam, follower farms, "Bullish" reply bots. Blocked forever. They don't deserve the compute.
+- **Search.** Type a username, hit enter. Bloomberg requires ticker, EQUITY, GO. Three keystrokes. Ours is one.
+
+Windows Aero revival. Dark chrome navbar, amber glow line, brushed metal headers, Win7 green glass progress bar.
+Zune-era lowercase typography. Sharp edges. Bloomberg looks like 1987. Aladdin looks like SAP. We look like Vista
+went to design school.
 
 ## Installation
 
@@ -117,8 +138,16 @@ More accounts = more parallel workers = faster scraping.
 ## Running
 
 ```bash
+# Run the pipeline (scrape, analyze, email digest)
 uv run jafar
+
+# Open the ML dashboard (garbage detection, signal scoring, HITL review)
+uv run dashboard
 ```
+
+The pipeline stores everything to Postgres. The dashboard reads from Postgres. They don't need to run at the same time.
+Run the pipeline on a cron, open the dashboard when you feel like reviewing accounts. Two processes. Zero coordination.
+Aladdin needs a deployment team. We need `uv run`.
 
 For production deployment with systemd timers and randomized scheduling, see **[DAEMONIZING.md](DAEMONIZING.md)**.
 
@@ -149,8 +178,9 @@ CREATE
 EXTENSION vchord CASCADE;
 ```
 
-One database. Tweets, embeddings, ML training data, historical digests, app state. All PostgreSQL. No Oracle DBA
-explaining why the license renewal costs more than the GDP of Micronesia.
+One database. Tweets, embeddings, ML scores, signal judgments, account watch/block lists, pipeline checkpoints,
+historical digests. All PostgreSQL. Advisory locks for pipeline concurrency. No Oracle DBA explaining why the license
+renewal costs more than the GDP of Micronesia.
 
 ## Why This Exists
 
@@ -158,12 +188,14 @@ explaining why the license renewal costs more than the GDP of Micronesia.
 |----------------------------------|--------------------|------------------------------------------------------------|--------------------------------------------|----------------------------|
 | Cost                             | ~\$0.33/mo         | More than your rent, your car, and your therapist combined | \$25,000/yr                                | Free (you are the product) |
 | Daily economic digest            | Yes                | Yes, for the price of a used BMW per quarter               | Yes, if you can read the UI without crying | Yes, but it's vibes        |
+| ML dashboard                     | Windows Aero       | SAP on a CRT                                               | A mainframe having a seizure               | A WordPress template       |
 | Consumer economy signals         | Twitter + NLP + ML | Entombed under 47 layers of enterprise middleware          | Cashtags and terminals                     | "Here's what's trending!"  |
-| Bot detection                    | IsolationForest    | A rules engine from 2009                                   | N/A                                        | N/A                        |
-| Self-evaluating ML               | Every run          | Annual review (postponed, rescheduled, canceled)           | N/A                                        | N/A                        |
+| Garbage detection                | IsolationForest    | A rules engine from 2009                                   | N/A                                        | N/A                        |
+| Signal/garbage classification    | LLM judge + HITL   | Annual review (postponed, rescheduled, canceled)           | N/A                                        | N/A                        |
 | Will tell you "nothing happened" | Yes                | Silence doesn't generate billable hours                    | The terminal is always screaming           | Every email is urgent      |
 | Open source                      | Yes                | Lmao                                                       | Lmao                                       | "We have a newsletter"     |
 | Runs on a single board computer  | Yes                | Enough servers to heat a city block                        | A desktop app from 2003                    | A WordPress site           |
+| UI aesthetic                     | Vista glow line    | Classified (leaked: SAP)                                   | 1987                                       | 2019 WordPress theme       |
 
 ## The Corruption Receipts
 

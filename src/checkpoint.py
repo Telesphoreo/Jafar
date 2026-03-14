@@ -49,6 +49,7 @@ class PipelineState:
 
     last_updated: str = ""
     error: str = ""
+    diagnostics_json: dict = field(default_factory=dict)
 
 
 class CheckpointManager:
@@ -127,6 +128,22 @@ class CheckpointManager:
             logger.info("Previous run completed successfully, starting fresh")
             return False
 
+        # If the previous run still says "running" but we hold the advisory lock,
+        # the old process must have died (SIGTERM/SIGKILL). Update status to reflect reality.
+        if run.status == "running":
+            logger.warning(
+                f"Previous run {run.run_id} was still 'running' but lock was not held — "
+                "marking as interrupted (previous process likely killed)"
+            )
+            session2 = await get_session()
+            async with session2.begin():
+                stale = await session2.get(PipelineRun, run.run_id)
+                if stale:
+                    stale.status = "interrupted"
+                    stale.last_updated = datetime.now()
+            await session2.close()
+            run.status = "interrupted"
+
         self._state = self._to_state(run)
         logger.info(f"Found resumable checkpoint: {run.run_id} (status: {run.status})")
         return True
@@ -135,6 +152,22 @@ class CheckpointManager:
         """Start a fresh pipeline run, overwriting any prior state for today."""
         today = datetime.now().strftime("%Y%m%d")
         now = datetime.now()
+
+        # If there's an existing "running" row for today, the previous process
+        # must have died without cleaning up. Mark it as interrupted.
+        session = await get_session()
+        try:
+            existing = await session.get(PipelineRun, today)
+            if existing and existing.status == "running":
+                logger.warning(
+                    f"Existing run {today} was still 'running' — "
+                    "marking as interrupted before starting new run"
+                )
+                async with session.begin():
+                    existing.status = "interrupted"
+                    existing.last_updated = now
+        finally:
+            await session.close()
 
         self._state = PipelineState(
             run_id=today,
@@ -245,6 +278,18 @@ class CheckpointManager:
         await self.save()
         logger.info("Step 6 (history) complete — pipeline finished!")
 
+    async def save_diagnostics(self, diagnostics) -> None:
+        """Persist current diagnostics snapshot to the database."""
+        from dataclasses import asdict
+        state = self.get_state()
+        d = asdict(diagnostics)
+        # Convert datetimes to strings for JSON
+        for k, v in d.items():
+            if isinstance(v, datetime):
+                d[k] = v.isoformat()
+        state.diagnostics_json = d
+        await self.save()
+
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
@@ -277,6 +322,7 @@ class CheckpointManager:
                 is_notable=self._state.is_notable,
                 top_engagement=self._state.top_engagement,
                 error=self._state.error,
+                diagnostics_json=self._state.diagnostics_json or None,
                 last_updated=now,
             ))
         await session.close()
@@ -346,4 +392,5 @@ class CheckpointManager:
                 row.last_updated.isoformat() if row.last_updated else ""
             ),
             error=row.error or "",
+            diagnostics_json=row.diagnostics_json or {},
         )

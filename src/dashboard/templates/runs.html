@@ -7,79 +7,127 @@
     <p>past pipeline executions and their status.</p>
 </div>
 
+{% for run in runs %}
 <div class="card">
+    <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <span>run {{ run.run_id }}</span>
+        <span>
+            {% if run.status == 'completed' %}
+                <span class="badge badge-signal">completed</span>
+            {% elif run.status == 'failed' %}
+                <span class="badge badge-garbage">failed</span>
+            {% elif run.status == 'running' %}
+                <span class="badge badge-unsure">running</span>
+            {% else %}
+                <span class="badge">{{ run.status }}</span>
+            {% endif %}
+            {% if run.signal_strength %}
+                <span class="badge badge-{{ 'high' if run.signal_strength == 'high' else 'medium' if run.signal_strength == 'medium' else 'low' }}" style="margin-left: 4px;">
+                    {{ run.signal_strength }}
+                </span>
+            {% endif %}
+        </span>
+    </div>
     <div class="card-body" style="padding: 0;">
-        <table>
-            <thead>
-                <tr>
-                    <th>Run ID</th>
-                    <th>Status</th>
-                    <th>Started</th>
-                    <th>Last Updated</th>
-                    <th>Steps</th>
-                    <th>Topics</th>
-                    <th>Trends</th>
-                    <th>Signal</th>
-                    <th>Error</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for run in runs %}
-                <tr>
-                    <td style="font-weight: 600;">{{ run.run_id }}</td>
-                    <td>
-                        {% if run.status == 'completed' %}
-                            <span class="badge badge-signal">completed</span>
-                        {% elif run.status == 'failed' %}
-                            <span class="badge badge-garbage">failed</span>
-                        {% elif run.status == 'running' %}
-                            <span class="badge badge-unsure">running</span>
-                        {% else %}
-                            <span class="badge">{{ run.status }}</span>
-                        {% endif %}
-                    </td>
-                    <td style="font-size: 12px; font-family: monospace; color: #666;">
-                        {{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '—' }}
-                    </td>
-                    <td style="font-size: 12px; font-family: monospace; color: #666;">
-                        {{ run.last_updated.strftime('%Y-%m-%d %H:%M') if run.last_updated else '—' }}
-                    </td>
-                    <td style="font-size: 12px;">
-                        {% set steps = [run.step1_complete, run.step2_complete, run.step3_complete, run.step4_complete, run.step5_complete, run.step6_complete] %}
-                        {% for s in steps %}
-                            <span style="color: {{ '#2a7a2a' if s else '#ddd' }};">{{ '■' if s else '□' }}</span>
-                        {% endfor %}
-                    </td>
-                    <td style="font-size: 12px;">
-                        {{ (run.topics_completed or [])|length }}
-                    </td>
-                    <td style="font-size: 12px;">
-                        {% for trend in (run.trends or [])[:5] %}
-                            <span style="display: inline-block; padding: 1px 6px; margin: 1px; background: #f0f0f0; font-size: 11px;">{{ trend }}</span>
-                        {% endfor %}
-                        {% if (run.trends or [])|length > 5 %}
-                            <span style="font-size: 11px; color: #999;">+{{ (run.trends or [])|length - 5 }}</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if run.signal_strength %}
-                            <span class="badge badge-{{ 'high' if run.signal_strength == 'high' else 'medium' if run.signal_strength == 'medium' else 'low' }}">
-                                {{ run.signal_strength }}
-                            </span>
-                        {% else %}
-                            <span style="color: #ccc;">—</span>
-                        {% endif %}
-                    </td>
-                    <td style="font-size: 12px; color: #c00; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                        {{ run.error or '' }}
-                    </td>
-                </tr>
-                {% endfor %}
-                {% if not runs %}
-                <tr><td colspan="9" style="color: #999; text-align: center; padding: 40px;">no pipeline runs recorded</td></tr>
+        {% set d = run.diagnostics_json or {} %}
+
+        <!-- stats row -->
+        <div style="display: flex; border-bottom: 1px solid #eee; font-size: 12px; color: #555;">
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">started:</span>
+                {{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '—' }}
+            </div>
+            {% if d.get('duration_seconds') or d.get('end_time') %}
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">duration:</span>
+                {% if d.get('duration_seconds') %}
+                    {% set secs = d.duration_seconds if d.duration_seconds is number else 0 %}
+                    {% if secs < 60 %}{{ "%.0f"|format(secs) }}s{% elif secs < 3600 %}{{ "%.1f"|format(secs / 60) }}m{% else %}{{ "%.1f"|format(secs / 3600) }}h{% endif %}
+                {% else %}
+                    —
                 {% endif %}
-            </tbody>
-        </table>
+            </div>
+            {% endif %}
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">steps:</span>
+                {% set steps = [run.step1_complete, run.step2_complete, run.step3_complete, run.step4_complete, run.step5_complete, run.step6_complete] %}
+                {% for s in steps %}
+                    <span style="color: {{ '#1a6e1a' if s else '#ddd' }};">{{ '■' if s else '□' }}</span>
+                {% endfor %}
+            </div>
+            <div style="flex: 1; padding: 10px 16px;">
+                <span style="color: #999;">topics:</span>
+                {{ (run.topics_completed or [])|length }}
+            </div>
+        </div>
+
+        {% if d %}
+        <!-- scraping stats -->
+        <div style="display: flex; border-bottom: 1px solid #eee; font-size: 12px; color: #555;">
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">broad tweets:</span>
+                {{ d.get('broad_tweets_scraped', 0)|int }}
+            </div>
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">trends found:</span>
+                {{ d.get('trends_discovered', 0)|int }}
+            </div>
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">deep dive tweets:</span>
+                {{ d.get('deep_dive_tweets_scraped', 0)|int }}
+            </div>
+            <div style="flex: 1; padding: 10px 16px;">
+                <span style="color: #999;">total stored:</span>
+                {{ d.get('tweets_stored', 0)|int }}
+            </div>
+        </div>
+
+        <!-- analysis stats -->
+        <div style="display: flex; border-bottom: 1px solid #eee; font-size: 12px; color: #555;">
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">llm calls:</span>
+                {{ d.get('llm_calls_made', 0)|int }}
+            </div>
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">tokens used:</span>
+                {{ "{:,}".format(d.get('llm_tokens_used', 0)|int) }}
+            </div>
+            <div style="flex: 1; padding: 10px 16px; border-right: 1px solid #eee;">
+                <span style="color: #999;">twitter accounts:</span>
+                {{ d.get('twitter_accounts_active', 0)|int }}/{{ d.get('twitter_accounts_total', 0)|int }}
+            </div>
+            <div style="flex: 1; padding: 10px 16px;">
+                <span style="color: #999;">email sent:</span>
+                {{ 'yes' if d.get('email_sent') else 'no' }}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- trends -->
+        {% if run.trends %}
+        <div style="padding: 10px 16px; font-size: 12px;">
+            <span style="color: #999;">trends:</span>
+            {% for trend in run.trends %}
+                <span style="display: inline-block; padding: 1px 6px; margin: 1px; background: #f0f0f0;">{{ trend }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- error -->
+        {% if run.error %}
+        <div style="padding: 10px 16px; font-size: 12px; color: #b00; border-top: 1px solid #eee;">
+            {{ run.error }}
+        </div>
+        {% endif %}
     </div>
 </div>
+{% endfor %}
+
+{% if not runs %}
+<div class="card">
+    <div class="card-body" style="text-align: center; padding: 60px; color: #999;">
+        no pipeline runs recorded
+    </div>
+</div>
+{% endif %}
 {% endblock %}

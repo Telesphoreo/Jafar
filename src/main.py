@@ -1022,6 +1022,7 @@ async def run_pipeline() -> bool:
         broad_tweets = await load_broad_tweets_from_db(state.run_id, state.topics_completed)
         diagnostics.diagnostics.broad_tweets_scraped = len(broad_tweets)
         diagnostics.diagnostics.time_step1_scraping = time.time() - step1_start
+        await checkpoint.save_diagnostics(diagnostics.diagnostics)
 
         if not broad_tweets:
             logger.error(f"No tweets retrieved for run_id={state.run_id}. Check twscrape setup or DB.")
@@ -1141,6 +1142,7 @@ async def run_pipeline() -> bool:
             # Note: trend_objects will be empty for resumed runs, LLM filter will be skipped
 
         diagnostics.diagnostics.time_step2_analysis = time.time() - step2_start
+        await checkpoint.save_diagnostics(diagnostics.diagnostics)
 
         # Merge Twitter trending topics into discovered trends (non-keyword discovery)
         if twitter_trends_raw:
@@ -1233,6 +1235,7 @@ async def run_pipeline() -> bool:
         diagnostics.diagnostics.deep_dive_trends_completed = len([t for t in trends if trend_tweets.get(t)])
         diagnostics.diagnostics.deep_dive_tweets_scraped = sum(len(v) for v in trend_tweets.values())
         diagnostics.diagnostics.time_step3_deep_dive = time.time() - step3_start
+        await checkpoint.save_diagnostics(diagnostics.diagnostics)
 
         total_tweets = sum(len(t) for t in trend_tweets.values())
         logger.info(f"Total trend tweets: {total_tweets}")
@@ -1358,6 +1361,7 @@ async def run_pipeline() -> bool:
             subject_line = None  # Will use fallback in reporter
 
         diagnostics.diagnostics.time_step4_llm = time.time() - step4_start
+        await checkpoint.save_diagnostics(diagnostics.diagnostics)
         diagnostics.diagnostics.signal_strength = signal_strength
         diagnostics.diagnostics.notable = is_notable
 
@@ -1397,6 +1401,7 @@ async def run_pipeline() -> bool:
             diagnostics.diagnostics.email_sent = True  # Assume it was sent in previous run
 
         diagnostics.diagnostics.time_step5_email = time.time() - step5_start
+        await checkpoint.save_diagnostics(diagnostics.diagnostics)
 
         # ============================================================
         # STEP 10: STORE HISTORY
@@ -1437,6 +1442,7 @@ async def run_pipeline() -> bool:
             logger.info("\n[STEP 10/11] Skipping (already complete)")
 
         diagnostics.diagnostics.time_step6_storage = time.time() - step6_start
+        await checkpoint.save_diagnostics(diagnostics.diagnostics)
 
         # ============================================================
         # COMPLETE - Clear checkpoint

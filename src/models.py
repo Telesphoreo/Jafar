@@ -166,6 +166,7 @@ class PipelineRun(Base):
     top_engagement: Mapped[float] = mapped_column(Float, default=0.0)
 
     error: Mapped[Optional[str]] = mapped_column(Text, default="")
+    diagnostics_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     last_updated: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
