@@ -258,6 +258,60 @@ logs_all() {
     less "$log_file"
 }
 
+kill_orphan() {
+    echo "Looking for orphaned pipeline processes..."
+
+    # Find python processes running src.main
+    local pids
+    pids="$(pgrep -f 'python.*src\.main' 2>/dev/null || true)"
+
+    if [[ -z "$pids" ]]; then
+        echo "No orphaned pipeline processes found."
+        echo ""
+        echo "If the DB lock is still held, the connection may be stale."
+        echo "PostgreSQL will release it when the connection times out,"
+        echo "or you can restart PostgreSQL to force-release all locks."
+        return 0
+    fi
+
+    echo "Found pipeline process(es):"
+    echo ""
+    # Show details for each PID
+    for pid in $pids; do
+        echo "  PID $pid:"
+        ps -p "$pid" -o pid,ppid,user,etime,args --no-headers 2>/dev/null | sed 's/^/    /'
+    done
+    echo ""
+
+    read -p "Kill these processes? [y/N] " -n 1 -r
+    echo ""
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        for pid in $pids; do
+            echo "Killing PID $pid..."
+            kill -TERM "$pid" 2>/dev/null || true
+        done
+        sleep 2
+
+        # Check if any survived
+        local survivors
+        survivors="$(pgrep -f 'python.*src\.main' 2>/dev/null || true)"
+        if [[ -n "$survivors" ]]; then
+            echo "Some processes didn't die. Force killing..."
+            for pid in $survivors; do
+                kill -KILL "$pid" 2>/dev/null || true
+            done
+        fi
+
+        # Clean up stale PID file if it exists
+        safe_remove_pid_file
+
+        echo "Done. You can now run './run.sh start'"
+    else
+        echo "Aborted."
+    fi
+}
+
 # Main entry point
 main() {
     local command="${1:-}"
@@ -278,17 +332,21 @@ main() {
         logs-all)
             logs_all
             ;;
+        kill-orphan)
+            kill_orphan
+            ;;
         *)
             echo "Jafar - Twitter Sentiment Analysis Pipeline"
             echo ""
-            echo "Usage: $0 {start|stop|status|logs|logs-all}"
+            echo "Usage: $0 {start|stop|status|logs|logs-all|kill-orphan}"
             echo ""
             echo "Commands:"
-            echo "  start     - Start the pipeline in background"
-            echo "  stop      - Stop the running pipeline"
-            echo "  status    - Check if pipeline is running + recent logs"
-            echo "  logs      - Watch live progress (tail -f)"
-            echo "  logs-all  - View entire log file"
+            echo "  start       - Start the pipeline in background"
+            echo "  stop        - Stop the running pipeline"
+            echo "  status      - Check if pipeline is running + recent logs"
+            echo "  logs        - Watch live progress (tail -f)"
+            echo "  logs-all    - View entire log file"
+            echo "  kill-orphan - Find and kill orphaned pipeline processes"
             exit 1
             ;;
     esac
