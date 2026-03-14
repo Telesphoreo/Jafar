@@ -4,14 +4,14 @@ Unit tests for src/history.py
 Tests async SQLAlchemy storage, historical digest retrieval, and signal strength calculation.
 """
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from src.history import DigestHistory, calculate_signal_strength
+from src.history import DigestHistory, _make_json_safe, calculate_signal_strength
 from src.models import Base, Digest, TrendHistory
 
 
@@ -89,6 +89,60 @@ class TestDigestHistory:
         trend_hist = await history.get_trend_history("nvda", days=30)
         assert len(trend_hist) == 1
         assert trend_hist[0]["mentions"] == 100
+
+    async def test_store_digest_with_datetime_in_trend_details(self, patched_get_session):
+        """Test that datetime objects in trend_details are serialized automatically.
+
+        This is the exact scenario that broke production: trend_details built from
+        tweet timestamps contain raw datetime objects which json.dumps can't handle.
+        The DB layer must sanitize these at the boundary.
+        """
+        history = patched_get_session
+        trend_details = {
+            "Oil": {
+                "mentions": 132,
+                "engagement": 125162.5,
+                "first_seen": datetime(2024, 8, 15, 20, 42, 14),
+                "last_seen": datetime(2026, 3, 14, 2, 31, 56),
+            },
+        }
+
+        digest_id = await history.store_digest(
+            trends=["Oil"],
+            tweet_count=132,
+            digest_text="Oil analysis.",
+            signal_strength="high",
+            top_engagement=57222.0,
+            notable=True,
+            trend_details=trend_details,
+        )
+
+        assert digest_id is not None
+
+    async def test_store_digest_with_nested_non_serializable_types(self, patched_get_session):
+        """Test that sets and dates in trend_details are also handled."""
+        history = patched_get_session
+        trend_details = {
+            "$NVDA": {
+                "mentions": 50,
+                "engagement": 10000.0,
+                "first_seen": datetime.now(),
+                "last_seen": datetime.now(),
+                "tags": {"gpu", "nvidia", "shortage"},  # set, not list
+                "report_date": date.today(),
+            },
+        }
+
+        digest_id = await history.store_digest(
+            trends=["$NVDA"],
+            tweet_count=50,
+            digest_text="NVDA analysis.",
+            signal_strength="medium",
+            top_engagement=10000.0,
+            trend_details=trend_details,
+        )
+
+        assert digest_id is not None
 
     async def test_get_recent_digests(self, patched_get_session):
         """Test retrieving recent digests."""
@@ -288,3 +342,51 @@ class TestCalculateSignalStrength:
             baseline_engagement=0,
         )
         assert result in ["high", "medium", "low", "none"]
+
+
+class TestMakeJsonSafe:
+    """Tests for the _make_json_safe serialization boundary."""
+
+    def test_primitives_unchanged(self):
+        assert _make_json_safe("hello") == "hello"
+        assert _make_json_safe(42) == 42
+        assert _make_json_safe(3.14) == 3.14
+        assert _make_json_safe(True) is True
+        assert _make_json_safe(None) is None
+
+    def test_datetime_to_isoformat(self):
+        dt = datetime(2026, 3, 13, 22, 30, 15)
+        assert _make_json_safe(dt) == "2026-03-13T22:30:15"
+
+    def test_date_to_isoformat(self):
+        d = date(2026, 3, 13)
+        assert _make_json_safe(d) == "2026-03-13"
+
+    def test_set_to_sorted_list(self):
+        result = _make_json_safe({"b", "a", "c"})
+        assert result == ["a", "b", "c"]
+
+    def test_nested_dict_with_datetimes(self):
+        """The exact structure that broke production."""
+        data = {
+            "Oil": {
+                "mentions": 132,
+                "engagement": 125162.5,
+                "first_seen": datetime(2024, 8, 15, 20, 42, 14),
+                "last_seen": datetime(2026, 3, 14, 2, 31, 56),
+            }
+        }
+        result = _make_json_safe(data)
+        assert result["Oil"]["first_seen"] == "2024-08-15T20:42:14"
+        assert result["Oil"]["last_seen"] == "2026-03-14T02:31:56"
+        assert result["Oil"]["mentions"] == 132
+
+    def test_list_with_mixed_types(self):
+        data = [datetime(2026, 1, 1), "hello", 42]
+        result = _make_json_safe(data)
+        assert result == ["2026-01-01T00:00:00", "hello", 42]
+
+    def test_rejects_unknown_types(self):
+        """Should fail loud, not silently drop data."""
+        with pytest.raises(TypeError, match="Cannot serialize"):
+            _make_json_safe(object())

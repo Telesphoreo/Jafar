@@ -8,9 +8,10 @@ historical context. This enables:
 - "Today looks like a normal day, nothing unusual"
 """
 
+import json
 import logging
-from datetime import date, timedelta
-from typing import Optional
+from datetime import date, datetime, timedelta
+from typing import Any, Optional
 
 from sqlalchemy import func, select
 
@@ -18,6 +19,28 @@ from src.database import get_session
 from src.models import Digest, TrendHistory
 
 logger = logging.getLogger("jafar.history")
+
+
+def _make_json_safe(obj: Any) -> Any:
+    """Recursively convert non-JSON-serializable types to serializable equivalents.
+
+    Handles datetime, date, set, and other common types that json.dumps chokes on.
+    Raises TypeError for truly unserializable objects rather than silently losing data.
+    """
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if isinstance(obj, date):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {str(k): _make_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_make_json_safe(v) for v in obj]
+    if isinstance(obj, set):
+        return [_make_json_safe(v) for v in sorted(obj, key=str)]
+    # Fail loud for types we don't know how to handle
+    raise TypeError(f"Cannot serialize {type(obj).__name__} to JSON: {obj!r}")
 
 
 class DigestHistory:
@@ -53,17 +76,22 @@ class DigestHistory:
         Returns:
             The ID of the stored digest
         """
+        # Sanitize JSON fields at the DB boundary — callers shouldn't
+        # need to worry about datetime serialization
+        safe_trends = _make_json_safe(trends)
+        safe_trend_details = _make_json_safe(trend_details) if trend_details else None
+
         session = await get_session()
         async with session.begin():
             digest = Digest(
                 date=date.today(),
-                trends=trends,
+                trends=safe_trends,
                 tweet_count=tweet_count,
                 digest_text=digest_text,
                 signal_strength=signal_strength,
                 top_engagement=top_engagement,
                 notable=notable,
-                trend_details=trend_details,
+                trend_details=safe_trend_details,
             )
             session.add(digest)
             await session.flush()

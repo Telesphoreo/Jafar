@@ -1355,15 +1355,6 @@ async def run_pipeline() -> bool:
         if not state.step6_complete:
             logger.info("\n[STEP 10/11] Storing digest in history...")
 
-            # Serialize datetimes for JSON storage
-            trend_details_serializable = {
-                trend: {
-                    k: v.isoformat() if isinstance(v, datetime) else v
-                    for k, v in details.items()
-                }
-                for trend, details in trend_details_for_temporal.items()
-            }
-
             await history.store_digest(
                 trends=trends,
                 tweet_count=total_tweets,
@@ -1371,7 +1362,7 @@ async def run_pipeline() -> bool:
                 signal_strength=signal_strength,
                 top_engagement=top_engagement,
                 notable=is_notable,
-                trend_details=trend_details_serializable,
+                trend_details=trend_details_for_temporal,
             )
 
             if memory:

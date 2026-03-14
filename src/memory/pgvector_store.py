@@ -64,12 +64,18 @@ class PgVectorStore(VectorStore):
             orm_record = MemoryRecordModel(
                 id=record.id,
                 date=record.date,
-                content=record.content,
+                content=record.full_digest,
                 summary=record.summary,
                 trends=record.trends,
                 signal_strength=record.signal_strength,
                 notable=record.notable,
-                metadata_json=record.metadata,
+                metadata_json={
+                    "sentiment": record.sentiment,
+                    "themes": record.themes,
+                    "trend_categories": record.trend_categories,
+                    "tweet_count": record.tweet_count,
+                    "top_engagement": record.top_engagement,
+                },
                 embedding=embedding,
             )
             await session.merge(orm_record)
@@ -80,15 +86,20 @@ class PgVectorStore(VectorStore):
 
     def _to_dataclass(self, row: MemoryRecordModel) -> MemoryRecord:
         """Convert an ORM MemoryRecord model instance to the base MemoryRecord dataclass."""
+        meta = row.metadata_json or {}
         return MemoryRecord(
             id=row.id,
             date=row.date,
-            content=row.content,
-            summary=row.summary or "",
             trends=row.trends or [],
+            trend_categories=meta.get("trend_categories", []),
             signal_strength=row.signal_strength or "none",
+            sentiment=meta.get("sentiment", "neutral"),
+            top_engagement=meta.get("top_engagement", 0.0),
+            themes=meta.get("themes", []),
+            summary=row.summary or "",
+            full_digest=row.content or "",
             notable=row.notable,
-            metadata=row.metadata_json,
+            tweet_count=meta.get("tweet_count", 0),
         )
 
     async def search(
