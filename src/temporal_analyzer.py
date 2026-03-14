@@ -9,7 +9,7 @@ Detects trend continuity patterns over time:
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 logger = logging.getLogger("jafar.temporal")
@@ -193,7 +193,7 @@ class TemporalTrendAnalyzer:
         check_date = today_date - timedelta(days=1)  # Start with yesterday
 
         for record in history:
-            record_date = datetime.fromisoformat(record['date']).date()
+            record_date = record['date'] if isinstance(record['date'], date) else datetime.fromisoformat(record['date']).date()
 
             if record_date == check_date:
                 consecutive += 1
@@ -205,9 +205,9 @@ class TemporalTrendAnalyzer:
 
         # Find last appearance
         most_recent = history[0]
-        most_recent_date = datetime.fromisoformat(most_recent['date'])
-        timeline.last_seen_date = most_recent_date
-        timeline.days_since_last = (today_date - most_recent_date.date()).days
+        most_recent_date = most_recent['date'] if isinstance(most_recent['date'], date) else datetime.fromisoformat(most_recent['date']).date()
+        timeline.last_seen_date = datetime.combine(most_recent_date, datetime.min.time())
+        timeline.days_since_last = (today_date - most_recent_date).days
 
         # Collect previous metrics for trajectory analysis
         timeline.previous_mentions = [h['mentions'] for h in history[:7]]  # Last week
