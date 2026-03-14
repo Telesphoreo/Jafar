@@ -426,10 +426,11 @@ def create_app() -> Flask:
                         f"(conf: {judgment['confidence']:.2f})"
                     )
 
-                    # Auto-block high-confidence garbage
+                    # Auto-actions for high-confidence judgments
                     if judgment["confidence"] >= 0.8:
-                        if judgment["classification"] in ("garbage", "likely_garbage"):
-                            with get_session() as s:
+                        with get_session() as s:
+                            if judgment["classification"] in ("garbage", "likely_garbage"):
+                                # Auto-block garbage
                                 exists = s.execute(
                                     select(BlockedAccount)
                                     .where(BlockedAccount.username == acct.username)
@@ -440,8 +441,24 @@ def create_app() -> Flask:
                                         reason=f"LLM judge: {judgment['classification']} "
                                                f"(conf {judgment['confidence']:.2f})",
                                     ))
-                                    s.commit()
                                     logger.info(f"    Auto-blocked @{acct.username}")
+
+                            if judgment["classification"] in ("signal", "likely_signal"):
+                                # Auto-label as signal
+                                existing_label = s.execute(
+                                    select(HumanLabel)
+                                    .where(HumanLabel.username == acct.username)
+                                ).scalar_one_or_none()
+                                if not existing_label:
+                                    s.add(HumanLabel(
+                                        username=acct.username,
+                                        label="signal",
+                                        notes=f"LLM judge: {judgment['classification']} "
+                                              f"(conf {judgment['confidence']:.2f})",
+                                    ))
+                                    logger.info(f"    Auto-labeled @{acct.username} as signal")
+
+                            s.commit()
 
                     # Small delay between calls to avoid hitting rate limits
                     await asyncio.sleep(2)
