@@ -168,8 +168,42 @@
     var progressBar = document.getElementById('ml-progress');
     var progressFill = document.getElementById('ml-progress-fill');
     var progressText = document.getElementById('ml-progress-text');
+    var btnScoring = document.getElementById('btn-scoring');
+    var btnJudging = document.getElementById('btn-judging');
     var polling = null;
     var wasRunning = false;
+    var stopping = false;
+
+    // store original labels
+    var scoringLabel = btnScoring.textContent;
+    var judgingLabel = btnJudging.textContent;
+
+    function showStopButtons() {
+        btnScoring.textContent = 'stop';
+        btnScoring.disabled = false;
+        btnScoring.classList.add('btn-stop');
+        btnJudging.textContent = 'stop';
+        btnJudging.disabled = false;
+        btnJudging.classList.add('btn-stop');
+    }
+
+    function resetButtons() {
+        btnScoring.textContent = scoringLabel;
+        btnScoring.disabled = false;
+        btnScoring.classList.remove('btn-stop');
+        btnJudging.textContent = judgingLabel;
+        btnJudging.disabled = false;
+        btnJudging.classList.remove('btn-stop');
+        stopping = false;
+    }
+
+    function requestStop() {
+        if (stopping) return;
+        stopping = true;
+        btnScoring.disabled = true;
+        btnJudging.disabled = true;
+        fetch('{{ url_for("stop_ml") }}', { method: 'POST' }).catch(function() {});
+    }
 
     function startPolling(label) {
         if (polling) return;
@@ -178,8 +212,7 @@
         progressText.style.display = 'block';
         progressText.textContent = (label || 'scoring') + ': starting...';
         progressFill.style.width = '100%';
-        document.getElementById('btn-scoring').disabled = true;
-        document.getElementById('btn-judging').disabled = true;
+        showStopButtons();
         polling = setInterval(poll, 2000);
     }
 
@@ -203,8 +236,7 @@
                         progressFill.style.width = '100%';
                     }
 
-                    document.getElementById('btn-scoring').disabled = true;
-                    document.getElementById('btn-judging').disabled = true;
+                    if (!stopping) showStopButtons();
                 } else {
                     clearInterval(polling);
                     polling = null;
@@ -216,14 +248,16 @@
             .catch(function() {});
     }
 
-    // intercept form submissions to start polling immediately
-    document.getElementById('btn-scoring').closest('form').addEventListener('submit', function(e) {
+    // intercept button clicks -- start task or stop it
+    btnScoring.closest('form').addEventListener('submit', function(e) {
         e.preventDefault();
+        if (wasRunning && !stopping) { requestStop(); return; }
         startPolling('scoring');
         fetch(this.action, { method: 'POST' }).catch(function() {});
     });
-    document.getElementById('btn-judging').closest('form').addEventListener('submit', function(e) {
+    btnJudging.closest('form').addEventListener('submit', function(e) {
         e.preventDefault();
+        if (wasRunning && !stopping) { requestStop(); return; }
         startPolling('llm judge');
         fetch(this.action, { method: 'POST' }).catch(function() {});
     });

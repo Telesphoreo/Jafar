@@ -72,6 +72,7 @@ def create_app() -> Flask:
         "task": None,        # "scoring" or "judging"
         "progress": "",      # e.g. "12/203 accounts scored"
         "last_error": None,
+        "stop_requested": False,
     }
 
     def get_session() -> Session:
@@ -247,6 +248,15 @@ def create_app() -> Flask:
         from flask import jsonify
         return jsonify(_ml_status)
 
+    @app.route("/api/stop-ml", methods=["POST"])
+    def stop_ml():
+        from flask import jsonify
+        if _ml_status["running"]:
+            _ml_status["stop_requested"] = True
+            _ml_status["progress"] = "stopping..."
+            return jsonify({"ok": True})
+        return jsonify({"ok": False})
+
     @app.route("/api/run-ml", methods=["POST"])
     def run_ml():
         if _ml_status["running"]:
@@ -256,6 +266,7 @@ def create_app() -> Flask:
         _ml_status["running"] = True
         _ml_status["task"] = "scoring"
         _ml_status["progress"] = "starting..."
+        _ml_status["stop_requested"] = False
         _ml_status["last_error"] = None
 
         def _run_analysis():
@@ -277,16 +288,28 @@ def create_app() -> Flask:
                 eligible = training_stats.get('accounts_eligible', 0)
                 logger.info(f"Bot detection trained on {eligible} accounts")
 
+                if _ml_status["stop_requested"]:
+                    logger.info("ML scoring stopped by user")
+                    return
+
                 bot_scores = {}
                 if bot_scorer.model is not None:
                     _ml_status["progress"] = f"scoring {eligible} accounts for anomalies..."
                     all_scores = await bot_scorer.score_all_accounts(min_tweets=5)
                     bot_scores = {s["username"]: s for s in all_scores}
 
+                if _ml_status["stop_requested"]:
+                    logger.info("ML scoring stopped by user")
+                    return
+
                 # 2. Signal scoring
                 _ml_status["progress"] = "computing signal scores..."
                 account_scorer = AccountScorer()
                 all_accounts = await account_scorer.analyze(min_tweets_per_account=3)
+
+                if _ml_status["stop_requested"]:
+                    logger.info("ML scoring stopped by user")
+                    return
 
                 # 3. Persist to account_scores table
                 _ml_status["progress"] = f"saving {len(all_accounts)} scores to db..."
@@ -357,6 +380,7 @@ def create_app() -> Flask:
         _ml_status["task"] = "judging"
         _ml_status["progress"] = "starting..."
         _ml_status["last_error"] = None
+        _ml_status["stop_requested"] = False
 
         def _run_judge_thread():
             import asyncio
@@ -415,6 +439,10 @@ def create_app() -> Flask:
                 max_retries = 3
 
                 for acct in to_judge:
+                    if _ml_status["stop_requested"]:
+                        logger.info(f"LLM judge stopped by user after {judged_count}/{total_to_judge}")
+                        break
+
                     # Fetch tweets for this account
                     session = await async_get_session()
                     try:
