@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Overview{% endblock %}
+{% block title %}overview{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1>Dashboard</h1>
+    <h1>dashboard</h1>
 </div>
 
 <div class="stats">
@@ -33,106 +33,117 @@
 <div class="card" style="margin-bottom: 16px;">
     <div class="card-header">ML analysis</div>
     <div class="card-body">
+        <!-- Win7-style progress bar (hidden when idle) -->
+        <div class="progress-bar" id="ml-progress">
+            <div class="progress-bar-fill" id="ml-progress-fill" style="width: 100%;">
+                <div class="progress-bar-shimmer"></div>
+            </div>
+        </div>
+        <div class="progress-bar-text" id="ml-progress-text" style="display: none;"></div>
+
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
             <form action="{{ url_for('run_ml') }}" method="POST" style="display: inline;">
-                <button type="submit" class="btn btn-primary">Run garbage detection + signal scoring</button>
+                <button type="submit" class="btn btn-primary" id="btn-scoring">run garbage detection + signal scoring</button>
             </form>
             <span style="font-size: 12px; color: #888;">
                 {% if last_scored %}
-                    Last scored: {{ last_scored }}
+                    last scored: {{ last_scored }}
                 {% else %}
-                    No ML analysis has been run yet.
+                    no ml analysis has been run yet.
                 {% endif %}
                 {% if total_scored > 0 %}
-                     — {{ total_scored }} accounts scored, {{ total_bot_suspects }} anomalies
+                     / {{ total_scored }} accounts scored, {{ total_bot_suspects }} anomalies
                 {% endif %}
             </span>
         </div>
         <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid #eee;">
             <form action="{{ url_for('run_judge') }}" method="POST" style="display: inline;">
-                <button type="submit" class="btn btn-primary">Run LLM judge</button>
+                <button type="submit" class="btn btn-primary" id="btn-judging">run llm judge</button>
             </form>
+            {% if total_judged > total_blocked + total_labeled %}
+            <form action="{{ url_for('apply_judgments') }}" method="POST" style="display: inline;">
+                <button type="submit" class="btn" style="font-size: 11px;">apply pending actions</button>
+            </form>
+            {% endif %}
             <span style="font-size: 12px; color: #888;">
                 {{ total_judged }} accounts judged
-                {% if total_blocked > 0 %} — {{ total_blocked }} auto-blocked{% endif %}
-                {% if total_unjudged > 0 %} — {{ total_unjudged }} awaiting judgment{% endif %}
+                {% if total_blocked > 0 %} / {{ total_blocked }} blocked{% endif %}
+                {% if total_unjudged > 0 %} / {{ total_unjudged }} awaiting judgment{% endif %}
             </span>
         </div>
     </div>
 </div>
 
-<div class="grid-2">
-    <!-- Recent Runs -->
-    <div class="card">
-        <div class="card-header">Recent pipeline runs</div>
-        <div class="card-body" style="padding: 0;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Run</th>
-                        <th>Status</th>
-                        <th>Progress</th>
-                        <th>Started</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for run in recent_runs %}
-                    <tr>
-                        <td style="font-family: monospace;">{{ run.run_id }}</td>
-                        <td>
-                            {% if run.status == 'completed' %}
-                                <span class="badge badge-signal">completed</span>
-                            {% elif run.status == 'failed' %}
-                                <span class="badge badge-garbage">failed</span>
-                            {% else %}
-                                <span class="badge badge-unsure">{{ run.status }}</span>
-                            {% endif %}
-                        </td>
-                        <td style="font-family: monospace; font-size: 11px;">
-                            {{ [run.step1_complete, run.step2_complete, run.step3_complete, run.step4_complete, run.step5_complete, run.step6_complete] | select | list | length }}/6
-                        </td>
-                        <td style="font-size: 12px; color: #666;">{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '—' }}</td>
-                    </tr>
-                    {% endfor %}
-                    {% if not recent_runs %}
-                    <tr><td colspan="4" style="color: #999; text-align: center;">No pipeline runs yet</td></tr>
-                    {% endif %}
-                </tbody>
-            </table>
-        </div>
+<!-- Recent Runs -->
+<div class="card">
+    <div class="card-header">Recent pipeline runs</div>
+    <div class="card-body" style="padding: 0;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Run</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Started</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in recent_runs %}
+                <tr>
+                    <td class="mono">{{ run.run_id }}</td>
+                    <td>
+                        {% if run.status == 'completed' %}
+                            <span class="badge badge-signal">completed</span>
+                        {% elif run.status == 'failed' %}
+                            <span class="badge badge-garbage">failed</span>
+                        {% else %}
+                            <span class="badge badge-unsure">{{ run.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-family: monospace; font-size: 11px;">
+                        {{ [run.step1_complete, run.step2_complete, run.step3_complete, run.step4_complete, run.step5_complete, run.step6_complete] | select | list | length }}/6
+                    </td>
+                    <td style="font-size: 12px; color: #666;">{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '—' }}</td>
+                </tr>
+                {% endfor %}
+                {% if not recent_runs %}
+                <tr><td colspan="4" style="color: #999; text-align: center;">no pipeline runs yet</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
     </div>
+</div>
 
-    <!-- Top Accounts by Tweet Count -->
-    <div class="card">
-        <div class="card-header">Most active accounts</div>
-        <div class="card-body" style="padding: 0;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Account</th>
-                        <th>Tweets</th>
-                        <th>Avg likes</th>
-                        <th>Label</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for acct in top_accounts %}
-                    <tr>
-                        <td><a href="{{ url_for('account_detail', username=acct.username) }}" class="username">@{{ acct.username }}</a></td>
-                        <td style="font-family: monospace;">{{ acct.tweet_count }}</td>
-                        <td style="font-family: monospace;">{{ "%.0f"|format(acct.avg_likes) }}</td>
-                        <td>
-                            {% if acct.label %}
-                                <span class="badge badge-{{ acct.label }}">{{ acct.label }}</span>
-                            {% else %}
-                                <span style="color: #ccc;">—</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+<!-- Most Active Accounts -->
+<div class="card">
+    <div class="card-header">Most active accounts</div>
+    <div class="card-body" style="padding: 0;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th>Tweets</th>
+                    <th>Avg likes</th>
+                    <th>Label</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acct in top_accounts %}
+                <tr>
+                    <td><a href="{{ url_for('account_detail', username=acct.username) }}" class="username">@{{ acct.username }}</a></td>
+                    <td class="mono">{{ acct.tweet_count }}</td>
+                    <td class="mono">{{ "%.0f"|format(acct.avg_likes) }}</td>
+                    <td>
+                        {% if acct.label %}
+                            <span class="badge badge-{{ acct.label }}">{{ acct.label }}</span>
+                        {% else %}
+                            <span style="color: #ccc;">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 
@@ -140,7 +151,7 @@
 <div class="card">
     <div class="card-header">Label distribution</div>
     <div class="card-body">
-        <div style="display: flex; gap: 24px; font-family: monospace; font-size: 14px;">
+        <div style="display: flex; gap: 24px; font-size: 14px;">
             {% for label, count in label_counts.items() %}
             <div>
                 <span class="badge badge-{{ label }}">{{ label }}</span>
@@ -151,4 +162,60 @@
     </div>
 </div>
 {% endif %}
+
+<script>
+(function() {
+    var progressBar = document.getElementById('ml-progress');
+    var progressFill = document.getElementById('ml-progress-fill');
+    var progressText = document.getElementById('ml-progress-text');
+    var polling = null;
+    var wasRunning = false;
+
+    function poll() {
+        fetch('{{ url_for("ml_status") }}')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.running) {
+                    wasRunning = true;
+                    progressBar.style.display = 'block';
+                    progressText.style.display = 'block';
+
+                    var label = data.task === 'judging' ? 'llm judge: ' : 'scoring: ';
+                    progressText.textContent = label + (data.progress || 'starting...');
+
+                    var match = data.progress && data.progress.match(/(\d+)\/(\d+)/);
+                    if (match) {
+                        var pct = Math.max(2, (parseInt(match[1]) / parseInt(match[2])) * 100);
+                        progressFill.style.width = pct + '%';
+                    } else {
+                        progressFill.style.width = '100%';
+                    }
+
+                    document.getElementById('btn-scoring').disabled = true;
+                    document.getElementById('btn-judging').disabled = true;
+                } else {
+                    clearInterval(polling);
+                    polling = null;
+                    if (wasRunning) {
+                        // task just finished — reload to get fresh stats
+                        window.location.reload();
+                    }
+                }
+            })
+            .catch(function() {});
+    }
+
+    // check once — only poll if running
+    fetch('{{ url_for("ml_status") }}')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.running) {
+                wasRunning = true;
+                poll();
+                polling = setInterval(poll, 3000);
+            }
+        })
+        .catch(function() {});
+})();
+</script>
 {% endblock %}

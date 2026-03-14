@@ -3,105 +3,290 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Jafar{% endblock %} — Dashboard</title>
+    <title>{% block title %}jafar{% endblock %} - dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; background: #f6f6f6; }
+        body { font-family: 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; background: #ebebeb; font-size: 14px; line-height: 1.5; }
 
-        /* Nav — matches digest header */
-        nav { background: #0a0a0a; padding: 0; display: flex; align-items: center; height: 52px; max-width: 960px; margin: 0 auto; }
-        nav .brand { font-family: monospace; font-size: 15px; color: #fff; padding: 0 20px; margin-right: 8px; font-weight: 700; letter-spacing: -0.5px; }
-        nav .brand span { color: #888; font-weight: 400; font-size: 12px; margin-left: 6px; }
-        nav a { color: #888; text-decoration: none; font-size: 13px; padding: 16px 14px; border-bottom: 2px solid transparent; transition: color 0.15s; }
-        nav a:hover { color: #ccc; }
-        nav a.active { color: #fff; border-bottom-color: #fff; }
-
-        /* Top bar background extends full width */
-        .nav-wrap { background: #0a0a0a; border-bottom: 1px solid #333; }
+        /* Nav — dark chrome with Vista glow line */
+        .nav-wrap {
+            background: linear-gradient(180deg, #2e2e32 0%, #1c1c20 50%, #222226 100%);
+            position: relative;
+        }
+        /* Glow line — warm amber, sits below the nav */
+        .nav-glow {
+            height: 3px;
+            background: linear-gradient(90deg,
+                rgba(255,180,60,0) 0%,
+                rgba(255,180,60,0.3) 15%,
+                rgba(255,200,80,0.6) 35%,
+                rgba(255,210,100,1) 50%,
+                rgba(255,200,80,0.6) 65%,
+                rgba(255,180,60,0.3) 85%,
+                rgba(255,180,60,0) 100%
+            );
+        }
+        nav {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            height: 46px;
+            position: relative;
+        }
+        nav .brand {
+            font-size: 16px;
+            color: #fff;
+            padding: 0 20px;
+            margin-right: 12px;
+            font-weight: 600;
+        }
+        nav .brand span {
+            color: #666;
+            font-weight: 400;
+            font-size: 12px;
+            margin-left: 6px;
+        }
+        nav a {
+            color: #999;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 300;
+            text-transform: lowercase;
+            padding: 13px 16px;
+            transition: color 0.2s, background 0.2s;
+        }
+        nav a:hover { color: #ddd; background: rgba(255,255,255,0.05); }
+        nav a.active {
+            color: #fff;
+            background: rgba(255,255,255,0.08);
+        }
 
         /* Layout */
-        .container { max-width: 960px; margin: 24px auto; padding: 0 20px; }
+        .container { max-width: 1100px; margin: 24px auto; padding: 0 24px; }
 
-        /* Cards — digest style: thin borders, no shadows */
-        .card { background: #fff; border: 1px solid #ddd; margin-bottom: 16px; }
-        .card-header { padding: 12px 20px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px; color: #888; }
+        /* Cards — flat, sharp, no gradients */
+        .card { background: #fff; border: 1px solid #d0d0d0; margin-bottom: 16px; }
+        .card-header {
+            padding: 10px 20px;
+            border-bottom: 1px solid #c0c0c0;
+            background: linear-gradient(90deg, #f0f0f0 0%, #e4e4e4 30%, #dcdcdc 50%, #e4e4e4 70%, #f0f0f0 100%);
+            border-top: 1px solid #fff;
+            font-size: 13px;
+            color: #444;
+            font-weight: 400;
+            text-transform: lowercase;
+        }
         .card-body { padding: 20px; }
 
-        /* Stats row */
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
-        .stat { background: #fff; border: 1px solid #ddd; padding: 16px 18px; text-align: center; }
-        .stat-value { font-size: 26px; font-weight: 700; font-family: monospace; }
-        .stat-label { font-size: 11px; color: #888; margin-top: 4px; }
+        /* Stats */
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+        .stat {
+            background: linear-gradient(180deg, #f8f0e8 0%, #ecd8c0 100%);
+            border: 1px solid #d8c8b0;
+            padding: 20px 18px 16px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .stat::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 34px;
+            background: radial-gradient(ellipse at center, rgba(255,255,255,0.25) 0%, rgba(255,255,255,0) 65%);
+        }
+        .stat-value { font-size: 28px; font-weight: 300; color: #333; position: relative; }
+        .stat-label { font-size: 11px; color: #886840; margin-top: 6px; text-transform: lowercase; font-weight: 300; position: relative; }
 
         /* Tables */
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { padding: 10px 12px; text-align: left; font-family: monospace; font-size: 11px; color: #888; border-bottom: 2px solid #000; background: #fafafa; }
-        td { padding: 10px 12px; border-bottom: 1px solid #eee; }
+        th {
+            padding: 9px 12px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 300;
+            color: #555;
+            background: #f8f8f8;
+            text-transform: lowercase;
+            border-bottom: 1px solid #ddd;
+        }
+        td { padding: 9px 12px; border-bottom: 1px solid #eee; }
         tr:nth-child(even) td { background: #fafafa; }
-        tr:hover td { background: #f0f0f0; }
+        tr:hover td { background: #f0f4f8; }
 
         /* Links */
         a.username { color: #111; text-decoration: none; font-weight: 600; }
-        a.username:hover { text-decoration: underline; }
+        a.username:hover { text-decoration: underline; color: #1a5a8a; }
 
         /* Badges */
-        .badge { display: inline-block; padding: 2px 8px; font-size: 11px; font-family: monospace; border: 1px solid; }
-        .badge-garbage { color: #c00; border-color: #c00; background: #fff5f5; }
-        .badge-signal { color: #2a7a2a; border-color: #2a7a2a; background: #f5fff5; }
-        .badge-unsure { color: #c80; border-color: #c80; background: #fffcf0; }
-        .badge-high { color: #2a7a2a; border-color: #2a7a2a; }
-        .badge-medium { color: #666; border-color: #666; }
-        .badge-low { color: #aaa; border-color: #aaa; }
-        .badge-running { color: #07c; border-color: #07c; background: #f0f8ff; }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 11px;
+            font-weight: 400;
+            border: 1px solid;
+            text-transform: lowercase;
+        }
+        .badge-garbage { color: #b00; border-color: #daa; background: #fef5f5; }
+        .badge-signal { color: #1a6e1a; border-color: #8cb88c; background: #f3faf3; }
+        .badge-unsure { color: #a67c00; border-color: #d4b85c; background: #fefcf0; }
+        .badge-high { color: #1a6e1a; border-color: #8cb88c; }
+        .badge-medium { color: #666; border-color: #aaa; }
+        .badge-low { color: #999; border-color: #ccc; }
+        .badge-running { color: #07c; border-color: #8cc; background: #f0f8ff; }
 
-        /* Score bars */
-        .score-bar { display: inline-block; height: 12px; background: #333; vertical-align: middle; margin-right: 6px; }
+        .mono { }
 
         /* Tweets */
-        .tweet { padding: 10px 14px; margin: 6px 0; border-left: 3px solid #ddd; background: #fafafa; font-size: 13px; line-height: 1.5; }
-        .tweet-meta { font-size: 11px; color: #999; margin-top: 4px; font-family: monospace; }
+        .tweet {
+            padding: 10px 14px;
+            margin: 6px 0;
+            border-left: 3px solid #d0d0d0;
+            background: #f9f9f9;
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .tweet-meta { font-size: 11px; color: #999; margin-top: 4px; }
 
-        /* Buttons */
-        .btn { display: inline-block; padding: 6px 16px; font-size: 12px; font-family: monospace; border: 1px solid #ddd; background: #fff; cursor: pointer; text-decoration: none; color: #111; }
-        .btn:hover { background: #f0f0f0; }
-        .btn-garbage { border-color: #c00; color: #c00; }
-        .btn-garbage:hover { background: #fff5f5; }
-        .btn-signal { border-color: #2a7a2a; color: #2a7a2a; }
-        .btn-signal:hover { background: #f5fff5; }
-        .btn-unsure { border-color: #c80; color: #c80; }
-        .btn-unsure:hover { background: #fffcf0; }
-        .btn-primary { background: #0a0a0a; color: #fff; border-color: #0a0a0a; }
-        .btn-primary:hover { background: #333; }
-        .btn-active { font-weight: bold; }
+        /* Buttons — flat with sharp borders */
+        .btn {
+            display: inline-block;
+            padding: 6px 16px;
+            font-size: 12px;
+            font-weight: 400;
+            text-transform: lowercase;
+            border: 1px solid #bbb;
+            background: #fff;
+            cursor: pointer;
+            text-decoration: none;
+            color: #444;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .btn:hover { background: #f0f0f0; border-color: #999; }
+        .btn-garbage { border-color: #d88; color: #b00; }
+        .btn-garbage:hover { background: #fef5f5; border-color: #c66; }
+        .btn-signal { border-color: #8cb88c; color: #1a6e1a; }
+        .btn-signal:hover { background: #f3faf3; border-color: #6a9a6a; }
+        .btn-unsure { border-color: #d4b85c; color: #a67c00; }
+        .btn-unsure:hover { background: #fefcf0; border-color: #c0a040; }
+        .btn-primary { background: #333; color: #fff; border-color: #222; font-weight: 300; }
+        .btn-primary:hover { background: #444; }
+        .btn-active { font-weight: 600; }
         .btn-garbage.btn-active { background: #fee; }
         .btn-signal.btn-active { background: #efe; }
-        .btn-unsure.btn-active { background: #fffcf0; }
+        .btn-unsure.btn-active { background: #fefcf0; }
 
-        /* Label form */
+        /* Win7 aero progress bar */
+        .progress-bar {
+            height: 20px;
+            background: linear-gradient(180deg, #e0e0e0 0%, #e0e0e0 45%, #c8c8c8 55%, #c8c8c8 100%);
+            border: 1px solid #a0a0a0;
+            border-radius: 3px;
+            padding: 1px;
+            margin-bottom: 12px;
+            line-height: 0;
+            font-size: 0;
+            position: relative;
+            overflow: hidden;
+            display: none;
+        }
+        .progress-bar-fill {
+            height: calc(100% + 1px);
+            margin-top: -0.5px;
+            border-radius: 2px;
+            background: linear-gradient(90deg, #1e8a00 0%, #32a800 8%, #3abf00 15%, #3abf00 85%, #32a800 92%, #1e8a00 100%),
+                linear-gradient(180deg, #6ad634 0%, #3abf00 40%, #37b400 60%, #32a800 100%);
+            background-blend-mode: overlay;
+            position: relative;
+            overflow: hidden;
+            min-width: 6px;
+            transition: width 0.5s ease;
+        }
+        /* Glass highlight — bright band in the middle, fading to edges */
+        .progress-bar-fill::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 100%;
+            background: linear-gradient(180deg,
+                rgba(255,255,255,0.5) 0%,
+                rgba(255,255,255,0.5) 35%,
+                rgba(255,255,255,0.55) 45%,
+                rgba(255,255,255,0.1) 55%,
+                rgba(255,255,255,0) 100%
+            );
+        }
+        /* Shimmer sweep — lives on the track, clips to the fill via overflow:hidden on .progress-bar */
+        /* Shimmer — fixed to track width, only visible over the green fill */
+        .progress-bar-shimmer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .progress-bar-shimmer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.5) 45%, rgba(255,255,255,0.6) 50%, rgba(255,255,255,0.5) 55%, transparent 100%);
+            animation: shimmer 5s ease-in-out infinite;
+        }
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        .progress-bar-text {
+            font-size: 11px;
+            color: #555;
+            margin-top: 4px;
+            font-weight: 300;
+        }
+
+        /* Inputs */
         .label-form { display: flex; gap: 8px; align-items: center; }
-        .label-form input[type="text"] { padding: 6px 10px; border: 1px solid #ddd; font-size: 12px; font-family: monospace; width: 200px; }
+        .label-form input[type="text"] { padding: 5px 10px; border: 1px solid #bbb; font-size: 12px; width: 200px; }
 
         /* Flash messages */
-        .flash { padding: 10px 20px; margin-bottom: 16px; font-size: 13px; border: 1px solid; }
-        .flash-success { background: #f5fff5; border-color: #2a7a2a; color: #2a7a2a; }
-        .flash-error { background: #fff5f5; border-color: #c00; color: #c00; }
-        .flash-info { background: #f0f8ff; border-color: #07c; color: #07c; }
+        .flash { padding: 10px 16px; margin-bottom: 16px; font-size: 13px; border: 1px solid; }
+        .flash-success { background: #f3faf3; border-color: #8cb88c; color: #1a6e1a; }
+        .flash-error { background: #fef5f5; border-color: #daa; color: #b00; }
+        .flash-info { background: #f0f8ff; border-color: #8cc; color: #07c; }
 
         /* Pagination */
         .pagination { display: flex; gap: 4px; margin-top: 16px; justify-content: center; }
-        .pagination a, .pagination span { padding: 6px 12px; border: 1px solid #ddd; font-size: 12px; font-family: monospace; text-decoration: none; color: #111; }
-        .pagination span.current { background: #111; color: #fff; border-color: #111; }
+        .pagination a, .pagination span {
+            padding: 5px 12px;
+            border: 1px solid #bbb;
+            font-size: 12px;
+            text-decoration: none;
+            color: #333;
+            background: #fff;
+        }
+        .pagination a:hover { background: #f0f0f0; }
+        .pagination span.current { background: #222; color: #fff; border-color: #111; }
 
         /* Feature grid */
-        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 12px; font-family: monospace; }
-        .feature { padding: 6px 10px; background: #fafafa; border: 1px solid #eee; }
-        .feature-name { color: #888; }
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 6px; font-size: 12px; }
+        .feature { padding: 5px 10px; background: #f8f8f8; border: 1px solid #e5e5e5; }
+        .feature-name { color: #888; font-size: 11px; }
         .feature-value { font-weight: 600; }
 
         /* Page header */
-        .page-header { margin-bottom: 20px; }
-        .page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
-        .page-header p { font-size: 13px; color: #666; margin-top: 4px; }
+        .page-header { margin-bottom: 24px; padding-bottom: 12px; }
+        .page-header h1 { font-size: 28px; font-weight: 300; text-transform: lowercase; color: #222; letter-spacing: -0.5px; }
+        .page-header p { font-size: 13px; color: #666; margin-top: 2px; font-weight: 400; }
 
         /* Two-column grid */
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -118,6 +303,7 @@
             <a href="{{ url_for('runs') }}" class="{% if request.endpoint == 'runs' %}active{% endif %}">Runs</a>
         </nav>
     </div>
+    <div class="nav-glow"></div>
 
     <div class="container">
         {% with messages = get_flashed_messages(with_categories=true) %}

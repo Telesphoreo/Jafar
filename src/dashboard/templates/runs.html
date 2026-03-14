@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Pipeline Runs{% endblock %}
+{% block title %}pipeline runs{% endblock %}
 
 {% block content %}
 <div class="page-header">
-    <h1>Pipeline Runs</h1>
-    <p>History from the pipeline_runs table.</p>
+    <h1>pipeline runs</h1>
+    <p>past pipeline executions and their status.</p>
 </div>
 
 <div class="card">
@@ -26,7 +26,7 @@
             <tbody>
                 {% for run in runs %}
                 <tr>
-                    <td style="font-family: monospace; font-weight: 600;">{{ run.run_id }}</td>
+                    <td style="font-weight: 600;">{{ run.run_id }}</td>
                     <td>
                         {% if run.status == 'completed' %}
                             <span class="badge badge-signal">completed</span>
@@ -44,18 +44,18 @@
                     <td style="font-size: 12px; font-family: monospace; color: #666;">
                         {{ run.last_updated.strftime('%Y-%m-%d %H:%M') if run.last_updated else '—' }}
                     </td>
-                    <td style="font-family: monospace; font-size: 12px;">
+                    <td style="font-size: 12px;">
                         {% set steps = [run.step1_complete, run.step2_complete, run.step3_complete, run.step4_complete, run.step5_complete, run.step6_complete] %}
                         {% for s in steps %}
                             <span style="color: {{ '#2a7a2a' if s else '#ddd' }};">{{ '■' if s else '□' }}</span>
                         {% endfor %}
                     </td>
-                    <td style="font-family: monospace; font-size: 12px;">
+                    <td style="font-size: 12px;">
                         {{ (run.topics_completed or [])|length }}
                     </td>
                     <td style="font-size: 12px;">
                         {% for trend in (run.trends or [])[:5] %}
-                            <span style="display: inline-block; padding: 1px 6px; margin: 1px; background: #f0f0f0; font-size: 11px; font-family: monospace;">{{ trend }}</span>
+                            <span style="display: inline-block; padding: 1px 6px; margin: 1px; background: #f0f0f0; font-size: 11px;">{{ trend }}</span>
                         {% endfor %}
                         {% if (run.trends or [])|length > 5 %}
                             <span style="font-size: 11px; color: #999;">+{{ (run.trends or [])|length - 5 }}</span>
@@ -76,7 +76,7 @@
                 </tr>
                 {% endfor %}
                 {% if not runs %}
-                <tr><td colspan="9" style="color: #999; text-align: center; padding: 40px;">No pipeline runs recorded</td></tr>
+                <tr><td colspan="9" style="color: #999; text-align: center; padding: 40px;">no pipeline runs recorded</td></tr>
                 {% endif %}
             </tbody>
         </table>

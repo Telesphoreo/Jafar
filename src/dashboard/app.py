@@ -67,10 +67,51 @@ def create_app() -> Flask:
     SessionLocal = sessionmaker(engine)
 
     # Track ML analysis state
-    _ml_status = {"running": False, "last_error": None}
+    _ml_status = {
+        "running": False,
+        "task": None,        # "scoring" or "judging"
+        "progress": "",      # e.g. "12/203 accounts scored"
+        "last_error": None,
+    }
 
     def get_session() -> Session:
         return SessionLocal()
+
+    # Display name mappings
+    CLUSTER_DISPLAY = {
+        "high_signal": "high signal",
+        "news_aggregator": "news aggregator",
+        "low_activity": "low activity",
+        "casual": "casual",
+        "unclustered": "unclustered",
+    }
+
+    FEATURE_DISPLAY = {
+        "avg_content_length": "avg content length",
+        "url_ratio": "url ratio",
+        "unique_content_ratio": "unique content",
+        "question_ratio": "question ratio",
+        "avg_likes": "avg likes",
+        "avg_retweets": "avg retweets",
+        "avg_replies": "avg replies",
+        "reply_to_like_ratio": "reply to like ratio",
+        "engagement_per_view": "engagement per view",
+        "engagement_consistency": "engagement consistency",
+        "trend_coverage": "trend coverage",
+        "trend_coverage_ratio": "trend coverage ratio",
+        "pipeline_run_appearances": "pipeline runs seen",
+        "recurrence_ratio": "recurrence ratio",
+        "active_hours_spread": "active hours spread",
+        "tweet_frequency": "tweet frequency",
+    }
+
+    @app.template_filter("cluster_name")
+    def cluster_name_filter(value):
+        return CLUSTER_DISPLAY.get(value, value or "—")
+
+    @app.template_filter("feature_name")
+    def feature_name_filter(value):
+        return FEATURE_DISPLAY.get(value, value.replace("_", " "))
 
     # ------------------------------------------------------------------
     # Overview
@@ -187,13 +228,20 @@ def create_app() -> Flask:
     # ML analysis (run bot detection + signal scoring)
     # ------------------------------------------------------------------
 
+    @app.route("/api/ml-status")
+    def ml_status():
+        from flask import jsonify
+        return jsonify(_ml_status)
+
     @app.route("/api/run-ml", methods=["POST"])
     def run_ml():
         if _ml_status["running"]:
-            flash("ML analysis is already running.", "error")
+            flash("ml analysis is already running.", "error")
             return redirect(url_for("overview"))
 
         _ml_status["running"] = True
+        _ml_status["task"] = "scoring"
+        _ml_status["progress"] = "starting..."
         _ml_status["last_error"] = None
 
         def _run_analysis():
@@ -209,23 +257,25 @@ def create_app() -> Flask:
                 from src.ml import BotScorer, AccountScorer
 
                 # 1. Bot detection
+                _ml_status["progress"] = "training anomaly detector..."
                 bot_scorer = BotScorer()
                 training_stats = await bot_scorer.train(min_tweets_per_account=5)
-                logger.info(
-                    f"Bot detection trained on "
-                    f"{training_stats.get('accounts_eligible', 0)} accounts"
-                )
+                eligible = training_stats.get('accounts_eligible', 0)
+                logger.info(f"Bot detection trained on {eligible} accounts")
 
                 bot_scores = {}
                 if bot_scorer.model is not None:
+                    _ml_status["progress"] = f"scoring {eligible} accounts for anomalies..."
                     all_scores = await bot_scorer.score_all_accounts(min_tweets=5)
                     bot_scores = {s["username"]: s for s in all_scores}
 
                 # 2. Signal scoring
+                _ml_status["progress"] = "computing signal scores..."
                 account_scorer = AccountScorer()
                 all_accounts = await account_scorer.analyze(min_tweets_per_account=3)
 
                 # 3. Persist to account_scores table
+                _ml_status["progress"] = f"saving {len(all_accounts)} scores to db..."
                 now = datetime.now()
                 with get_session() as s:
                     for acct in all_accounts:
@@ -262,20 +312,21 @@ def create_app() -> Flask:
             except Exception as e:
                 logger.error(f"ML analysis failed: {e}", exc_info=True)
                 _ml_status["last_error"] = str(e)
+                _ml_status["progress"] = f"failed: {e}"
             finally:
                 try:
                     await close_db()
                 except Exception:
                     pass
                 _ml_status["running"] = False
+                _ml_status["task"] = None
+                if not _ml_status["last_error"]:
+                    _ml_status["progress"] = ""
 
         thread = threading.Thread(target=_run_analysis, daemon=True)
         thread.start()
 
-        flash(
-            "ML analysis started in the background. Refresh in a moment to see results.",
-            "info",
-        )
+        flash("scoring started in the background.", "info")
         return redirect(url_for("overview"))
 
     # ------------------------------------------------------------------
@@ -285,10 +336,12 @@ def create_app() -> Flask:
     @app.route("/api/run-judge", methods=["POST"])
     def run_judge():
         if _ml_status["running"]:
-            flash("An ML task is already running.", "error")
+            flash("an ml task is already running.", "error")
             return redirect(url_for("overview"))
 
         _ml_status["running"] = True
+        _ml_status["task"] = "judging"
+        _ml_status["progress"] = "starting..."
         _ml_status["last_error"] = None
 
         def _run_judge_thread():
@@ -331,14 +384,18 @@ def create_app() -> Flask:
                     await session.close()
 
                 # Filter to unjudged, cap at 30 per run (API cost control)
-                to_judge = [s for s in scored if s.username not in judged_set][:30]
+                to_judge = [s for s in scored if s.username not in judged_set]
 
                 if not to_judge:
                     logger.info("No unjudged accounts to evaluate")
+                    _ml_status["progress"] = "nothing to judge"
                     _ml_status["running"] = False
+                    _ml_status["task"] = None
                     return
 
-                logger.info(f"LLM judge: evaluating {len(to_judge)} accounts...")
+                total_to_judge = len(to_judge)
+                logger.info(f"LLM judge: evaluating {total_to_judge} accounts...")
+                _ml_status["progress"] = f"0/{total_to_judge} judged"
                 judged_count = 0
                 rate_limit_retries = 0
                 max_retries = 3
@@ -386,6 +443,7 @@ def create_app() -> Flask:
                                 rate_limit_retries += 1
                                 if attempt < max_retries:
                                     wait = 35 * (attempt + 1)
+                                    _ml_status["progress"] = f"{judged_count}/{total_to_judge} judged / rate limited, retrying in {wait}s..."
                                     logger.warning(
                                         f"  Rate limited, waiting {wait}s "
                                         f"(attempt {attempt + 1}/{max_retries})..."
@@ -420,6 +478,8 @@ def create_app() -> Flask:
                         ))
                     await session.close()
                     judged_count += 1
+                    classification = judgment['classification'].replace('_', ' ')
+                    _ml_status["progress"] = f"{judged_count}/{total_to_judge} judged / @{acct.username}: {classification}"
 
                     logger.info(
                         f"  @{acct.username}: {judgment['classification']} "
@@ -468,21 +528,69 @@ def create_app() -> Flask:
             except Exception as e:
                 logger.error(f"LLM judge failed: {e}", exc_info=True)
                 _ml_status["last_error"] = str(e)
+                _ml_status["progress"] = f"failed: {e}"
             finally:
                 try:
                     await close_db()
                 except Exception:
                     pass
                 _ml_status["running"] = False
+                _ml_status["task"] = None
+                if not _ml_status["last_error"]:
+                    _ml_status["progress"] = ""
 
         thread = threading.Thread(target=_run_judge_thread, daemon=True)
         thread.start()
 
-        flash(
-            "LLM judge started in the background. It will evaluate unjudged accounts "
-            "and auto-block confident bot detections.",
-            "info",
-        )
+        flash("llm judge started in the background. evaluating unjudged accounts.", "info")
+        return redirect(url_for("overview"))
+
+    # ------------------------------------------------------------------
+    # Apply pending auto-actions from existing judgments
+    # ------------------------------------------------------------------
+
+    @app.route("/api/apply-judgments", methods=["POST"])
+    def apply_judgments():
+        """One-time catchup: apply auto-block/auto-label to existing judgments."""
+        with get_session() as s:
+            # Get all high-confidence judgments
+            judgments = s.execute(
+                select(SignalJudgment)
+                .where(SignalJudgment.confidence >= 0.8)
+            ).scalars().all()
+
+            blocked = 0
+            labeled = 0
+
+            for j in judgments:
+                if j.classification in ("garbage", "likely_garbage"):
+                    exists = s.execute(
+                        select(BlockedAccount)
+                        .where(BlockedAccount.username == j.username)
+                    ).scalar_one_or_none()
+                    if not exists:
+                        s.add(BlockedAccount(
+                            username=j.username,
+                            reason=f"llm judge: {j.classification} (conf {j.confidence:.2f})",
+                        ))
+                        blocked += 1
+
+                elif j.classification in ("signal", "likely_signal"):
+                    exists = s.execute(
+                        select(HumanLabel)
+                        .where(HumanLabel.username == j.username)
+                    ).scalar_one_or_none()
+                    if not exists:
+                        s.add(HumanLabel(
+                            username=j.username,
+                            label="signal",
+                            notes=f"llm judge: {j.classification} (conf {j.confidence:.2f})",
+                        ))
+                        labeled += 1
+
+            s.commit()
+
+        flash(f"{blocked} accounts blocked, {labeled} accounts labeled as signal.", "success")
         return redirect(url_for("overview"))
 
     # ------------------------------------------------------------------
@@ -528,6 +636,7 @@ def create_app() -> Flask:
                     AccountScore.signal_score,
                     AccountScore.cluster_label,
                     HumanLabel.label,
+                    HumanLabel.notes.label("label_notes"),
                 )
                 .outerjoin(AccountScore, acct_stats.c.username == AccountScore.username)
                 .outerjoin(HumanLabel, acct_stats.c.username == HumanLabel.username)
@@ -577,6 +686,7 @@ def create_app() -> Flask:
                     "signal_score": r.signal_score,
                     "cluster_label": r.cluster_label,
                     "label": r.label,
+                    "label_source": "LLM" if r.label_notes and "LLM judge" in r.label_notes else "HITL" if r.label else None,
                 }
                 for r in rows
             ]
@@ -668,32 +778,12 @@ def create_app() -> Flask:
     @app.route("/review")
     def review():
         page = request.args.get("page", 1, type=int)
-        filter_ = request.args.get("filter", "unlabeled")
+        filter_ = request.args.get("filter", "needs_review")
 
         with get_session() as s:
-            all_usernames_sq = select(func.distinct(Tweet.username)).subquery()
-            total_all = s.execute(
-                select(func.count()).select_from(all_usernames_sq)
-            ).scalar_one()
-            total_labeled = s.execute(
-                select(func.count()).select_from(HumanLabel)
-            ).scalar_one()
-            total_scored = s.execute(
-                select(func.count()).select_from(AccountScore)
-            ).scalar_one()
-
-            # Count uncertain LLM judgments (need HITL)
-            total_uncertain = s.execute(
-                select(func.count(func.distinct(SignalJudgment.username)))
-                .where(SignalJudgment.classification == "uncertain")
-            ).scalar_one()
-
-            counts = {
-                "unlabeled": total_all - total_labeled,
-                "uncertain": total_uncertain,
-                "scored": total_scored,
-                "all": total_all,
-            }
+            # Blocked and labeled usernames — these are resolved
+            blocked_sq = select(BlockedAccount.username).subquery()
+            labeled_sq = select(HumanLabel.username).subquery()
 
             # Aggregate tweet stats
             acct_stats = (
@@ -707,6 +797,7 @@ def create_app() -> Flask:
                 .subquery()
             )
 
+            # Base query: judged accounts with their scores
             q = (
                 select(
                     acct_stats.c.username,
@@ -720,28 +811,49 @@ def create_app() -> Flask:
                     SignalJudgment.reasoning.label("llm_reasoning"),
                     HumanLabel.label,
                 )
+                .join(SignalJudgment, acct_stats.c.username == SignalJudgment.username)
                 .outerjoin(AccountScore, acct_stats.c.username == AccountScore.username)
-                .outerjoin(SignalJudgment, acct_stats.c.username == SignalJudgment.username)
                 .outerjoin(HumanLabel, acct_stats.c.username == HumanLabel.username)
             )
 
-            if filter_ == "unlabeled":
-                q = q.where(HumanLabel.label.is_(None))
-            elif filter_ == "uncertain":
-                q = q.where(SignalJudgment.classification == "uncertain")
-            elif filter_ == "scored":
-                q = q.where(AccountScore.garbage_score.isnot(None))
+            if filter_ == "needs_review":
+                # Judged but not blocked and not labeled — the actual backlog
+                q = q.where(
+                    acct_stats.c.username.notin_(blocked_sq),
+                    HumanLabel.label.is_(None),
+                )
+            elif filter_ == "resolved":
+                # Already handled (blocked or labeled)
+                q = q  # show all judged, including resolved
+            # "all" shows everything judged
 
-            # Sort: uncertain LLM judgments first (need HITL), then anomalies, then by tweets
+            # Sort: low confidence first (hardest calls), then by garbage score
             q = q.order_by(
-                case((SignalJudgment.classification == "uncertain", 0), else_=1),
+                asc(SignalJudgment.confidence),
                 desc(AccountScore.garbage_score).nullslast(),
-                desc(acct_stats.c.tweet_count),
             )
 
             total = s.execute(
                 select(func.count()).select_from(q.subquery())
             ).scalar_one()
+
+            # Counts for tabs
+            needs_review_q = (
+                select(func.count(func.distinct(SignalJudgment.username)))
+                .where(
+                    SignalJudgment.username.notin_(blocked_sq),
+                    SignalJudgment.username.notin_(labeled_sq),
+                )
+            )
+            count_needs_review = s.execute(needs_review_q).scalar_one()
+            count_all_judged = s.execute(
+                select(func.count(func.distinct(SignalJudgment.username)))
+            ).scalar_one()
+
+            counts = {
+                "needs_review": count_needs_review,
+                "all": count_all_judged,
+            }
             total_pages = max(1, math.ceil(total / 20))
 
             rows = s.execute(q.offset((page - 1) * 20).limit(20)).all()
@@ -805,7 +917,7 @@ def create_app() -> Flask:
 
         valid_labels = {"signal", "garbage", "unsure"}
         if not username or label not in valid_labels:
-            flash("Invalid label request", "error")
+            flash("invalid label request", "error")
             return redirect(redirect_url)
 
         with get_session() as s:
@@ -824,7 +936,7 @@ def create_app() -> Flask:
                 ))
             s.commit()
 
-        flash(f"@{username} labeled as {label}", "success")
+        flash(f"@{username} labeled as {label}.", "success")
         return redirect(redirect_url)
 
     # ------------------------------------------------------------------
@@ -838,7 +950,7 @@ def create_app() -> Flask:
         redirect_url = request.form.get("redirect", url_for("overview"))
 
         if not username:
-            flash("Username required", "error")
+            flash("username required.", "error")
             return redirect(redirect_url)
 
         with get_session() as s:
@@ -847,11 +959,11 @@ def create_app() -> Flask:
             ).scalar_one_or_none()
 
             if existing:
-                flash(f"@{username} is already watched", "info")
+                flash(f"@{username} is already watched.", "info")
             else:
                 s.add(WatchedAccount(username=username, reason=reason or None))
                 s.commit()
-                flash(f"@{username} added to watch list", "success")
+                flash(f"@{username} added to watch list.", "success")
 
         return redirect(redirect_url)
 
@@ -867,7 +979,7 @@ def create_app() -> Flask:
             if existing:
                 s.delete(existing)
                 s.commit()
-                flash(f"@{username} removed from watch list", "success")
+                flash(f"@{username} removed from watch list.", "success")
 
         return redirect(redirect_url)
 
@@ -878,7 +990,7 @@ def create_app() -> Flask:
         redirect_url = request.form.get("redirect", url_for("overview"))
 
         if not username:
-            flash("Username required", "error")
+            flash("username required.", "error")
             return redirect(redirect_url)
 
         with get_session() as s:
@@ -887,11 +999,11 @@ def create_app() -> Flask:
             ).scalar_one_or_none()
 
             if existing:
-                flash(f"@{username} is already blocked", "info")
+                flash(f"@{username} is already blocked.", "info")
             else:
                 s.add(BlockedAccount(username=username, reason=reason or None))
                 s.commit()
-                flash(f"@{username} blocked", "success")
+                flash(f"@{username} blocked.", "success")
 
         return redirect(redirect_url)
 
@@ -907,7 +1019,7 @@ def create_app() -> Flask:
             if existing:
                 s.delete(existing)
                 s.commit()
-                flash(f"@{username} unblocked", "success")
+                flash(f"@{username} unblocked.", "success")
 
         return redirect(redirect_url)
 

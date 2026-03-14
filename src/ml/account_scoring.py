@@ -262,14 +262,16 @@ class AccountScorer:
                 score += weight * features.get(feature_name, 0.0)
             raw_scores.append(score)
 
-        # Normalize to 0-1 range using min-max scaling
+        # Normalize to 0-1 range using percentile ranking.
+        # Each account's score = what fraction of accounts it's better than.
+        # This spreads scores across the full range regardless of outliers.
         raw_scores = np.array(raw_scores)
-        score_min = raw_scores.min()
-        score_max = raw_scores.max()
-        if score_max > score_min:
-            normalized_scores = (raw_scores - score_min) / (score_max - score_min)
+        from scipy.stats import rankdata
+        if len(raw_scores) > 1:
+            ranks = rankdata(raw_scores, method="average")
+            normalized_scores = (ranks - 1) / (len(ranks) - 1)
         else:
-            normalized_scores = np.zeros_like(raw_scores)
+            normalized_scores = np.array([0.5] * len(raw_scores))
 
         # Optional KMeans clustering (k=4) for account type labeling
         feature_names = list(all_features[0].keys())
