@@ -390,7 +390,11 @@ class TestRetryLogic:
         mock_response = MagicMock()
         mock_response.text = "Success after retry"
         mock_response.function_calls = None
-        mock_response.candidates = [MagicMock(content=MagicMock())]
+        mock_text_part = MagicMock()
+        mock_text_part.text = "Success after retry"
+        mock_content = MagicMock()
+        mock_content.parts = [mock_text_part]
+        mock_response.candidates = [MagicMock(content=mock_content)]
         mock_response.usage_metadata = MagicMock(
             prompt_token_count=10,
             candidates_token_count=5,

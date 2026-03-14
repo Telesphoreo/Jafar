@@ -319,7 +319,25 @@ class GoogleProvider(LLMProvider):
             if response is None:
                 raise last_error or RuntimeError("No response received from Google API")
 
-            content = response.text if response.text else ""
+            # Extract text from parts directly to avoid the SDK warning
+            # about non-text parts when function calls are present.
+            content = ""
+            try:
+                if response.candidates and response.candidates[0].content:
+                    parts = response.candidates[0].content.parts
+                    if parts:
+                        text_parts = [
+                            part.text
+                            for part in parts
+                            if hasattr(part, "text") and part.text
+                        ]
+                        content = "".join(text_parts)
+            except (AttributeError, TypeError):
+                # Fallback for edge cases
+                try:
+                    content = response.text or ""
+                except Exception:
+                    content = ""
 
             # Extract tool calls if present
             tool_calls = self._extract_tool_calls(response)

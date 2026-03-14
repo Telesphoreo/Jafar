@@ -187,7 +187,11 @@ def mock_google_genai():
         mock_response = MagicMock()
         mock_response.text = "This is a test response from Gemini."
         mock_response.function_calls = None
-        mock_response.candidates = [MagicMock(content=MagicMock())]
+        mock_text_part = MagicMock()
+        mock_text_part.text = "This is a test response from Gemini."
+        mock_content = MagicMock()
+        mock_content.parts = [mock_text_part]
+        mock_response.candidates = [MagicMock(content=mock_content)]
         mock_response.usage_metadata = MagicMock(
             prompt_token_count=100,
             candidates_token_count=50,
