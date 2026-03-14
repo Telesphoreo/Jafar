@@ -5,7 +5,7 @@ Tests trend timeline detection, consecutive day tracking, and recurring theme de
 """
 
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -233,7 +233,7 @@ class TestTemporalTrendAnalyzer:
     @pytest.fixture
     def mock_history_db(self):
         """Create a mock history database."""
-        mock_db = MagicMock()
+        mock_db = AsyncMock()
         mock_db.get_trend_history.return_value = []
         return mock_db
 
@@ -248,12 +248,13 @@ class TestTemporalTrendAnalyzer:
         assert analyzer.consecutive_threshold == 3
         assert analyzer.gap_threshold == 14
 
-    def test_analyze_new_trend(self, mock_history_db):
+    @pytest.mark.asyncio
+    async def test_analyze_new_trend(self, mock_history_db):
         """Test analysis of a brand new trend."""
         mock_history_db.get_trend_history.return_value = []
 
         analyzer = TemporalTrendAnalyzer(history_db=mock_history_db)
-        timeline = analyzer.analyze_trend_timeline(
+        timeline = await analyzer.analyze_trend_timeline(
             term="$NVDA",
             mentions_today=50,
             engagement_today=10000.0,
@@ -265,7 +266,8 @@ class TestTemporalTrendAnalyzer:
         assert timeline.total_appearances == 1
         mock_history_db.get_trend_history.assert_called_once()
 
-    def test_analyze_consecutive_trend(self, mock_history_db):
+    @pytest.mark.asyncio
+    async def test_analyze_consecutive_trend(self, mock_history_db):
         """Test analysis of a trend with consecutive days."""
         today = datetime.now().date()
         mock_history_db.get_trend_history.return_value = [
@@ -275,7 +277,7 @@ class TestTemporalTrendAnalyzer:
         ]
 
         analyzer = TemporalTrendAnalyzer(history_db=mock_history_db)
-        timeline = analyzer.analyze_trend_timeline(
+        timeline = await analyzer.analyze_trend_timeline(
             term="Silver",
             mentions_today=50,
             engagement_today=10000.0,
@@ -287,7 +289,8 @@ class TestTemporalTrendAnalyzer:
         assert timeline.consecutive_days >= 3
         assert timeline.total_appearances == 4  # 3 historical + today
 
-    def test_analyze_recurring_trend(self, mock_history_db):
+    @pytest.mark.asyncio
+    async def test_analyze_recurring_trend(self, mock_history_db):
         """Test analysis of a recurring trend with gap."""
         today = datetime.now().date()
         mock_history_db.get_trend_history.return_value = [
@@ -296,7 +299,7 @@ class TestTemporalTrendAnalyzer:
         ]
 
         analyzer = TemporalTrendAnalyzer(history_db=mock_history_db)
-        timeline = analyzer.analyze_trend_timeline(
+        timeline = await analyzer.analyze_trend_timeline(
             term="Uranium",
             mentions_today=50,
             engagement_today=10000.0,
@@ -308,7 +311,8 @@ class TestTemporalTrendAnalyzer:
         assert timeline.is_recurring is True
         assert timeline.days_since_last >= 30
 
-    def test_analyze_all_trends(self, mock_history_db):
+    @pytest.mark.asyncio
+    async def test_analyze_all_trends(self, mock_history_db):
         """Test analyzing multiple trends at once."""
         mock_history_db.get_trend_history.return_value = []
 
@@ -328,7 +332,7 @@ class TestTemporalTrendAnalyzer:
             },
         }
 
-        timelines = analyzer.analyze_all_trends(trend_details)
+        timelines = await analyzer.analyze_all_trends(trend_details)
 
         assert len(timelines) == 2
         assert "$NVDA" in timelines
@@ -341,7 +345,8 @@ class TestTemporalTrendAnalyzer:
 
         assert context == ""
 
-    def test_format_context_for_llm_with_data(self, mock_history_db):
+    @pytest.mark.asyncio
+    async def test_format_context_for_llm_with_data(self, mock_history_db):
         """Test LLM context formatting with timelines."""
         mock_history_db.get_trend_history.return_value = []
 
@@ -355,7 +360,7 @@ class TestTemporalTrendAnalyzer:
             },
         }
 
-        timelines = analyzer.analyze_all_trends(trend_details)
+        timelines = await analyzer.analyze_all_trends(trend_details)
         context = analyzer.format_context_for_llm(timelines)
 
         assert "Temporal Context" in context
@@ -410,12 +415,13 @@ class TestTemporalTrendAnalyzer:
         suppressed = analyzer.get_suppressed_trends({})
         assert suppressed == set()
 
-    def test_term_normalization(self, mock_history_db):
+    @pytest.mark.asyncio
+    async def test_term_normalization(self, mock_history_db):
         """Test that terms are normalized correctly."""
         mock_history_db.get_trend_history.return_value = []
 
         analyzer = TemporalTrendAnalyzer(history_db=mock_history_db)
-        timeline = analyzer.analyze_trend_timeline(
+        timeline = await analyzer.analyze_trend_timeline(
             term="$NVDA",
             mentions_today=50,
             engagement_today=10000.0,

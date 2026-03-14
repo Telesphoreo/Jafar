@@ -142,7 +142,7 @@ class TemporalTrendAnalyzer:
             f"(consecutive_threshold={consecutive_threshold}, gap_threshold={gap_threshold_days}d)"
         )
 
-    def analyze_trend_timeline(
+    async def analyze_trend_timeline(
         self,
         term: str,
         mentions_today: int,
@@ -167,7 +167,7 @@ class TemporalTrendAnalyzer:
         normalized = term.lower().strip('$#')
 
         # Query historical appearances
-        history = self.history.get_trend_history(normalized, days=180)  # 6 months lookback
+        history = await self.history.get_trend_history(normalized, days=180)  # 6 months lookback
 
         timeline = TrendTimeline(
             term=term,
@@ -220,7 +220,7 @@ class TemporalTrendAnalyzer:
 
         return timeline
 
-    def analyze_all_trends(
+    async def analyze_all_trends(
         self,
         trend_details: dict[str, dict],
     ) -> dict[str, TrendTimeline]:
@@ -243,7 +243,7 @@ class TemporalTrendAnalyzer:
         }
 
         for term, details in trend_details.items():
-            timeline = self.analyze_trend_timeline(
+            timeline = await self.analyze_trend_timeline(
                 term=term,
                 mentions_today=details['mentions'],
                 engagement_today=details['engagement'],

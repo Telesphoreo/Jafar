@@ -1193,7 +1193,7 @@ async def run_pipeline() -> bool:
             }
 
         # Analyze timelines for all trends
-        timelines = temporal_analyzer.analyze_all_trends(trend_details_for_temporal)
+        timelines = await temporal_analyzer.analyze_all_trends(trend_details_for_temporal)
 
         # Count temporal patterns (new, continuing, recurring)
         temporal_patterns = sum(1 for t in timelines.values() if t.is_new or t.is_continuing or t.is_recurring)
