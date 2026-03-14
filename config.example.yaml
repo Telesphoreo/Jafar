@@ -28,7 +28,7 @@ twitter:
 # LLM Configuration (Google Gemini only)
 llm:
   # Gemini model for analysis and LLM-as-judge
-  google_model: gemini-3.1-flash-preview
+  google_model: gemini-3-flash-preview
 
   # Gemini embedding model for vector memory / historical parallels
   embedding_model: gemini-embedding-2-preview
