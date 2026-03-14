@@ -27,11 +27,11 @@ ensure_run_dir() {
     fi
 }
 
-# Get the most recent log file
+# Get the most recent log file (by filename timestamp, not mtime)
 get_latest_log_file() {
-    # Find the most recent pipeline_*.log file
+    # Sort by filename descending - filenames contain timestamps like pipeline_20260314_045800.log
     local latest_log
-    latest_log="$(find "$RUN_DIR" -maxdepth 1 -name 'pipeline_*.log' -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
+    latest_log="$(ls -1 "$RUN_DIR"/pipeline_*.log 2>/dev/null | sort -r | head -1)"
     echo "$latest_log"
 }
 
@@ -132,22 +132,26 @@ start() {
 
     cd "$SCRIPT_DIR" || { echo "Error: Cannot change to $SCRIPT_DIR" >&2; exit 1; }
 
-    # Run with nohup in a new process group (setsid) so we can kill the entire tree
-    setsid nohup uv run python -m src.main >> "$log_file" 2>&1 &
-    local new_pid=$!
+    # Run with nohup, capture the actual python process PID
+    # We use a subshell that writes its own PID, then execs the actual command
+    nohup bash -c 'echo $$ > "'"$PID_FILE"'" && exec uv run python -m src.main' >> "$log_file" 2>&1 &
 
-    # Verify the process actually started
-    sleep 0.5
-    if ! is_process_running "$new_pid"; then
+    # Give it a moment to write the PID file
+    sleep 1
+
+    # Read the actual PID that was written
+    local new_pid
+    if ! new_pid="$(read_pid_file 2>/dev/null)"; then
         echo "Error: Pipeline failed to start. Check $log_file for details." >&2
         exit 1
     fi
 
-    # Write PID atomically (write to temp file, then move)
-    local temp_pid_file
-    temp_pid_file="${PID_FILE}.tmp.$$"
-    echo "$new_pid" > "$temp_pid_file"
-    mv -f -- "$temp_pid_file" "$PID_FILE"
+    # Verify the process is actually running
+    if ! is_process_running "$new_pid"; then
+        echo "Error: Pipeline exited immediately. Check $log_file for details." >&2
+        safe_remove_pid_file
+        exit 1
+    fi
 
     echo "Pipeline started (PID: $new_pid)"
     echo ""
@@ -172,8 +176,8 @@ stop() {
 
     echo "Stopping pipeline (PID: $pid)..."
 
-    # Kill the entire process group (uv + python child) with SIGTERM
-    kill -TERM -"$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    # Send SIGTERM to the process
+    kill -TERM "$pid" 2>/dev/null || true
 
     # Wait for graceful shutdown with timeout
     local waited=0
@@ -183,10 +187,10 @@ stop() {
         echo "Waiting for shutdown... ($waited/${SHUTDOWN_TIMEOUT}s)"
     done
 
-    # If still running, force kill the entire process group
+    # If still running, force kill
     if is_process_running "$pid"; then
         echo "Process did not exit gracefully, sending SIGKILL..."
-        kill -KILL -"$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+        kill -KILL "$pid" 2>/dev/null || true
         sleep 1
     fi
 
