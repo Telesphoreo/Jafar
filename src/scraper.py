@@ -99,18 +99,19 @@ async def fetch_trending_topics(api: API) -> list[str]:
 
 async def store_tweets(tweets: list[ScrapedTweet], source_query: str, pipeline_run: str) -> int:
     """Store scraped tweets to Postgres for ML training data. Returns count stored."""
+    from sqlalchemy.dialects.postgresql import insert
+
     from src.database import get_session
     from src.models import Tweet as TweetModel
 
     if not tweets:
         return 0
 
-    stored = 0
     session = await get_session()
     async with session:
         async with session.begin():
             for tweet in tweets:
-                model = TweetModel(
+                stmt = insert(TweetModel).values(
                     id=tweet.id,
                     username=tweet.username,
                     display_name=tweet.display_name,
@@ -124,10 +125,17 @@ async def store_tweets(tweets: list[ScrapedTweet], source_query: str, pipeline_r
                     hashtags=tweet.hashtags,
                     source_query=source_query,
                     pipeline_run=pipeline_run,
+                ).on_conflict_do_update(
+                    index_elements=["id"],
+                    set_={
+                        "likes": tweet.likes,
+                        "retweets": tweet.retweets,
+                        "replies": tweet.replies,
+                        "views": tweet.views,
+                    },
                 )
-                await session.merge(model)
-                stored += 1
-    return stored
+                await session.execute(stmt)
+    return len(tweets)
 
 
 def _tweet_model_to_scraped(row) -> ScrapedTweet:
