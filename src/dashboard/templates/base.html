@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Jafar{% endblock %} — Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #111; background: #f6f6f6; }
+
+        /* Nav — matches digest header */
+        nav { background: #0a0a0a; padding: 0; display: flex; align-items: center; height: 52px; max-width: 960px; margin: 0 auto; }
+        nav .brand { font-family: monospace; font-size: 15px; color: #fff; padding: 0 20px; margin-right: 8px; font-weight: 700; letter-spacing: -0.5px; }
+        nav .brand span { color: #888; font-weight: 400; font-size: 12px; margin-left: 6px; }
+        nav a { color: #888; text-decoration: none; font-size: 13px; padding: 16px 14px; border-bottom: 2px solid transparent; transition: color 0.15s; }
+        nav a:hover { color: #ccc; }
+        nav a.active { color: #fff; border-bottom-color: #fff; }
+
+        /* Top bar background extends full width */
+        .nav-wrap { background: #0a0a0a; border-bottom: 1px solid #333; }
+
+        /* Layout */
+        .container { max-width: 960px; margin: 24px auto; padding: 0 20px; }
+
+        /* Cards — digest style: thin borders, no shadows */
+        .card { background: #fff; border: 1px solid #ddd; margin-bottom: 16px; }
+        .card-header { padding: 12px 20px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px; color: #888; }
+        .card-body { padding: 20px; }
+
+        /* Stats row */
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .stat { background: #fff; border: 1px solid #ddd; padding: 16px 18px; text-align: center; }
+        .stat-value { font-size: 26px; font-weight: 700; font-family: monospace; }
+        .stat-label { font-size: 11px; color: #888; margin-top: 4px; }
+
+        /* Tables */
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { padding: 10px 12px; text-align: left; font-family: monospace; font-size: 11px; color: #888; border-bottom: 2px solid #000; background: #fafafa; }
+        td { padding: 10px 12px; border-bottom: 1px solid #eee; }
+        tr:nth-child(even) td { background: #fafafa; }
+        tr:hover td { background: #f0f0f0; }
+
+        /* Links */
+        a.username { color: #111; text-decoration: none; font-weight: 600; }
+        a.username:hover { text-decoration: underline; }
+
+        /* Badges */
+        .badge { display: inline-block; padding: 2px 8px; font-size: 11px; font-family: monospace; border: 1px solid; }
+        .badge-bot { color: #c00; border-color: #c00; background: #fff5f5; }
+        .badge-human { color: #2a7a2a; border-color: #2a7a2a; background: #f5fff5; }
+        .badge-unsure { color: #c80; border-color: #c80; background: #fffcf0; }
+        .badge-high { color: #2a7a2a; border-color: #2a7a2a; }
+        .badge-medium { color: #666; border-color: #666; }
+        .badge-low { color: #aaa; border-color: #aaa; }
+        .badge-running { color: #07c; border-color: #07c; background: #f0f8ff; }
+
+        /* Score bars */
+        .score-bar { display: inline-block; height: 12px; background: #333; vertical-align: middle; margin-right: 6px; }
+
+        /* Tweets */
+        .tweet { padding: 10px 14px; margin: 6px 0; border-left: 3px solid #ddd; background: #fafafa; font-size: 13px; line-height: 1.5; }
+        .tweet-meta { font-size: 11px; color: #999; margin-top: 4px; font-family: monospace; }
+
+        /* Buttons */
+        .btn { display: inline-block; padding: 6px 16px; font-size: 12px; font-family: monospace; border: 1px solid #ddd; background: #fff; cursor: pointer; text-decoration: none; color: #111; }
+        .btn:hover { background: #f0f0f0; }
+        .btn-bot { border-color: #c00; color: #c00; }
+        .btn-bot:hover { background: #fff5f5; }
+        .btn-human { border-color: #2a7a2a; color: #2a7a2a; }
+        .btn-human:hover { background: #f5fff5; }
+        .btn-unsure { border-color: #c80; color: #c80; }
+        .btn-unsure:hover { background: #fffcf0; }
+        .btn-primary { background: #0a0a0a; color: #fff; border-color: #0a0a0a; }
+        .btn-primary:hover { background: #333; }
+        .btn-active { font-weight: bold; }
+        .btn-bot.btn-active { background: #fee; }
+        .btn-human.btn-active { background: #efe; }
+        .btn-unsure.btn-active { background: #fffcf0; }
+
+        /* Label form */
+        .label-form { display: flex; gap: 8px; align-items: center; }
+        .label-form input[type="text"] { padding: 6px 10px; border: 1px solid #ddd; font-size: 12px; font-family: monospace; width: 200px; }
+
+        /* Flash messages */
+        .flash { padding: 10px 20px; margin-bottom: 16px; font-size: 13px; border: 1px solid; }
+        .flash-success { background: #f5fff5; border-color: #2a7a2a; color: #2a7a2a; }
+        .flash-error { background: #fff5f5; border-color: #c00; color: #c00; }
+        .flash-info { background: #f0f8ff; border-color: #07c; color: #07c; }
+
+        /* Pagination */
+        .pagination { display: flex; gap: 4px; margin-top: 16px; justify-content: center; }
+        .pagination a, .pagination span { padding: 6px 12px; border: 1px solid #ddd; font-size: 12px; font-family: monospace; text-decoration: none; color: #111; }
+        .pagination span.current { background: #111; color: #fff; border-color: #111; }
+
+        /* Feature grid */
+        .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; font-size: 12px; font-family: monospace; }
+        .feature { padding: 6px 10px; background: #fafafa; border: 1px solid #eee; }
+        .feature-name { color: #888; }
+        .feature-value { font-weight: 600; }
+
+        /* Page header */
+        .page-header { margin-bottom: 20px; }
+        .page-header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+        .page-header p { font-size: 13px; color: #666; margin-top: 4px; }
+
+        /* Two-column grid */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="nav-wrap">
+        <nav>
+            <span class="brand">Jafar <span>ML Dashboard</span></span>
+            <a href="{{ url_for('overview') }}" class="{% if request.endpoint == 'overview' %}active{% endif %}">Overview</a>
+            <a href="{{ url_for('accounts') }}" class="{% if request.endpoint == 'accounts' %}active{% endif %}">Accounts</a>
+            <a href="{{ url_for('review') }}" class="{% if request.endpoint == 'review' %}active{% endif %}">Review</a>
+            <a href="{{ url_for('runs') }}" class="{% if request.endpoint == 'runs' %}active{% endif %}">Runs</a>
+        </nav>
+    </div>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+                <div class="flash flash-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

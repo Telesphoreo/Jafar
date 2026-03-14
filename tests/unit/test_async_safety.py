@@ -18,6 +18,9 @@ import pytest
 
 SRC_DIR = Path(__file__).resolve().parent.parent.parent / "src"
 
+# Directories that are intentionally sync (e.g., Flask dashboard)
+EXCLUDED_DIRS = {"dashboard"}
+
 
 def _collect_class_async_methods(tree: ast.Module) -> dict[str, set[str]]:
     """Map class names to their async method names."""
@@ -284,7 +287,7 @@ class TestAsyncAwaitSafety:
     def global_class_methods(self) -> dict[str, set[str]]:
         """Collect async methods for all classes across all source files."""
         all_methods: dict[str, set[str]] = {}
-        for py_file in SRC_DIR.rglob("*.py"):
+        for py_file in (f for f in SRC_DIR.rglob("*.py") if not any(p in EXCLUDED_DIRS for p in f.relative_to(SRC_DIR).parts)):
             source = py_file.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(py_file))
             file_methods = _collect_class_async_methods(tree)
@@ -296,7 +299,7 @@ class TestAsyncAwaitSafety:
     def global_top_level_async(self) -> set[str]:
         """Collect all top-level async function names."""
         names = set()
-        for py_file in SRC_DIR.rglob("*.py"):
+        for py_file in (f for f in SRC_DIR.rglob("*.py") if not any(p in EXCLUDED_DIRS for p in f.relative_to(SRC_DIR).parts)):
             source = py_file.read_text(encoding="utf-8")
             tree = ast.parse(source, filename=str(py_file))
             names |= _collect_top_level_async_funcs(tree)
@@ -308,7 +311,7 @@ class TestAsyncAwaitSafety:
     ) -> list[tuple[str, int, str, str]]:
         """Scan all source files for unawaited async calls."""
         issues = []
-        for py_file in SRC_DIR.rglob("*.py"):
+        for py_file in (f for f in SRC_DIR.rglob("*.py") if not any(p in EXCLUDED_DIRS for p in f.relative_to(SRC_DIR).parts)):
             issues.extend(_scan_file(py_file, global_class_methods, global_top_level_async))
         return issues
 

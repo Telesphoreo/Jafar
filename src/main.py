@@ -758,6 +758,31 @@ async def _get_account_tweets(username: str, limit: int = 20) -> list[dict]:
     ]
 
 
+async def _get_bot_usernames() -> set[str]:
+    """Get usernames that should be filtered from analysis.
+
+    Uses three data-driven sources (no arbitrary score thresholds):
+    - BlockedAccount table: explicitly blocked spam accounts
+    - HumanLabel == 'bot': HITL-labeled bots
+    - AccountScore.is_anomaly == True: IsolationForest statistical outliers
+    """
+    from .database import get_session
+    from .models import AccountScore, BlockedAccount, HumanLabel
+    from sqlalchemy import select, union
+
+    session = await get_session()
+    try:
+        blocked_q = select(BlockedAccount.username)
+        labeled_q = select(HumanLabel.username).where(HumanLabel.label == "bot")
+        anomaly_q = select(AccountScore.username).where(AccountScore.is_anomaly.is_(True))
+
+        combined = union(blocked_q, labeled_q, anomaly_q)
+        result = await session.execute(combined)
+        return {row[0] for row in result.all()}
+    finally:
+        await session.close()
+
+
 async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:
     """Run ML analysis on stored tweets. Returns ML insights for the report."""
     from .ml import BotScorer, AccountScorer
@@ -791,10 +816,23 @@ async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:
 
         # 2. Account Signal Scoring
         account_scorer = AccountScorer()
-        top_accounts = await account_scorer.get_top_accounts(n=20, min_tweets=3)
-        ml_results["top_accounts"] = top_accounts
-        logger.info(f"Scored {len(top_accounts)} accounts for signal quality")
+        all_account_results = await account_scorer.analyze(min_tweets_per_account=3)
+        ml_results["top_accounts"] = all_account_results[:20]
+        ml_results["total_accounts_analyzed"] = len(all_account_results)
+
+        # Also include cluster distribution
+        from collections import Counter
+        cluster_counts = Counter(a.get("cluster_label", "unclustered") for a in all_account_results)
+        ml_results["cluster_distribution"] = dict(cluster_counts)
+
+        top_accounts = ml_results["top_accounts"]
+        logger.info(f"Scored {len(all_account_results)} accounts for signal quality")
         diagnostics.accounts_scored = len(top_accounts)
+
+        # Fetch sample tweets for top signal accounts
+        for account in top_accounts[:10]:
+            tweets = await _get_account_tweets(account["username"], limit=5)
+            account["sample_tweets"] = tweets
 
         # 3. LLM Bot Judging (on top suspects only to save API calls)
         if suspects:
@@ -836,6 +874,23 @@ async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:
                 )
                 diagnostics.ml_agreement_rate = evaluation.get("agreement_rate", 0)
 
+        # Attach sample tweets to bot suspects for the ML email
+        for suspect in ml_results["bot_suspects"]:
+            tweets = await _get_account_tweets(suspect["username"], limit=5)
+            suspect["sample_tweets"] = tweets
+
+        # 4. Total tweets analyzed
+        from .database import get_session
+        from .models import Tweet
+        from sqlalchemy import func, select
+
+        session = await get_session()
+        try:
+            result = await session.execute(select(func.count()).select_from(Tweet))
+            ml_results["total_tweets_analyzed"] = result.scalar_one()
+        finally:
+            await session.close()
+
     except Exception as e:
         logger.warning(f"ML analysis encountered an error: {e}", exc_info=True)
 
@@ -874,15 +929,20 @@ async def run_pipeline() -> bool:
             logger.error(f"Configuration error: {error}")
         return False
 
-    # Initialize checkpoint manager
+    # Initialize database FIRST — checkpoint lives in Postgres
+    await init_db(config.database.url)
+    await create_tables()
+
+    # Initialize checkpoint manager with advisory lock
     checkpoint = CheckpointManager()
+    await checkpoint.initialize()
 
     # Initialize diagnostics collector
     diagnostics = DiagnosticsCollector(
-        run_id=checkpoint.run_id if hasattr(checkpoint, 'run_id') else datetime.now().strftime("%Y%m%d_%H%M%S"))
+        run_id=checkpoint.run_id if checkpoint.run_id else datetime.now().strftime("%Y%m%d_%H%M%S"))
 
     # Check for existing checkpoint to resume
-    resuming = checkpoint.should_resume()
+    resuming = await checkpoint.should_resume()
     if resuming:
         state = checkpoint.get_state()
         logger.info(f"Resuming from checkpoint: {state.run_id}")
@@ -895,12 +955,8 @@ async def run_pipeline() -> bool:
         logger.info(f"  - History: {'DONE' if state.step6_complete else 'PENDING'}")
     else:
         logger.info("Starting fresh pipeline run")
-        checkpoint.start_new_run()
+        await checkpoint.start_new_run()
         state = checkpoint.get_state()
-
-    # Initialize database
-    await init_db(config.database.url)
-    await create_tables()
 
     # Initialize components
     scraper = TwitterScraper(db_path=config.twitter.db_path)
@@ -994,7 +1050,7 @@ async def run_pipeline() -> bool:
             )
             diagnostics.diagnostics.tweets_stored += stored
 
-            checkpoint.complete_step1()
+            await checkpoint.complete_step1()
             state = checkpoint.get_state()
             diagnostics.diagnostics.broad_topics_completed = len(state.topics_completed)
         else:
@@ -1010,6 +1066,15 @@ async def run_pipeline() -> bool:
             logger.error(f"No tweets retrieved for run_id={state.run_id}. Check twscrape setup or DB.")
             diagnostics.diagnostics.add_error("No tweets retrieved from broad scraping")
             return False
+
+        # Filter out tweets from known bot accounts (ML scores + HITL labels)
+        bot_usernames = await _get_bot_usernames()
+        if bot_usernames:
+            pre_filter = len(broad_tweets)
+            broad_tweets = [t for t in broad_tweets if t.username not in bot_usernames]
+            filtered_count = pre_filter - len(broad_tweets)
+            if filtered_count:
+                logger.info(f"Filtered {filtered_count} tweets from {len(bot_usernames)} known bot accounts")
 
         logger.info(f"Total broad tweets: {len(broad_tweets)}")
 
@@ -1027,6 +1092,57 @@ async def run_pipeline() -> bool:
                 logger.info(f"  ... and {len(twitter_trends_raw) - 10} more")
         else:
             logger.info("No Twitter trending topics fetched (API may be unavailable)")
+
+        # ============================================================
+        # STEP 1c: WATCHED ACCOUNTS - Scrape high-signal sources
+        # ============================================================
+        try:
+            from .database import get_session as _get_sess
+            from .models import WatchedAccount
+            from sqlalchemy import select as _sel
+            watched_session = await _get_sess()
+            try:
+                watched_rows = (await watched_session.execute(
+                    _sel(WatchedAccount)
+                )).scalars().all()
+            finally:
+                await watched_session.close()
+
+            if watched_rows:
+                logger.info(f"\n[STEP 1c/11] WATCHED ACCOUNTS: Scraping {len(watched_rows)} high-signal sources...")
+                from .scraper import store_tweets as _store_tweets
+                for watched in watched_rows:
+                    query = f"from:{watched.username}"
+                    tweets = await scraper.search_tweets(query, limit=20)
+                    if tweets:
+                        # Only store tweets we haven't seen before
+                        if watched.last_scraped_tweet_id:
+                            tweets = [t for t in tweets if t.id > watched.last_scraped_tweet_id]
+
+                        if tweets:
+                            stored = await _store_tweets(
+                                tweets, source_query=f"watched:{watched.username}",
+                                pipeline_run=state.run_id,
+                            )
+                            logger.info(f"  @{watched.username}: {stored} new tweets stored")
+
+                            # Update tracking
+                            newest_id = max(t.id for t in tweets)
+                            ws = await _get_sess()
+                            async with ws.begin():
+                                w = await ws.get(WatchedAccount, watched.username)
+                                if w:
+                                    w.last_scraped_at = datetime.now()
+                                    w.last_scraped_tweet_id = newest_id
+                            await ws.close()
+                        else:
+                            logger.info(f"  @{watched.username}: no new tweets")
+                    else:
+                        logger.info(f"  @{watched.username}: no tweets found")
+            else:
+                logger.info("\n[STEP 1c/11] No watched accounts configured")
+        except Exception as e:
+            logger.warning(f"Watched account scraping failed (non-fatal): {e}")
 
         # ============================================================
         # STEP 2: INVESTIGATOR - NER Analysis
@@ -1055,7 +1171,7 @@ async def run_pipeline() -> bool:
                 trend_objects = []  # No objects for fallback
 
             diagnostics.diagnostics.trends_discovered = len(trends)
-            checkpoint.save_trends(trends)
+            await checkpoint.save_trends(trends)
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 2/11] Skipping (already complete)")
@@ -1076,7 +1192,7 @@ async def run_pipeline() -> bool:
             if new_from_twitter:
                 logger.info(f"Adding {len(new_from_twitter)} Twitter trending topics not found by NER: {new_from_twitter}")
                 trends.extend(new_from_twitter)
-                checkpoint.save_trends(trends)
+                await checkpoint.save_trends(trends)
                 state = checkpoint.get_state()
             else:
                 logger.info("All Twitter trending topics already covered by NER discovery")
@@ -1105,7 +1221,7 @@ async def run_pipeline() -> bool:
 
                 # Save filtered trends to checkpoint
                 trends = filtered_trends
-                checkpoint.save_trends(trends)
+                await checkpoint.save_trends(trends)
                 state = checkpoint.get_state()
 
             if not trends:
@@ -1133,13 +1249,26 @@ async def run_pipeline() -> bool:
             )
             diagnostics.diagnostics.tweets_stored += stored
 
-            checkpoint.complete_step3()
+            await checkpoint.complete_step3()
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 4/11] Skipping (already complete)")
 
         # Load all trend tweets from DB (works for both fresh and resumed runs)
         trend_tweets = await load_trend_tweets_from_db(state.run_id, trends)
+
+        # Filter bot accounts from trend tweets too
+        if bot_usernames:
+            for trend_key in trend_tweets:
+                pre = len(trend_tweets[trend_key])
+                trend_tweets[trend_key] = [
+                    t for t in trend_tweets[trend_key]
+                    if t.username not in bot_usernames
+                ]
+                diff = pre - len(trend_tweets[trend_key])
+                if diff:
+                    logger.debug(f"Filtered {diff} bot tweets from trend '{trend_key}'")
+
         diagnostics.diagnostics.deep_dive_trends_completed = len([t for t in trends if trend_tweets.get(t)])
         diagnostics.diagnostics.deep_dive_tweets_scraped = sum(len(v) for v in trend_tweets.values())
         diagnostics.diagnostics.time_step3_deep_dive = time.time() - step3_start
@@ -1257,7 +1386,7 @@ async def run_pipeline() -> bool:
                 diagnostics.diagnostics.add_error("LLM analysis returned empty result")
                 return False
 
-            checkpoint.save_analysis(analysis, signal_strength, is_notable, top_engagement)
+            await checkpoint.save_analysis(analysis, signal_strength, is_notable, top_engagement)
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 8/11] Skipping (already complete)")
@@ -1274,22 +1403,6 @@ async def run_pipeline() -> bool:
         logger.info(f"Signal: {signal_strength.upper()}, Notable: {is_notable}")
 
         # ============================================================
-        # STEP 8b: ML ANALYSIS - Bot detection & account scoring
-        # ============================================================
-        logger.info("\n[STEP 8b/11] ML ANALYSIS: Running bot detection & account scoring...")
-        try:
-            ml_results = await run_ml_analysis(config, diagnostics.diagnostics, state.run_id)
-            if ml_results.get("bot_suspects"):
-                logger.info(f"Top bot suspect: @{ml_results['bot_suspects'][0]['username']} "
-                            f"(score: {ml_results['bot_suspects'][0]['bot_score']:.2f})")
-            if ml_results.get("top_accounts"):
-                logger.info(f"Top signal account: @{ml_results['top_accounts'][0]['username']} "
-                            f"(score: {ml_results['top_accounts'][0]['signal_score']:.2f})")
-        except Exception as e:
-            logger.warning(f"ML analysis step failed (non-fatal): {e}")
-            ml_results = {"bot_suspects": [], "top_accounts": [], "ml_evaluation": None}
-
-        # ============================================================
         # STEP 9: REPORTER - Email Digest
         # ============================================================
         step5_start = time.time()
@@ -1297,23 +1410,6 @@ async def run_pipeline() -> bool:
             logger.info("\n[STEP 9/11] THE REPORTER: Sending email digest...")
 
             provider_info = f"{llm.provider_name} {llm.model_name}"
-
-            # Only include ML results in email if enough time has elapsed
-            include_ml = False
-            try:
-                include_ml = await should_send_ml_diagnostics(
-                    config.app.ml_diagnostics_interval_days
-                )
-                if include_ml:
-                    logger.info("ML diagnostics interval elapsed - including ML section in email")
-                else:
-                    logger.info(
-                        f"ML diagnostics sent recently (interval: "
-                        f"{config.app.ml_diagnostics_interval_days} days) - skipping ML section"
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to check ML diagnostics interval (including ML): {e}")
-                include_ml = True  # Default to including on error
 
             success = reporter.send_email(
                 report_content=analysis,
@@ -1323,24 +1419,17 @@ async def run_pipeline() -> bool:
                 signal_strength=signal_strength,
                 timelines=timelines,
                 subject_line=subject_line,
-                ml_results=ml_results if include_ml else None,
             )
 
             diagnostics.diagnostics.email_sent = success
 
             if success:
-                if include_ml and ml_results:
-                    try:
-                        await mark_ml_diagnostics_sent()
-                        logger.info("Recorded ML diagnostics sent timestamp")
-                    except Exception as e:
-                        logger.warning(f"Failed to record ML diagnostics timestamp: {e}")
                 logger.info("Email sent successfully!")
             else:
                 logger.warning("Failed to send email")
                 diagnostics.diagnostics.add_error("Failed to send digest email")
 
-            checkpoint.complete_step5()
+            await checkpoint.complete_step5()
             state = checkpoint.get_state()
         else:
             logger.info("\n[STEP 9/11] Skipping (already complete)")
@@ -1382,7 +1471,7 @@ async def run_pipeline() -> bool:
                     logger.warning(f"Failed to store memory: {e}")
                     diagnostics.diagnostics.add_warning(f"Failed to store memory: {e}")
 
-            checkpoint.complete_step6()
+            await checkpoint.complete_step6()
         else:
             logger.info("\n[STEP 10/11] Skipping (already complete)")
 
@@ -1391,7 +1480,7 @@ async def run_pipeline() -> bool:
         # ============================================================
         # COMPLETE - Clear checkpoint
         # ============================================================
-        checkpoint.clear()
+        await checkpoint.clear()
 
         # ============================================================
         # STEP 11: ADMIN DIAGNOSTICS - Send admin email if needed
@@ -1454,7 +1543,7 @@ async def run_pipeline() -> bool:
         return True
 
     except KeyboardInterrupt:
-        logger.info("\nInterrupted by user - progress saved to checkpoint")
+        logger.info("\nInterrupted by user — progress saved to database")
         logger.info("Run again to resume from where you left off")
 
         # Send admin alert for interruption if enabled
@@ -1474,9 +1563,9 @@ async def run_pipeline() -> bool:
         raise
 
     except Exception as e:
-        checkpoint.set_error(str(e))
+        await checkpoint.set_error(str(e))
         logger.exception(f"Pipeline failed: {e}")
-        logger.info("Progress saved - run again to resume")
+        logger.info("Progress saved to database — run again to resume")
 
         # Send admin alert for failure
         if config.smtp.admin.enabled:
@@ -1496,6 +1585,7 @@ async def run_pipeline() -> bool:
         return False
 
     finally:
+        await checkpoint.close()
         await scraper.close()
         if memory:
             await memory.close()

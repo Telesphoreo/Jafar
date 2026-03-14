@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Accounts{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Accounts</h1>
+    <p>{{ total }} accounts with tweets in the database.</p>
+</div>
+
+<!-- Filters -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-body" style="padding: 12px 20px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+        <span style="font-family: monospace; font-size: 11px; color: #888;">Sort:</span>
+        {% for col, label in [('tweet_count', 'Tweets'), ('avg_likes', 'Avg likes'), ('bot_score', 'Bot score'), ('signal_score', 'Signal'), ('username', 'Name')] %}
+            <a href="{{ url_for('accounts', sort=col, order='desc' if sort != col or order == 'asc' else 'asc', page=1, filter=filter) }}"
+               class="btn {% if sort == col %}btn-active{% endif %}"
+               style="font-size: 11px;">
+                {{ label }}{% if sort == col %} {{ '↑' if order == 'asc' else '↓' }}{% endif %}
+            </a>
+        {% endfor %}
+        <span style="margin-left: auto; font-family: monospace; font-size: 11px; color: #888;">Filter:</span>
+        <a href="{{ url_for('accounts', sort=sort, order=order, filter='all') }}" class="btn {% if filter == 'all' %}btn-active{% endif %}" style="font-size: 11px;">All</a>
+        <a href="{{ url_for('accounts', sort=sort, order=order, filter='unlabeled') }}" class="btn {% if filter == 'unlabeled' %}btn-active{% endif %}" style="font-size: 11px;">Unlabeled</a>
+        <a href="{{ url_for('accounts', sort=sort, order=order, filter='suspects') }}" class="btn btn-bot {% if filter == 'suspects' %}btn-active{% endif %}" style="font-size: 11px;">Bot suspects</a>
+        <a href="{{ url_for('accounts', sort=sort, order=order, filter='human') }}" class="btn btn-human {% if filter == 'human' %}btn-active{% endif %}" style="font-size: 11px;">Human</a>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-body" style="padding: 0;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Account</th>
+                    <th>Tweets</th>
+                    <th>Avg likes</th>
+                    <th>Bot score</th>
+                    <th>Signal score</th>
+                    <th>Cluster</th>
+                    <th>Label</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for acct in accounts %}
+                <tr>
+                    <td><a href="{{ url_for('account_detail', username=acct.username) }}" class="username">@{{ acct.username }}</a></td>
+                    <td style="font-family: monospace;">{{ acct.tweet_count }}</td>
+                    <td style="font-family: monospace;">{{ "%.0f"|format(acct.avg_likes) }}</td>
+                    <td style="font-family: monospace;">
+                        {% if acct.bot_score is not none %}
+                            {% if acct.bot_score > 0.7 %}
+                                <strong style="color: #c00;">{{ "%.2f"|format(acct.bot_score) }}</strong>
+                            {% elif acct.bot_score > 0.4 %}
+                                <span style="color: #c80;">{{ "%.2f"|format(acct.bot_score) }}</span>
+                            {% else %}
+                                {{ "%.2f"|format(acct.bot_score) }}
+                            {% endif %}
+                        {% else %}
+                            <span style="color: #ccc;">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-family: monospace;">
+                        {% if acct.signal_score is not none %}
+                            {{ "%.2f"|format(acct.signal_score) }}
+                        {% else %}
+                            <span style="color: #ccc;">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="font-size: 12px; color: #666;">{{ acct.cluster_label or '—' }}</td>
+                    <td>
+                        {% if acct.label %}
+                            <span class="badge badge-{{ acct.label }}">{{ acct.label }}</span>
+                        {% else %}
+                            <span style="color: #ccc;">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not accounts %}
+                <tr><td colspan="7" style="color: #999; text-align: center; padding: 40px;">No accounts found</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+        <a href="{{ url_for('accounts', page=page-1, sort=sort, order=order, filter=filter) }}">Prev</a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+            <span class="current">{{ p }}</span>
+        {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+            <a href="{{ url_for('accounts', page=p, sort=sort, order=order, filter=filter) }}">{{ p }}</a>
+        {% elif p == 4 or p == total_pages - 3 %}
+            <span style="border: none; color: #999;">...</span>
+        {% endif %}
+    {% endfor %}
+    {% if page < total_pages %}
+        <a href="{{ url_for('accounts', page=page+1, sort=sort, order=order, filter=filter) }}">Next</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

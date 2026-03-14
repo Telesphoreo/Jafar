@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Review Queue{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Review queue</h1>
+    <p>Accounts the LLM couldn't classify with confidence are shown first. Everything else is sorted by bot score.</p>
+</div>
+
+<!-- Filter tabs -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-body" style="padding: 12px 20px; display: flex; gap: 8px; align-items: center;">
+        <span style="font-family: monospace; font-size: 11px; color: #888;">Show:</span>
+        <a href="{{ url_for('review', filter='unlabeled') }}" class="btn {% if filter == 'unlabeled' %}btn-active{% endif %}" style="font-size: 11px;">Unlabeled ({{ counts.unlabeled }})</a>
+        <a href="{{ url_for('review', filter='uncertain') }}" class="btn btn-unsure {% if filter == 'uncertain' %}btn-active{% endif %}" style="font-size: 11px;">LLM uncertain ({{ counts.uncertain }})</a>
+        <a href="{{ url_for('review', filter='scored') }}" class="btn {% if filter == 'scored' %}btn-active{% endif %}" style="font-size: 11px;">Scored ({{ counts.scored }})</a>
+        <a href="{{ url_for('review', filter='all') }}" class="btn {% if filter == 'all' %}btn-active{% endif %}" style="font-size: 11px;">All</a>
+    </div>
+</div>
+
+{% for item in queue %}
+<div class="card">
+    <div class="card-body">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+            <div>
+                <a href="{{ url_for('account_detail', username=item.username) }}" class="username" style="font-size: 16px;">@{{ item.username }}</a>
+                <span style="font-family: monospace; font-size: 12px; color: #888; margin-left: 12px;">
+                    {{ item.tweet_count }} tweets
+                    | avg {{ "%.0f"|format(item.avg_likes) }} likes
+                </span>
+
+                <!-- ML scores -->
+                {% if item.bot_score is not none %}
+                <span style="margin-left: 8px;">
+                    {% if item.bot_score > 0.7 %}
+                        <span class="badge badge-bot">bot: {{ "%.2f"|format(item.bot_score) }}</span>
+                    {% elif item.bot_score > 0.4 %}
+                        <span class="badge badge-unsure">bot: {{ "%.2f"|format(item.bot_score) }}</span>
+                    {% else %}
+                        <span style="font-family: monospace; font-size: 11px; color: #888;">bot: {{ "%.2f"|format(item.bot_score) }}</span>
+                    {% endif %}
+                </span>
+                {% endif %}
+                {% if item.signal_score is not none %}
+                <span style="font-family: monospace; font-size: 11px; color: #888; margin-left: 4px;">
+                    signal: {{ "%.2f"|format(item.signal_score) }}
+                </span>
+                {% endif %}
+
+                <!-- LLM judgment -->
+                {% if item.llm_classification %}
+                <span style="margin-left: 8px;">
+                    {% if item.llm_classification == 'uncertain' %}
+                        <span class="badge badge-unsure">LLM: uncertain</span>
+                    {% elif 'bot' in item.llm_classification %}
+                        <span class="badge badge-bot">LLM: {{ item.llm_classification }}</span>
+                    {% elif 'human' in item.llm_classification %}
+                        <span class="badge badge-human">LLM: {{ item.llm_classification }}</span>
+                    {% endif %}
+                    {% if item.llm_confidence is not none %}
+                        <span style="font-family: monospace; font-size: 11px; color: #888;">({{ "%.0f"|format(item.llm_confidence * 100) }}%)</span>
+                    {% endif %}
+                </span>
+                {% endif %}
+            </div>
+
+            <form action="{{ url_for('label_account') }}" method="POST" class="label-form">
+                <input type="hidden" name="username" value="{{ item.username }}">
+                <input type="hidden" name="redirect" value="{{ url_for('review', filter=filter, page=page) }}">
+                <button type="submit" name="label" value="human" class="btn btn-human {% if item.label == 'human' %}btn-active{% endif %}">Human</button>
+                <button type="submit" name="label" value="bot" class="btn btn-bot {% if item.label == 'bot' %}btn-active{% endif %}">Bot</button>
+                <button type="submit" name="label" value="unsure" class="btn btn-unsure {% if item.label == 'unsure' %}btn-active{% endif %}">Unsure</button>
+            </form>
+        </div>
+
+        <!-- LLM reasoning -->
+        {% if item.llm_reasoning %}
+        <div style="font-size: 12px; color: #555; margin-bottom: 8px; padding: 6px 10px; background: #fafafa; border-left: 3px solid #c80;">
+            <strong style="color: #888;">LLM:</strong> {{ item.llm_reasoning }}
+        </div>
+        {% endif %}
+
+        <!-- Sample tweets -->
+        {% if item.sample_tweets %}
+        <div>
+            {% for tweet in item.sample_tweets[:4] %}
+            <div class="tweet">
+                {{ tweet.content[:300] }}{% if tweet.content|length > 300 %}...{% endif %}
+                <div class="tweet-meta">
+                    {{ "{:,}".format(tweet.likes) }} likes | {{ "{:,}".format(tweet.retweets) }} RTs
+                    {% if tweet.views %}| {{ "{:,}".format(tweet.views) }} views{% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+{% if not queue %}
+<div class="card">
+    <div class="card-body" style="text-align: center; padding: 60px; color: #999;">
+        {% if filter == 'unlabeled' %}
+            All accounts have been labeled. Nice work.
+        {% elif filter == 'uncertain' %}
+            No uncertain LLM judgments. Run the LLM judge from the overview page, or all uncertainties have been resolved.
+        {% elif filter == 'scored' %}
+            No accounts have been scored yet. Run ML analysis from the overview page.
+        {% else %}
+            No accounts match this filter.
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if total_pages > 1 %}
+<div class="pagination">
+    {% if page > 1 %}
+        <a href="{{ url_for('review', page=page-1, filter=filter) }}">Prev</a>
+    {% endif %}
+    {% for p in range(1, total_pages + 1) %}
+        {% if p == page %}
+            <span class="current">{{ p }}</span>
+        {% elif p <= 3 or p >= total_pages - 2 or (p >= page - 2 and p <= page + 2) %}
+            <a href="{{ url_for('review', page=p, filter=filter) }}">{{ p }}</a>
+        {% endif %}
+    {% endfor %}
+    {% if page < total_pages %}
+        <a href="{{ url_for('review', page=page+1, filter=filter) }}">Next</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

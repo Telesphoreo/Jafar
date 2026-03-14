@@ -29,7 +29,7 @@ This populates the accounts.db SQLite database that twscrape uses for authentica
 """
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -361,7 +361,7 @@ class TwitterScraper:
         limit_per_topic: int = 50,
         skip_topics: list[str] | None = None,
         pipeline_run: str = "",
-        on_topic_complete: Callable[[str, list[ScrapedTweet]], None] | None = None,
+        on_topic_complete: Callable[[str, list[ScrapedTweet]], Awaitable[None]] | None = None,
     ) -> int:
         """
         Search broad topics and store tweets to DB as each completes.
@@ -371,7 +371,7 @@ class TwitterScraper:
             limit_per_topic: Number of tweets per topic.
             skip_topics: Topics to skip (already completed, from checkpoint).
             pipeline_run: Pipeline run ID for DB storage.
-            on_topic_complete: Optional callback(topic, tweets) after each topic.
+            on_topic_complete: Optional async callback(topic, tweets) after each topic.
 
         Returns:
             Total number of tweets stored.
@@ -394,7 +394,7 @@ class TwitterScraper:
             logger.info(f"Topic '{topic}': {len(tweets)} tweets, {stored} stored")
 
             if on_topic_complete:
-                on_topic_complete(topic, tweets)
+                await on_topic_complete(topic, tweets)
 
         logger.info(f"Broad search complete: {total_stored} tweets stored")
         return total_stored
@@ -405,7 +405,7 @@ class TwitterScraper:
         limit_per_trend: int = 20,
         skip_trends: list[str] | None = None,
         pipeline_run: str = "",
-        on_trend_complete: Callable[[str, list[ScrapedTweet]], None] | None = None,
+        on_trend_complete: Callable[[str, list[ScrapedTweet]], Awaitable[None]] | None = None,
     ) -> int:
         """
         Deep dive into specific trends and store tweets to DB as each completes.
@@ -415,7 +415,7 @@ class TwitterScraper:
             limit_per_trend: Number of tweets per trend.
             skip_trends: Trends to skip (already completed, from checkpoint).
             pipeline_run: Pipeline run ID for DB storage.
-            on_trend_complete: Optional callback(trend, tweets) after each trend.
+            on_trend_complete: Optional async callback(trend, tweets) after each trend.
 
         Returns:
             Total number of tweets stored.
@@ -438,7 +438,7 @@ class TwitterScraper:
             logger.info(f"Trend '{trend}': {len(tweets)} tweets, {stored} stored")
 
             if on_trend_complete:
-                on_trend_complete(trend, tweets)
+                await on_trend_complete(trend, tweets)
 
         logger.info(f"Deep dive complete: {total_stored} tweets stored")
         return total_stored

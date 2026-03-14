@@ -1,16 +1,56 @@
 """
 Unit tests for src/checkpoint.py
 
-Tests checkpoint persistence and pipeline state management.
+Tests database-backed checkpoint persistence, pipeline state management,
+and advisory lock behavior.
 """
 
-import json
 from datetime import datetime
-from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from src.checkpoint import CheckpointManager, PipelineState
+from src.models import Base, PipelineRun
+
+
+@pytest.fixture
+async def checkpoint_db():
+    """Create an in-memory SQLite async engine and patch get_session/get_engine.
+
+    SQLite doesn't support advisory locks, so we patch initialize()
+    to skip the lock acquisition for unit tests.
+    """
+    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _get_session():
+        return factory()
+
+    with (
+        patch("src.checkpoint.get_session", side_effect=_get_session),
+        patch("src.checkpoint.get_engine", return_value=engine),
+    ):
+        yield factory
+
+    await engine.dispose()
+
+
+@pytest.fixture
+async def checkpoint(checkpoint_db):
+    """Provide a CheckpointManager connected to the test DB.
+
+    Skips advisory lock since SQLite doesn't support it.
+    """
+    mgr = CheckpointManager()
+    # Mark the lock as "acquired" without actually calling pg_try_advisory_lock
+    mgr._lock_conn = AsyncMock()
+    yield mgr
+    mgr._lock_conn = None
 
 
 class TestPipelineState:
@@ -53,150 +93,91 @@ class TestPipelineState:
 class TestCheckpointManager:
     """Tests for CheckpointManager."""
 
-    def test_init_creates_directory(self, temp_checkpoint_file):
-        """Test that CheckpointManager creates parent directory."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        assert temp_checkpoint_file.parent.exists()
-
-    def test_start_new_run(self, temp_checkpoint_file):
+    async def test_start_new_run(self, checkpoint):
         """Test starting a new pipeline run."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-
-        state = manager.start_new_run()
+        state = await checkpoint.start_new_run()
 
         assert state.run_id == datetime.now().strftime("%Y%m%d")
         assert state.topics_completed == []
         assert state.trends_completed == []
-        assert temp_checkpoint_file.exists()
 
-    def test_save_and_load(self, temp_checkpoint_file):
-        """Test saving and loading checkpoint state."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
+    async def test_save_and_resume(self, checkpoint, checkpoint_db):
+        """Test that state persists to DB and can be resumed."""
+        await checkpoint.start_new_run()
+        await checkpoint.complete_step1()
 
-        manager.start_new_run()
-        manager.get_state().step1_complete = True
-        manager.save()
+        # Create a fresh manager (simulates process restart)
+        mgr2 = CheckpointManager()
+        mgr2._lock_conn = AsyncMock()
+        assert await mgr2.should_resume() is True
+        assert mgr2.get_state().step1_complete is True
 
-        # Create new manager and load
-        manager2 = CheckpointManager(str(temp_checkpoint_file))
-        loaded_state = manager2.load()
+    async def test_should_resume_no_data(self, checkpoint):
+        """Test that should_resume returns False when no checkpoint exists."""
+        assert await checkpoint.should_resume() is False
 
-        assert loaded_state is not None
-        assert loaded_state.step1_complete is True
+    async def test_should_resume_completed_run(self, checkpoint, checkpoint_db):
+        """Test that completed runs don't trigger resume."""
+        await checkpoint.start_new_run()
+        await checkpoint.clear()
 
-    def test_load_returns_none_if_no_file(self, temp_checkpoint_file):
-        """Test that load returns None when no checkpoint exists."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        assert manager.load() is None
+        mgr2 = CheckpointManager()
+        mgr2._lock_conn = AsyncMock()
+        assert await mgr2.should_resume() is False
 
-    def test_migrate_state_rejects_old_schema(self, temp_checkpoint_file):
-        """Test that old checkpoint formats are rejected due to schema version mismatch."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-
-        # Write an old-format checkpoint without schema_version
-        old_data = {
-            "run_id": datetime.now().strftime("%Y%m%d"),
-            "started_at": "2024-01-01T12:00:00",
-            "step1_complete": True,
-            "topics_completed": ["fintwit"],
-            "topics_remaining": ["markets", "trading"],
-            "broad_tweets": [{"id": 1, "text": "test"}],
-        }
-        with open(temp_checkpoint_file, "w") as f:
-            json.dump(old_data, f)
-
-        loaded = manager.load()
-        assert loaded is None  # Old schema is discarded
-
-    def test_migrate_state_strips_unknown_fields(self, temp_checkpoint_file):
-        """Test that current-schema checkpoints with extra fields load correctly."""
-        from src.checkpoint import SCHEMA_VERSION
-        manager = CheckpointManager(str(temp_checkpoint_file))
-
-        # Write a checkpoint with current schema but some unknown extra field
-        data = {
-            "run_id": datetime.now().strftime("%Y%m%d"),
-            "started_at": "2024-01-01T12:00:00",
-            "schema_version": SCHEMA_VERSION,
-            "step1_complete": True,
-            "topics_completed": ["fintwit"],
-            "some_future_field": "should be stripped",
-        }
-        with open(temp_checkpoint_file, "w") as f:
-            json.dump(data, f)
-
-        loaded = manager.load()
-        assert loaded is not None
-        assert loaded.step1_complete is True
-        assert loaded.topics_completed == ["fintwit"]
-
-    def test_mark_topic_done(self, temp_checkpoint_file):
+    async def test_mark_topic_done(self, checkpoint):
         """Test marking a topic as done."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
+        await checkpoint.start_new_run()
+        await checkpoint.mark_topic_done("fintwit")
 
-        manager.mark_topic_done("fintwit")
-        state = manager.get_state()
+        assert "fintwit" in checkpoint.get_state().topics_completed
 
-        assert "fintwit" in state.topics_completed
-
-    def test_mark_topic_done_idempotent(self, temp_checkpoint_file):
+    async def test_mark_topic_done_idempotent(self, checkpoint):
         """Test that marking the same topic twice doesn't duplicate."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
+        await checkpoint.start_new_run()
+        await checkpoint.mark_topic_done("fintwit")
+        await checkpoint.mark_topic_done("fintwit")
 
-        manager.mark_topic_done("fintwit")
-        manager.mark_topic_done("fintwit")
-        state = manager.get_state()
+        assert checkpoint.get_state().topics_completed.count("fintwit") == 1
 
-        assert state.topics_completed.count("fintwit") == 1
-
-    def test_save_trends(self, temp_checkpoint_file):
+    async def test_save_trends(self, checkpoint):
         """Test saving discovered trends."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
+        await checkpoint.start_new_run()
 
         trends = ["$NVDA", "Silver", "#inflation"]
-        manager.save_trends(trends)
-        state = manager.get_state()
+        await checkpoint.save_trends(trends)
+        state = checkpoint.get_state()
 
         assert state.trends == trends
         assert state.step2_complete is True
 
-    def test_mark_trend_done(self, temp_checkpoint_file):
+    async def test_mark_trend_done(self, checkpoint):
         """Test marking a trend as done."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
-        manager.save_trends(["$NVDA"])
+        await checkpoint.start_new_run()
+        await checkpoint.save_trends(["$NVDA"])
+        await checkpoint.mark_trend_done("$NVDA")
 
-        manager.mark_trend_done("$NVDA")
-        state = manager.get_state()
+        assert "$NVDA" in checkpoint.get_state().trends_completed
 
-        assert "$NVDA" in state.trends_completed
-
-    def test_mark_trend_done_idempotent(self, temp_checkpoint_file):
+    async def test_mark_trend_done_idempotent(self, checkpoint):
         """Test that marking the same trend twice doesn't duplicate."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
+        await checkpoint.start_new_run()
+        await checkpoint.mark_trend_done("$NVDA")
+        await checkpoint.mark_trend_done("$NVDA")
 
-        manager.mark_trend_done("$NVDA")
-        manager.mark_trend_done("$NVDA")
-        state = manager.get_state()
+        assert checkpoint.get_state().trends_completed.count("$NVDA") == 1
 
-        assert state.trends_completed.count("$NVDA") == 1
-
-    def test_save_analysis(self, temp_checkpoint_file):
+    async def test_save_analysis(self, checkpoint):
         """Test saving analysis results."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
+        await checkpoint.start_new_run()
 
-        manager.save_analysis(
+        await checkpoint.save_analysis(
             analysis="Test analysis content",
             signal_strength="high",
             is_notable=True,
             top_engagement=50000.0,
         )
-        state = manager.get_state()
+        state = checkpoint.get_state()
 
         assert state.analysis == "Test analysis content"
         assert state.signal_strength == "high"
@@ -204,64 +185,110 @@ class TestCheckpointManager:
         assert state.top_engagement == 50000.0
         assert state.step4_complete is True
 
-    def test_complete_steps(self, temp_checkpoint_file):
+    async def test_complete_steps(self, checkpoint):
         """Test completing various pipeline steps."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
+        await checkpoint.start_new_run()
 
-        manager.complete_step1()
-        assert manager.get_state().step1_complete is True
+        await checkpoint.complete_step1()
+        assert checkpoint.get_state().step1_complete is True
 
-        manager.complete_step3()
-        assert manager.get_state().step3_complete is True
+        await checkpoint.complete_step3()
+        assert checkpoint.get_state().step3_complete is True
 
-        manager.complete_step5()
-        assert manager.get_state().step5_complete is True
+        await checkpoint.complete_step5()
+        assert checkpoint.get_state().step5_complete is True
 
-        manager.complete_step6()
-        assert manager.get_state().step6_complete is True
+        await checkpoint.complete_step6()
+        assert checkpoint.get_state().step6_complete is True
 
-    def test_should_resume_same_day(self, temp_checkpoint_file):
-        """Test resume detection for same-day incomplete run."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
-        manager.complete_step1()
+    async def test_clear_marks_completed(self, checkpoint, checkpoint_db):
+        """Test that clear marks the run as completed in DB."""
+        await checkpoint.start_new_run()
+        run_id = checkpoint.get_state().run_id
 
-        # New manager should detect resumable state
-        manager2 = CheckpointManager(str(temp_checkpoint_file))
-        assert manager2.should_resume() is True
+        await checkpoint.clear()
 
-    def test_should_not_resume_completed_run(self, temp_checkpoint_file):
-        """Test that completed runs don't trigger resume."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
-        manager.complete_step6()  # Mark as fully complete
+        # Verify status in DB
+        session = checkpoint_db()
+        run = await session.get(PipelineRun, run_id)
+        await session.close()
 
-        manager2 = CheckpointManager(str(temp_checkpoint_file))
-        assert manager2.should_resume() is False
+        assert run.status == "completed"
 
-    def test_clear(self, temp_checkpoint_file):
-        """Test clearing checkpoint file."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
-        assert temp_checkpoint_file.exists()
-
-        manager.clear()
-        assert not temp_checkpoint_file.exists()
-
-    def test_set_error(self, temp_checkpoint_file):
+    async def test_set_error(self, checkpoint, checkpoint_db):
         """Test recording an error."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-        manager.start_new_run()
+        await checkpoint.start_new_run()
 
-        manager.set_error("Test error message")
-        state = manager.get_state()
+        await checkpoint.set_error("Test error message")
 
-        assert state.error == "Test error message"
+        assert checkpoint.get_state().error == "Test error message"
 
-    def test_get_state_raises_without_init(self, temp_checkpoint_file):
+        # Verify in DB
+        run_id = checkpoint.get_state().run_id
+        session = checkpoint_db()
+        run = await session.get(PipelineRun, run_id)
+        await session.close()
+
+        assert run.error == "Test error message"
+        assert run.status == "failed"
+
+    async def test_get_state_raises_without_init(self, checkpoint):
         """Test that get_state raises error without initialization."""
-        manager = CheckpointManager(str(temp_checkpoint_file))
-
         with pytest.raises(RuntimeError, match="No active state"):
-            manager.get_state()
+            checkpoint.get_state()
+
+    async def test_run_id_property(self, checkpoint):
+        """Test run_id property."""
+        assert checkpoint.run_id is None
+        await checkpoint.start_new_run()
+        assert checkpoint.run_id == datetime.now().strftime("%Y%m%d")
+
+    async def test_full_pipeline_lifecycle(self, checkpoint, checkpoint_db):
+        """Test a complete pipeline run persisted to DB."""
+        await checkpoint.start_new_run()
+
+        await checkpoint.mark_topic_done("fintwit")
+        await checkpoint.mark_topic_done("markets")
+        await checkpoint.complete_step1()
+
+        await checkpoint.save_trends(["$NVDA", "Silver"])
+
+        await checkpoint.mark_trend_done("$NVDA")
+        await checkpoint.mark_trend_done("Silver")
+        await checkpoint.complete_step3()
+
+        await checkpoint.save_analysis(
+            analysis="Test analysis",
+            signal_strength="medium",
+            is_notable=False,
+            top_engagement=12000.0,
+        )
+
+        await checkpoint.complete_step5()
+        await checkpoint.complete_step6()
+        await checkpoint.clear()
+
+        # Verify final DB state
+        run_id = datetime.now().strftime("%Y%m%d")
+        session = checkpoint_db()
+        run = await session.get(PipelineRun, run_id)
+        await session.close()
+
+        assert run.status == "completed"
+        assert run.step1_complete is True
+        assert run.step6_complete is True
+        assert run.topics_completed == ["fintwit", "markets"]
+        assert run.trends == ["$NVDA", "Silver"]
+
+    async def test_start_new_run_overwrites_failed(self, checkpoint, checkpoint_db):
+        """Test that starting a new run overwrites a failed run from same day."""
+        await checkpoint.start_new_run()
+        await checkpoint.complete_step1()
+        await checkpoint.set_error("Something broke")
+
+        # Start fresh — should overwrite
+        await checkpoint.start_new_run()
+        state = checkpoint.get_state()
+
+        assert state.step1_complete is False
+        assert state.error == ""

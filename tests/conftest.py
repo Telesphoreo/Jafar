@@ -47,12 +47,6 @@ def temp_dir(tmp_path):
 
 
 @pytest.fixture
-def temp_checkpoint_file(tmp_path) -> Path:
-    """Provide a temporary checkpoint file path."""
-    return tmp_path / "test_checkpoint.json"
-
-
-@pytest.fixture
 def temp_db_path(tmp_path) -> str:
     """Provide a temporary SQLite database path."""
     return str(tmp_path / "test_history.db")
