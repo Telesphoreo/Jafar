@@ -1,0 +1,29 @@
+[Unit]
+Description=Jafar ML Dashboard
+Documentation=https://github.com/Telesphoreo/Jafar
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=notify
+User=yourusername
+Group=yourusername
+WorkingDirectory=/home/yourusername/Jafar
+EnvironmentFile=/home/yourusername/Jafar/.env
+
+ExecStart=/home/yourusername/Jafar/.venv/bin/gunicorn \
+    --bind 192.168.2.5:5000 \
+    --workers 2 \
+    --timeout 120 \
+    "src.dashboard.app:create_app()"
+
+Restart=on-failure
+RestartSec=5
+
+MemoryMax=512M
+CPUQuota=50%
+
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
