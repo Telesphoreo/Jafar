@@ -306,7 +306,11 @@ class CheckpointManager:
         async with session.begin():
             await session.merge(PipelineRun(
                 run_id=self._state.run_id,
-                started_at=datetime.fromisoformat(self._state.started_at),
+                started_at=(
+                    datetime.fromisoformat(self._state.started_at)
+                    if self._state.started_at
+                    else datetime.now()
+                ),
                 status="running",
                 step1_complete=self._state.step1_complete,
                 step2_complete=self._state.step2_complete,
