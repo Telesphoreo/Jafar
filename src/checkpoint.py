@@ -307,7 +307,9 @@ class CheckpointManager:
             await session.merge(PipelineRun(
                 run_id=self._state.run_id,
                 started_at=(
-                    datetime.fromisoformat(self._state.started_at)
+                    self._state.started_at
+                    if isinstance(self._state.started_at, datetime)
+                    else datetime.fromisoformat(self._state.started_at)
                     if self._state.started_at
                     else datetime.now()
                 ),
