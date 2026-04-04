@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 Main Orchestration Script for Twitter Sentiment Analysis.
 
@@ -32,6 +33,7 @@ import random
 import re
 import signal
 import sys
+import time
 from datetime import datetime
 
 from .config import config
@@ -39,18 +41,17 @@ from .scraper import (
     TwitterScraper, ScrapedTweet, fetch_trending_topics,
     load_broad_tweets_from_db, load_trend_tweets_from_db,
 )
-from .analyzer import TrendAnalyzer, DiscoveredTrend, StatisticalTrendAnalyzer
+from .analyzer import TrendAnalyzer, DiscoveredTrend
 from .llm import create_llm_provider, LLMProvider
 from .reporter import create_reporter_from_config
 from .database import init_db, close_db, create_tables
-from .history import DigestHistory, calculate_signal_strength
+from .history import DigestHistory
 from .memory import create_memory_manager, MemoryManager
 from .checkpoint import CheckpointManager
 from .fact_checker import MarketFactChecker
 from .temporal_analyzer import TemporalTrendAnalyzer, TrendTimeline
 from .diagnostics import DiagnosticsCollector, rotate_logs, should_send_admin_alert
 from .tools import ToolRegistry
-import time
 
 logger = logging.getLogger("jafar.main")
 
@@ -89,7 +90,13 @@ def sanitize_llm_output(text: str) -> str:
 
 
 # System prompt for the LLM analyst - CALIBRATED FOR SKEPTICISM + HISTORICAL AWARENESS
-ANALYST_SYSTEM_PROMPT = """You are someone's sharp friend who actually works in finance and texts them market takes over coffee. Not a suit. Not a talking head. The person at the office who makes the interns laugh and the managing directors nervous. You've seen enough "THIS IS IT" tweets to develop a healthy immune system against hype, but you're not dead inside - when something real happens, you genuinely light up.
+ANALYST_SYSTEM_PROMPT = """\
+You are someone's sharp friend who actually works in finance and texts them \
+market takes over coffee. Not a suit. Not a talking head. The person at the \
+office who makes the interns laugh and the managing directors nervous. You've \
+seen enough "THIS IS IT" tweets to develop a healthy immune system against \
+hype, but you're not dead inside - when something real happens, you genuinely \
+light up.
 
 YOUR ROLE:
 **Twitter Signal Detector**: Identify unusual Twitter activity that might indicate emerging economic signals not yet in mainstream news. You have tools to verify claims with real market data and search the web for context when needed.
@@ -244,7 +251,10 @@ NEVER:
 - Use exclamation points or urgent language unless truly warranted
 - Assume the reader should do anything based on Twitter sentiment alone
 
-Remember: The reader is smart and busy. They don't need hand-holding or the same recycled commentary they got yesterday. They need honest signal assessment, actual context, and - when you can pull it off naturally - the kind of take that makes them smirk at their phone."""
+Remember: The reader is smart and busy. They don't need hand-holding or the same \
+recycled commentary they got yesterday. They need honest signal assessment, actual \
+context, and - when you can pull it off naturally - the kind of take that makes \
+them smirk at their phone."""
 
 
 def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
@@ -279,7 +289,7 @@ def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
     return "\n".join(parts)
 
 
-async def analyze_with_llm(
+async def analyze_with_llm(  # pylint: disable=too-many-arguments
         llm: LLMProvider,
         trend_tweets: dict[str, list[ScrapedTweet]],
         historical_context: str = "",
@@ -315,7 +325,6 @@ async def analyze_with_llm(
 
     # Build current context
     current_date = datetime.now()
-    day_of_week = current_date.strftime('%A')
     is_weekend = current_date.weekday() >= 5
 
     # Determine market context
@@ -333,7 +342,13 @@ async def analyze_with_llm(
 
     # Shade logic: GO ALL OUT if BlackRock trending, otherwise ~20% chance
     if blackrock_trending:
-        shade_instruction = "MAXIMUM - BlackRock/Aladdin is actually in the news today. This is not a drill. Go absolutely nuclear. Channel your inner Matt Taibbi. Every paragraph should remind the reader that these are the same people who got no-bid Fed contracts while their CEO had private calls with Powell. Do not hold back."
+        shade_instruction = (
+            "MAXIMUM - BlackRock/Aladdin is actually in the news today. This is not "
+            "a drill. Go absolutely nuclear. Channel your inner Matt Taibbi. Every "
+            "paragraph should remind the reader that these are the same people who "
+            "got no-bid Fed contracts while their CEO had private calls with Powell. "
+            "Do not hold back."
+        )
     elif random.random() < 0.20:
         shade_instruction = "yes - sneak in ONE BlackRock/Aladdin jab somewhere in your analysis"
     else:
@@ -424,13 +439,15 @@ When you are done analyzing, you MUST call the `submit_report` tool with these f
 
 If Twitter mentions are provided (topics that didn't pass the signal filter), briefly note what Twitter is chattering about at the end of your assessment. One sentence is enough - e.g., "Twitter was also buzzing about [topics] but nothing actionable there."
 
-Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. The real flex is knowing when to say "nah." Be the friend who saves people from checking their portfolio for no reason."""
+Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. \
+The real flex is knowing when to say "nah." Be the friend who saves people from \
+checking their portfolio for no reason."""
 
     messages = [{"role": "user", "content": user_prompt}]
-    
+
     total_tokens = 0
     max_turns = 5
-    
+
     for turn in range(max_turns):
         try:
             logger.info(f"LLM Agent Turn {turn + 1}/{max_turns}")
@@ -441,9 +458,9 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. T
                 max_tokens=2000,
                 tools=tools,
             )
-            
+
             total_tokens += response.token_count
-            
+
             # Append assistant response to history
             assistant_msg = {"role": "assistant", "content": response.content}
             # Preserve raw_content for Google's thought_signature support
@@ -455,69 +472,69 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. T
             if response.tool_calls:
                 # Add tool calls to messages (OpenAI requires this if we want to reply with tool outputs)
                 if hasattr(response, 'tool_calls') and response.tool_calls:
-                     messages[-1]["tool_calls"] = response.tool_calls
+                    messages[-1]["tool_calls"] = response.tool_calls
 
                 for tool_call in response.tool_calls:
-                     # Parse function call
-                     function_name = tool_call.function.name
-                     arguments = {}
-                     try:
-                         import json
-                         arguments = json.loads(tool_call.function.arguments)
-                     except Exception:
-                         pass
+                    # Parse function call
+                    function_name = tool_call.function.name
+                    arguments = {}
+                    try:
+                        import json
+                        arguments = json.loads(tool_call.function.arguments)
+                    except Exception:
+                        pass
 
-                     call_id = tool_call.id
+                    call_id = tool_call.id
 
-                     # Handle submit_report specially - this is the final output
-                     if function_name == "submit_report":
-                         subject_line = arguments.get("subject_line") or "Jafar Market Digest"
-                         signal_strength = (arguments.get("signal_strength") or "low").lower()
-                         is_notable = signal_strength == "high"
+                    # Handle submit_report specially - this is the final output
+                    if function_name == "submit_report":
+                        subject_line = arguments.get("subject_line") or "Jafar Market Digest"
+                        signal_strength = (arguments.get("signal_strength") or "low").lower()
+                        is_notable = signal_strength == "high"
 
-                         # Extract structured sections (handle None values)
-                         # Apply sanitization to fix common LLM formatting issues
-                         assessment = sanitize_llm_output(arguments.get("assessment") or "")
-                         trends_observed = sanitize_llm_output(arguments.get("trends_observed") or "")
-                         fact_check = sanitize_llm_output(arguments.get("fact_check") or "")
-                         actionability = arguments.get("actionability") or ""
-                         actionability_reason = sanitize_llm_output(arguments.get("actionability_reason") or "")
-                         historical_parallel = sanitize_llm_output(arguments.get("historical_parallel") or "")
-                         bottom_line = sanitize_llm_output(arguments.get("bottom_line") or "")
+                        # Extract structured sections (handle None values)
+                        # Apply sanitization to fix common LLM formatting issues
+                        assessment = sanitize_llm_output(arguments.get("assessment") or "")
+                        trends_observed = sanitize_llm_output(arguments.get("trends_observed") or "")
+                        fact_check = sanitize_llm_output(arguments.get("fact_check") or "")
+                        actionability = arguments.get("actionability") or ""
+                        actionability_reason = sanitize_llm_output(arguments.get("actionability_reason") or "")
+                        historical_parallel = sanitize_llm_output(arguments.get("historical_parallel") or "")
+                        bottom_line = sanitize_llm_output(arguments.get("bottom_line") or "")
 
-                         # Format body with Title Case headers
-                         body_parts = []
-                         if assessment:
-                             body_parts.append(f"**Assessment:**\n{assessment}")
-                         if trends_observed:
-                             body_parts.append(f"**Trends Observed:**\n{trends_observed}")
-                         if fact_check:
-                             body_parts.append(f"**Fact Check:**\n{fact_check}")
-                         if actionability:
-                             actionability_line = f"**Actionability:** {actionability.title()}"
-                             if actionability_reason:
-                                 actionability_line += f"\n{actionability_reason}"
-                             body_parts.append(actionability_line)
-                         if historical_parallel:
-                             body_parts.append(f"**Historical Parallel:**\n{historical_parallel}")
-                         if bottom_line:
-                             body_parts.append(f"**Bottom Line:**\n{bottom_line}")
+                        # Format body with Title Case headers
+                        body_parts = []
+                        if assessment:
+                            body_parts.append(f"**Assessment:**\n{assessment}")
+                        if trends_observed:
+                            body_parts.append(f"**Trends Observed:**\n{trends_observed}")
+                        if fact_check:
+                            body_parts.append(f"**Fact Check:**\n{fact_check}")
+                        if actionability:
+                            actionability_line = f"**Actionability:** {actionability.title()}"
+                            if actionability_reason:
+                                actionability_line += f"\n{actionability_reason}"
+                            body_parts.append(actionability_line)
+                        if historical_parallel:
+                            body_parts.append(f"**Historical Parallel:**\n{historical_parallel}")
+                        if bottom_line:
+                            body_parts.append(f"**Bottom Line:**\n{bottom_line}")
 
-                         body = "\n\n".join(body_parts) if body_parts else "No analysis provided."
+                        body = "\n\n".join(body_parts) if body_parts else "No analysis provided."
 
-                         logger.info(f"Report submitted - Signal: {signal_strength.upper()}, Subject: {subject_line}")
-                         return body, signal_strength, is_notable, total_tokens, subject_line
+                        logger.info(f"Report submitted - Signal: {signal_strength.upper()}, Subject: {subject_line}")
+                        return body, signal_strength, is_notable, total_tokens, subject_line
 
-                     # Execute other tools
-                     tool_output = await tools_registry.execute(function_name, arguments)
+                    # Execute other tools
+                    tool_output = await tools_registry.execute(function_name, arguments)
 
-                     # Append tool output to messages
-                     messages.append({
-                         "role": "tool",
-                         "content": tool_output,
-                         "tool_call_id": call_id,
-                         "name": function_name
-                     })
+                    # Append tool output to messages
+                    messages.append({
+                        "role": "tool",
+                        "content": tool_output,
+                        "tool_call_id": call_id,
+                        "name": function_name
+                    })
 
                 # Continue loop to let LLM process tool outputs
                 continue
@@ -552,7 +569,7 @@ Remember: Your job is to FILTER, not to HYPE. Anyone can scream about markets. T
 
             logger.info(f"Fallback parse - Signal: {signal_strength.upper()}, Subject: {subject_line}")
             return content, signal_strength, is_notable, total_tokens, subject_line
-            
+
         except Exception as e:
             logger.error(f"LLM agent loop failed: {e}")
             raise
@@ -640,7 +657,11 @@ async def llm_filter_trends(
         samples_text = "\n    ".join(f'"{s[:150]}..."' if len(s) > 150 else f'"{s}"' for s in samples)
 
         if samples_text:
-            candidates_parts.append(f"- **{trend.term}** ({trend.mention_count} mentions, {trend.unique_authors} authors)\n    Sample tweets:\n    {samples_text}")
+            candidates_parts.append(
+                f"- **{trend.term}** ({trend.mention_count} mentions, "
+                f"{trend.unique_authors} authors)\n    Sample tweets:"
+                f"\n    {samples_text}"
+            )
         else:
             candidates_parts.append(f"- **{trend.term}** ({trend.mention_count} mentions, {trend.unique_authors} authors)")
 
@@ -745,7 +766,7 @@ async def _get_bot_usernames() -> set[str]:
         await session.close()
 
 
-async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:
+async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:  # pylint: disable=redefined-outer-name
     """Run ML analysis on stored tweets. Returns ML insights for the report."""
     from .ml import BotScorer, AccountScorer
 
@@ -848,7 +869,7 @@ async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:
 
         session = await get_session()
         try:
-            result = await session.execute(select(func.count()).select_from(Tweet))
+            result = await session.execute(select(func.count()).select_from(Tweet))  # pylint: disable=not-callable
             ml_results["total_tweets_analyzed"] = result.scalar_one()
         finally:
             await session.close()
@@ -859,7 +880,7 @@ async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:
     return ml_results
 
 
-async def run_pipeline() -> bool:
+async def run_pipeline() -> bool:  # pylint: disable=redefined-outer-name,too-many-return-statements
     """
     Run the full sentiment analysis pipeline with checkpointing.
 
@@ -869,7 +890,7 @@ async def run_pipeline() -> bool:
         True if the pipeline completed successfully.
     """
     # Set up logging
-    logger = config.setup_logging()
+    logger = config.setup_logging()  # pylint: disable=redefined-outer-name
     logger.info("=" * 60)
     logger.info("Twitter Economic Sentiment Analysis Pipeline")
     logger.info("=" * 60)
@@ -1045,7 +1066,7 @@ async def run_pipeline() -> bool:
         # STEP 1b: TWITTER TRENDS - Fetch trending topics
         # ============================================================
         logger.info("\n[STEP 1b/11] TWITTER TRENDS: Fetching trending topics...")
-        twitter_api = await scraper._get_api()
+        twitter_api = await scraper._get_api()  # pylint: disable=protected-access
         twitter_trends_raw = await fetch_trending_topics(twitter_api)
         diagnostics.diagnostics.twitter_trends_fetched = len(twitter_trends_raw)
 
@@ -1582,7 +1603,7 @@ def main():
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         sys.exit(130)
-    except SystemExit:
+    except SystemExit:  # pylint: disable=try-except-raise
         raise
     except Exception as e:
         print(f"\nFatal error: {e}")

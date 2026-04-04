@@ -14,7 +14,7 @@ from typing import Optional
 import numpy as np
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from src.database import get_session
 from src.models import Tweet
@@ -291,7 +291,7 @@ class BotScorer:
         self.model.fit(X_scaled)
 
         # Summary stats
-        scores = self.model.decision_function(X_scaled)
+        _scores = self.model.decision_function(X_scaled)
         anomaly_labels = self.model.predict(X_scaled)
         n_anomalies = int((anomaly_labels == -1).sum())
 

@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines,not-callable
 """
 Jafar ML Dashboard.
 
@@ -17,7 +18,7 @@ import threading
 from datetime import datetime
 
 from flask import Flask, flash, redirect, render_template, request, url_for
-from sqlalchemy import create_engine, func, select, desc, asc, case
+from sqlalchemy import create_engine, func, select, desc, asc
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.models import (
@@ -324,15 +325,15 @@ def create_app() -> Flask:
                             .where(AccountScore.username == username)
                         ).scalar_one_or_none()
 
-                        score_data = dict(
-                            garbage_score=bot_info.get("garbage_score", 0.0),
-                            is_anomaly=bot_info.get("anomaly", False),
-                            signal_score=acct.get("signal_score", 0.0),
-                            cluster_label=acct.get("cluster_label"),
-                            tweet_count=acct.get("tweet_count", 0),
-                            features_json=acct.get("features"),
-                            scored_at=now,
-                        )
+                        score_data = {
+                            "garbage_score": bot_info.get("garbage_score", 0.0),
+                            "is_anomaly": bot_info.get("anomaly", False),
+                            "signal_score": acct.get("signal_score", 0.0),
+                            "cluster_label": acct.get("cluster_label"),
+                            "tweet_count": acct.get("tweet_count", 0),
+                            "features_json": acct.get("features"),
+                            "scored_at": now,
+                        }
                         if existing:
                             for k, v in score_data.items():
                                 setattr(existing, k, v)
@@ -393,8 +394,8 @@ def create_app() -> Flask:
                 await init_db(os.environ.get("DATABASE_URL", ""))
 
                 from src.ml.llm_judge import BotJudge
-                from src.models import AccountScore as AS, SignalJudgment as SJ, Tweet as TW
-                from sqlalchemy import select as asel
+                from src.models import AccountScore as AS, SignalJudgment as SJ, Tweet as TW  # pylint: disable=reimported
+                from sqlalchemy import select as asel  # pylint: disable=reimported
 
                 from src.config import config
                 api_key = config.google.api_key
@@ -890,7 +891,7 @@ def create_app() -> Flask:
                 q = q.where(HumanLabel.label == "unsure")
             elif filter_ == "resolved":
                 # Already handled (blocked or labeled)
-                q = q  # show all judged, including resolved
+                pass  # show all judged, including resolved
             # "all" shows everything judged
 
             # Sort: low confidence first (hardest calls), then by garbage score

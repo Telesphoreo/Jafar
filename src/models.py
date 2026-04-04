@@ -1,3 +1,4 @@
+# pylint: disable=not-callable
 """SQLAlchemy ORM models for Jafar."""
 
 from datetime import date, datetime
@@ -23,7 +24,7 @@ from sqlalchemy.types import UserDefinedType
 EMBEDDING_DIM = 3072
 
 
-class VectorType(UserDefinedType):
+class VectorType(UserDefinedType):  # pylint: disable=abstract-method
     """Custom SQLAlchemy type for pgvector/VectorChord vector columns."""
 
     cache_ok = True
@@ -31,7 +32,7 @@ class VectorType(UserDefinedType):
     def __init__(self, dim: int):
         self.dim = dim
 
-    def get_col_spec(self) -> str:
+    def get_col_spec(self) -> str:  # pylint: disable=arguments-differ
         return f"vector({self.dim})"
 
     def bind_processor(self, dialect):

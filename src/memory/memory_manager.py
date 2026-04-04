@@ -364,7 +364,7 @@ it will be able to provide historical context and identify parallels.
 """
 
         lines = [
-            f"## Memory Status",
+            "## Memory Status",
             f"Total memories stored: {count}",
             f"Recent memories (last {days} days): {len(recent)}",
             "",

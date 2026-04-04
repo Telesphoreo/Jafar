@@ -8,7 +8,6 @@ detection model.
 import asyncio
 import json
 import logging
-from datetime import datetime
 from typing import Any
 
 from google import genai
@@ -16,7 +15,10 @@ from google.genai import types
 
 logger = logging.getLogger("jafar.ml.llm_judge")
 
-BOT_JUDGE_SYSTEM_PROMPT = """You are a signal quality analyst for an economic intelligence system. Your job is NOT to detect bots vs humans — it's to determine whether an account produces valuable signal or worthless garbage.
+BOT_JUDGE_SYSTEM_PROMPT = """\
+You are a signal quality analyst for an economic intelligence system. \
+Your job is NOT to detect bots vs humans — it's to determine whether \
+an account produces valuable signal or worthless garbage.
 
 THE QUESTION: "If this account's tweets showed up in our economic trend analysis, would they add signal or noise?"
 

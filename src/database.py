@@ -18,7 +18,7 @@ async def init_db(url: str) -> None:
 
     Converts postgresql:// URLs to postgresql+asyncpg:// automatically.
     """
-    global _engine, _session_factory
+    global _engine, _session_factory  # pylint: disable=global-statement
 
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
@@ -43,7 +43,7 @@ def get_engine() -> AsyncEngine:
 
 async def close_db() -> None:
     """Dispose the engine and release connections."""
-    global _engine, _session_factory
+    global _engine, _session_factory  # pylint: disable=global-statement
     if _engine is not None:
         await _engine.dispose()
         _engine = None

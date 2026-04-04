@@ -105,7 +105,6 @@ class VectorStore(ABC):
     @abstractmethod
     async def initialize(self) -> None:
         """Initialize the vector store (create collections, etc.)."""
-        pass
 
     @abstractmethod
     async def store(self, record: MemoryRecord, embedding: list[float]) -> str:
@@ -119,7 +118,6 @@ class VectorStore(ABC):
         Returns:
             The ID of the stored record
         """
-        pass
 
     @abstractmethod
     async def search(
@@ -139,29 +137,23 @@ class VectorStore(ABC):
         Returns:
             List of search results, ordered by similarity
         """
-        pass
 
     @abstractmethod
     async def get_by_date(self, date: datetime) -> Optional[MemoryRecord]:
         """Get a specific memory by date."""
-        pass
 
     @abstractmethod
     async def get_recent(self, days: int = 7) -> list[MemoryRecord]:
         """Get recent memories."""
-        pass
 
     @abstractmethod
     async def get_notable(self, limit: int = 10) -> list[MemoryRecord]:
         """Get notable/significant memories."""
-        pass
 
     @abstractmethod
     async def count(self) -> int:
         """Get total number of stored memories."""
-        pass
 
     @abstractmethod
     async def close(self) -> None:
         """Clean up resources."""
-        pass

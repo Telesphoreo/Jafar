@@ -136,7 +136,7 @@ class GoogleProvider(LLMProvider):
 
                     # Add function calls if present, preserving thought_signature
                     if "tool_calls" in msg and msg["tool_calls"]:
-                        for i, tc in enumerate(msg["tool_calls"]):
+                        for tc in msg["tool_calls"]:
                             args = tc.function.arguments
                             if isinstance(args, str):
                                 args = json.loads(args) if args else {}

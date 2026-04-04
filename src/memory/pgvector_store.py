@@ -1,3 +1,4 @@
+# pylint: disable=not-callable
 """
 VectorChord PostgreSQL Vector Store Implementation.
 
@@ -132,7 +133,7 @@ class PgVectorStore(VectorStore):
 
         results = []
         for row in rows:
-            record = MemoryRecord(
+            record = MemoryRecord(  # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
                 id=row["id"],
                 date=row["date"],
                 content=row["content"],
@@ -151,7 +152,7 @@ class PgVectorStore(VectorStore):
 
         return results
 
-    async def get_by_date(self, date_str: str) -> Optional[MemoryRecord]:
+    async def get_by_date(self, date_str: str) -> Optional[MemoryRecord]:  # pylint: disable=arguments-renamed
         """Get a specific memory by id (date string like '20240115')."""
         session = await get_session()
         try:
@@ -187,7 +188,7 @@ class PgVectorStore(VectorStore):
         try:
             stmt = (
                 select(MemoryRecordModel)
-                .where(MemoryRecordModel.notable == True)  # noqa: E712
+                .where(MemoryRecordModel.notable.is_(True))
                 .order_by(MemoryRecordModel.date.desc())
                 .limit(limit)
             )
@@ -211,4 +212,3 @@ class PgVectorStore(VectorStore):
 
     async def close(self) -> None:
         """No-op — engine lifecycle is managed by src.database."""
-        pass

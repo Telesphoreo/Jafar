@@ -1,3 +1,4 @@
+# pylint: disable=not-callable
 """
 Historical Digest Storage.
 
@@ -8,7 +9,6 @@ historical context. This enables:
 - "Today looks like a normal day, nothing unusual"
 """
 
-import json
 import logging
 from datetime import date, datetime, timedelta
 from typing import Any, Optional

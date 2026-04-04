@@ -39,13 +39,11 @@ class LLMProvider(ABC):
     @abstractmethod
     def provider_name(self) -> str:
         """Return the name of the LLM provider."""
-        pass
 
     @property
     @abstractmethod
     def model_name(self) -> str:
         """Return the model being used."""
-        pass
 
     @abstractmethod
     async def generate(
@@ -71,9 +69,7 @@ class LLMProvider(ABC):
         Returns:
             LLMResponse containing the generated content.
         """
-        pass
 
     @abstractmethod
     def is_configured(self) -> bool:
         """Check if the provider is properly configured with API keys."""
-        pass

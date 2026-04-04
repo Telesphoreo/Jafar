@@ -9,9 +9,8 @@ actual silver prices to ground the analysis in facts.
 import asyncio
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
 
 import yfinance as yf
 
@@ -278,15 +277,15 @@ class MarketFactChecker:
         try:
             # Join symbols for batch fetching if possible, but history() is per-ticker usually
             # efficient enough to just loop if we use the Ticker object correctly
-            
+
             for symbol in symbols:
                 try:
                     ticker = yf.Ticker(symbol)
-                    
+
                     # Fetch 5 days of history for context
                     # period="1mo" is safer to ensure we get 5 trading days even with holidays
                     hist = ticker.history(period="1mo")
-                    
+
                     if hist.empty:
                         logger.warning(f"No history found for {symbol}")
                         continue
@@ -294,12 +293,12 @@ class MarketFactChecker:
                     # Get latest data
                     current_row = hist.iloc[-1]
                     current_price = float(current_row["Close"])
-                    
+
                     # Calculate 1-day change
                     if len(hist) >= 2:
                         prev_close = float(hist.iloc[-2]["Close"])
                         price_change_1d = current_price - prev_close
-                        price_change_1d_pct = (price_change_1d / prev_close * 100)
+                        price_change_1d_pct = price_change_1d / prev_close * 100
                     else:
                         price_change_1d = 0.0
                         price_change_1d_pct = 0.0
@@ -311,11 +310,11 @@ class MarketFactChecker:
                         # e.g., if we have [Mon, Tue, Wed, Thu, Fri, Mon(Today)]
                         # -1 is Mon(Today), -6 is Mon(Last week)
                         five_day_close = float(hist.iloc[-6]["Close"])
-                        price_change_5d_pct = ((current_price - five_day_close) / five_day_close * 100)
+                        price_change_5d_pct = (current_price - five_day_close) / five_day_close * 100
                     elif len(hist) > 1:
                         # Fallback to start of available data if < 6 days
                         start_close = float(hist.iloc[0]["Close"])
-                        price_change_5d_pct = ((current_price - start_close) / start_close * 100)
+                        price_change_5d_pct = (current_price - start_close) / start_close * 100
 
                     # Get auxiliary info (volume, ranges) from fast_info or info
                     try:
@@ -354,7 +353,7 @@ class MarketFactChecker:
                     )
 
                     self._cache[symbol] = (data, datetime.now())
-                    
+
                     log_msg = f"Fetched {symbol}: ${data.current_price:.2f} ({data.price_change_1d_pct:+.2f}%)"
                     if price_change_5d_pct is not None:
                         log_msg += f" [5d: {price_change_5d_pct:+.2f}%]"

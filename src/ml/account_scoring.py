@@ -1,3 +1,4 @@
+# pylint: disable=not-callable
 """
 ML account signal scoring module.
 

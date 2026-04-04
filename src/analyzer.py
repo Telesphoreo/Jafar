@@ -16,14 +16,11 @@ SETUP REQUIRED:
 
 import logging
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Iterator
-
+from datetime import datetime
 import spacy
 from spacy.language import Language
-from spacy.tokens import Doc
 
 from .scraper import ScrapedTweet
 
@@ -79,7 +76,7 @@ NOISE_TERMS = {
 
     # Generic nouns that appear everywhere (no signal value)
     "thing", "things", "stuff", "something", "anything", "everything", "nothing",
-    "world", "life", "way", "ways", "day", "days", "night", "nights",
+    "world", "life", "way", "ways", "day", "days", "nights",
     "time", "times", "moment", "moments", "hour", "hours", "minute", "minutes",
     "people", "person", "man", "men", "woman", "women", "guy", "guys", "kid", "kids",
     "group", "groups", "team", "teams", "part", "parts", "side", "sides",
@@ -96,13 +93,13 @@ NOISE_TERMS = {
     "level", "levels", "rate", "rates", "number", "numbers", "amount", "amounts",
     "worth", "value", "values", "cost", "costs", "money", "cash", "funds",
     "right", "rights", "left", "wrong", "good", "bad", "best", "worst", "better", "worse",
-    "start", "beginning", "middle", "end", "top", "bottom", "front", "back",
+    "start", "beginning", "middle", "top", "bottom", "front", "back",
     "head", "hand", "hands", "eye", "eyes", "face", "body", "mind", "heart",
-    "home", "house", "room", "office", "school", "city", "country", "state",
+    "home", "room", "office", "school", "city", "country", "state",
     "game", "games", "play", "video", "media", "content", "post", "posts",
     "chat", "message", "messages", "call", "calls", "email", "emails",
     "word", "words", "name", "names", "title", "titles", "term", "terms",
-    "don", "dont", "don t", "won", "wont", "won t", "cant", "can t",
+    "don", "dont", "won", "wont", "won t", "cant", "can t",
     "didnt", "didn t", "doesnt", "doesn t", "isnt", "isn t", "arent", "aren t",
     "wouldn", "wouldn t", "couldn", "couldn t", "shouldn", "shouldn t",
     "hasn", "hasn t", "haven", "haven t", "hadn", "hadn t",
@@ -123,7 +120,7 @@ NOISE_TERMS = {
     # Social media noise
     "rt", "via", "breaking", "just in", "news", "update", "thread",
     "http", "https", "www", "com", "link", "click", "follow", "retweet",
-    "like", "share", "comment", "subscribe", "dm", "tweet", "twitter",
+    "like", "comment", "subscribe", "dm", "tweet", "twitter",
 
     # Media outlets
     "cnbc", "bloomberg", "reuters", "wsj", "cnn", "fox", "msnbc",
@@ -175,7 +172,7 @@ FINANCIAL_CONTEXT_TERMS = {
     "production", "capacity", "inventory", "stockpile",
 
     # CONSUMER SPENDING (recession/boom signals)
-    "spending", "sales", "revenue", "consumer", "retail",
+    "spending", "sales", "consumer", "retail",
     "buying", "purchased", "splurge", "cutting back", "budget",
     "worth it", "value", "deal",
 

@@ -1,3 +1,4 @@
+# pylint: disable=too-many-lines
 """
 Email Reporter Module.
 
@@ -72,7 +73,11 @@ class EmailReporter:
         sections = []
 
         # Table styles (inline for email compatibility)
-        th_style = "padding: 10px; border-bottom: 2px solid #000; text-align: left; font-family: monospace; font-size: 12px; letter-spacing: 1px; background-color: #fafafa; color: #111;"
+        th_style = (
+            "padding: 10px; border-bottom: 2px solid #000; text-align: left;"
+            " font-family: monospace; font-size: 12px; letter-spacing: 1px;"
+            " background-color: #fafafa; color: #111;"
+        )
         td_style = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; background-color: #fff;"
         td_alt_style = "padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; background-color: #fafafa;"
         section_header_style = "font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; letter-spacing: 1px;"
@@ -358,7 +363,10 @@ class EmailReporter:
                     badge = f' <span style="font-size: 11px; opacity: 0.7;">{badge}</span>'
 
             trend_tag_list.append(
-                f'<span style="border: 1px solid #ddd; padding: 4px 10px; font-size: 12px; margin-right: 8px; display: inline-block; margin-bottom: 8px; font-family: monospace; background-color: #fff;">{trend}{badge}</span>'
+                f'<span style="border: 1px solid #ddd; padding: 4px 10px;'
+                f' font-size: 12px; margin-right: 8px; display: inline-block;'
+                f' margin-bottom: 8px; font-family: monospace;'
+                f' background-color: #fff;">{trend}{badge}</span>'
             )
 
         trend_tags = " ".join(trend_tag_list)
@@ -921,8 +929,6 @@ Disclaimer: Not financial advice.
         """
         today = datetime.now().strftime("%B %d, %Y %H:%M")
 
-        total_accounts = ml_results.get("total_accounts_analyzed", 0)
-        total_tweets = ml_results.get("total_tweets_analyzed", 0)
         subject = f"Jafar ML Intelligence Report - {today}"
 
         msg = MIMEMultipart("alternative")
@@ -972,11 +978,20 @@ Disclaimer: Not financial advice.
         judgment_map = {j["username"]: j for j in bot_judgments}
 
         # Shared styles
-        th = "padding: 10px 12px; border-bottom: 2px solid #000; text-align: left; font-family: monospace; font-size: 12px; letter-spacing: 1px; background-color: #fafafa; color: #111;"
+        th = (
+            "padding: 10px 12px; border-bottom: 2px solid #000;"
+            " text-align: left; font-family: monospace; font-size: 12px;"
+            " letter-spacing: 1px; background-color: #fafafa; color: #111;"
+        )
         td = "padding: 10px 12px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px;"
         td_alt = "padding: 10px 12px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; background-color: #fafafa;"
         section_hdr = "font-family: monospace; font-size: 11px; color: #888; margin-bottom: 15px; letter-spacing: 1px;"
-        tweet_style = "padding: 10px 14px; margin: 6px 0; border-left: 3px solid #ddd; font-size: 13px; line-height: 1.5; color: #333; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #fafafa;"
+        tweet_style = (
+            "padding: 10px 14px; margin: 6px 0; border-left: 3px solid #ddd;"
+            " font-size: 13px; line-height: 1.5; color: #333;"
+            " font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;"
+            " background-color: #fafafa;"
+        )
         engagement_style = "font-size: 11px; color: #999; margin-top: 4px; font-family: monospace;"
 
         sections = []
@@ -1146,7 +1161,7 @@ Disclaimer: Not financial advice.
                 if zero_eng > 0.5:
                     signals.append(f"zero engagement: {zero_eng:.0%}")
                 cv = features.get("coefficient_of_variation", 0)
-                if cv < 0.3 and cv > 0:
+                if 0 < cv < 0.3:
                     signals.append(f"suspiciously regular timing (CV: {cv:.2f})")
                 ht = features.get("avg_hashtags_per_tweet", 0)
                 if ht > 3:
@@ -1255,13 +1270,13 @@ Disclaimer: Not financial advice.
                         </tr>
                         <tr>
                             <td style="padding: 8px 16px; border: 1px solid #ddd; background: #fafafa;"><strong>ML: Bot</strong></td>
-                            <td style="padding: 8px 16px; border: 1px solid #ddd; text-align: center; background: #e8f5e9; font-weight: bold;">{cm.get("tp", 0)}</td>
-                            <td style="padding: 8px 16px; border: 1px solid #ddd; text-align: center; background: #fce4ec;">{cm.get("fp", 0)}</td>
+                            <td style="padding:8px 16px; border:1px solid #ddd; text-align:center; background:#e8f5e9; font-weight:bold;">{cm.get("tp", 0)}</td>
+                            <td style="padding:8px 16px; border:1px solid #ddd; text-align:center; background:#fce4ec;">{cm.get("fp", 0)}</td>
                         </tr>
                         <tr>
-                            <td style="padding: 8px 16px; border: 1px solid #ddd; background: #fafafa;"><strong>ML: Human</strong></td>
-                            <td style="padding: 8px 16px; border: 1px solid #ddd; text-align: center; background: #fce4ec;">{cm.get("fn", 0)}</td>
-                            <td style="padding: 8px 16px; border: 1px solid #ddd; text-align: center; background: #e8f5e9; font-weight: bold;">{cm.get("tn", 0)}</td>
+                            <td style="padding:8px 16px; border:1px solid #ddd; background:#fafafa;"><strong>ML: Human</strong></td>
+                            <td style="padding:8px 16px; border:1px solid #ddd; text-align:center; background:#fce4ec;">{cm.get("fn", 0)}</td>
+                            <td style="padding:8px 16px; border:1px solid #ddd; text-align:center; background:#e8f5e9; font-weight:bold;">{cm.get("tn", 0)}</td>
                         </tr>
                     </table>
                 </div>
@@ -1387,7 +1402,7 @@ Disclaimer: Not financial advice.
                 score = account.get("signal_score", 0.0)
                 cluster = account.get("cluster_label", "unknown")
                 tweet_count = account.get("tweet_count", 0)
-                lines.append(f"")
+                lines.append("")
                 lines.append(f"@{username} (signal: {score:.2f}, cluster: {cluster}, tweets: {tweet_count})")
                 for tw in account.get("sample_tweets", [])[:3]:
                     content = tw.get("content", "")[:200]
@@ -1406,7 +1421,7 @@ Disclaimer: Not financial advice.
                 judgment = judgment_map.get(username, {})
                 llm_verdict = judgment.get("classification", "not judged")
                 reasoning = judgment.get("reasoning", "—")
-                lines.append(f"")
+                lines.append("")
                 lines.append(f"@{username} (ML: {bot_score:.2f}, LLM: {llm_verdict})")
                 lines.append(f"  Reasoning: {reasoning}")
                 for tw in suspect.get("sample_tweets", [])[:2]:

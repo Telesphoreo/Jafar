@@ -7,7 +7,7 @@ for system monitoring and alerting.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -15,7 +15,7 @@ logger = logging.getLogger("jafar.diagnostics")
 
 
 @dataclass
-class RunDiagnostics:
+class RunDiagnostics:  # pylint: disable=too-many-instance-attributes
     """Complete diagnostic information for a pipeline run."""
 
     # Run metadata
@@ -257,7 +257,7 @@ def rotate_logs(log_file: str = "pipeline.log", keep_count: int = 10) -> None:
         logger.warning(f"Failed to rotate log {log_file}: {e}")
 
 
-def should_send_admin_alert(diagnostics: RunDiagnostics) -> tuple[bool, str]:
+def should_send_admin_alert(diagnostics: RunDiagnostics) -> tuple[bool, str]:  # pylint: disable=too-many-return-statements
     """
     Determine if admin should be alerted based on diagnostics.
 

@@ -23,17 +23,14 @@ class EmbeddingService(ABC):
     @abstractmethod
     def dimension(self) -> int:
         """Return the dimension of embeddings produced."""
-        pass
 
     @abstractmethod
     async def embed(self, text: str, task_type: str = "SEMANTIC_SIMILARITY") -> list[float]:
         """Generate embedding for a single text."""
-        pass
 
     @abstractmethod
     async def embed_batch(self, texts: list[str], task_type: str = "SEMANTIC_SIMILARITY") -> list[list[float]]:
         """Generate embeddings for multiple texts."""
-        pass
 
 
 class GeminiEmbeddingService(EmbeddingService):

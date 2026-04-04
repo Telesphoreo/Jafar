@@ -38,7 +38,7 @@ class ToolRegistry:
         self.temporal_analyzer = temporal_analyzer
         self.trend_timelines = trend_timelines or {}
         self.enable_web_search = enable_web_search
-        
+
         # Initialize DuckDuckGo search if enabled
         if self.enable_web_search:
             try:
@@ -56,7 +56,7 @@ class ToolRegistry:
         Get the JSON schema definitions for all available tools.
         """
         tools = []
-        
+
         if self.enable_web_search:
             tools.append({
                 "type": "function",
@@ -100,7 +100,10 @@ class ToolRegistry:
                 "type": "function",
                 "function": {
                     "name": "get_market_data",
-                    "description": "Fetch real-time market data for specific stocks, commodities, crypto, or indices. Use this to verify claims about prices, volume, or trends.",
+                    "description": (
+                        "Fetch real-time market data for specific stocks, commodities, crypto, or indices. "
+                        "Use this to verify claims about prices, volume, or trends."
+                    ),
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -158,7 +161,10 @@ class ToolRegistry:
             "type": "function",
             "function": {
                 "name": "get_weather_forecast",
-                "description": "Get current weather and 7-day forecast for cities. Use this to understand weather-driven consumer behavior (panic buying, supply disruptions, travel impacts).",
+                "description": (
+                    "Get current weather and 7-day forecast for cities. Use this to understand "
+                    "weather-driven consumer behavior (panic buying, supply disruptions, travel impacts)."
+                ),
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -193,15 +199,30 @@ class ToolRegistry:
                         },
                         "assessment": {
                             "type": "string",
-                            "description": "2-3 sentences with dry wit. If LOW/NONE signal, say 'Another day of fintwit being fintwit.'"
+                            "description": (
+                                "2-3 sentences with dry wit. "
+                                "If LOW/NONE signal, say 'Another day of fintwit being fintwit.'"
+                            )
                         },
                         "trends_observed": {
                             "type": "string",
-                            "description": "Bullet points of what's being discussed - factual, not hyped. Use '•' character for each bullet point (e.g., '• Gold up 4.6%\\n• Silver breaking out')."
+                            "description": (
+                                "Bullet points of what's being discussed - factual, not hyped. "
+                                "Use '•' character for each bullet point "
+                                "(e.g., '• Gold up 4.6%\\n• Silver breaking out')."
+                            )
                         },
                         "fact_check": {
                             "type": "string",
-                            "description": "Categorized fact-check results using '•' bullets. Group by category with each on its own line, using bold Title Case labels:\\n• **Verified:** [claims that match market data]\\n• **Exaggerated:** [directionally correct but overstated]\\n• **False:** [claims contradicting data]\\n• **Unverified:** [claims without data to check]\\nLeave empty if no fact checking was done."
+                            "description": (
+                                "Categorized fact-check results using '•' bullets. "
+                                "Group by category with each on its own line, using bold Title Case labels:\\n"
+                                "• **Verified:** [claims that match market data]\\n"
+                                "• **Exaggerated:** [directionally correct but overstated]\\n"
+                                "• **False:** [claims contradicting data]\\n"
+                                "• **Unverified:** [claims without data to check]\\n"
+                                "Leave empty if no fact checking was done."
+                            )
                         },
                         "actionability": {
                             "type": "string",
@@ -228,7 +249,7 @@ class ToolRegistry:
 
         return tools
 
-    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
+    async def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:  # pylint: disable=too-many-return-statements
         """
         Execute a tool by name with arguments.
         """
@@ -242,23 +263,23 @@ class ToolRegistry:
                 symbols = arguments.get("symbols", [])
                 if not symbols:
                     return "No symbols provided."
-                
+
                 # Convert names to symbols (the fact checker helper does this)
                 # But fact_checker.extract_symbols_from_trends expects a list of trends
                 # We can reuse it or adding a simple mapper
                 # For robust usage, let's treat inputs as potential trends/names
-                
-                # Important: Include common symbols ONLY if explicitly requested or if list is empty? 
+
+                # Important: Include common symbols ONLY if explicitly requested or if list is empty?
                 # No, we want to solve the pollution. So strictly fetch what is asked.
-                
+
                 extracted_symbols = self.fact_checker.extract_symbols_from_trends(symbols)
                 if not extracted_symbols:
-                   # Try to interpret the input strings directly as symbols if extraction failed
-                   # e.g. user passed "NVDA", which might not be in the dictionary but is a valid ticker
-                   for s in symbols:
-                       if s.isupper() and len(s) <= 5: 
-                           extracted_symbols.add(s)
-                           
+                    # Try to interpret the input strings directly as symbols if extraction failed
+                    # e.g. user passed "NVDA", which might not be in the dictionary but is a valid ticker
+                    for s in symbols:
+                        if s.isupper() and len(s) <= 5:
+                            extracted_symbols.add(s)
+
                 market_data = await self.fact_checker.fetch_market_data(extracted_symbols, include_common=False)
                 return self.fact_checker.format_for_llm(market_data, symbols)
 
@@ -306,30 +327,30 @@ class ToolRegistry:
         Execute a DuckDuckGo web search.
         """
         if not self.enable_web_search or not hasattr(self, 'ddgs'):
-             return "Web search is not enabled or available."
+            return "Web search is not enabled or available."
 
         try:
             # Run in executor since ddgs is synchronous
             import asyncio
             loop = asyncio.get_running_loop()
-            
+
             def run_search():
                 # text() returns an iterator/generator in recent versions, or list in older
                 # We want max_results=4
                 return self.ddgs.text(query, max_results=4)
-                
+
             results = await loop.run_in_executor(None, run_search)
-            
+
             if not results:
                 return f"No results found for query: {query}"
-            
+
             # Format results
             formatted = f"Web Search Results for '{query}':\n\n"
             for r in results:
                 formatted += f"- **{r.get('title', 'No Title')}**\n"
                 formatted += f"  {r.get('body', 'No snippet')}\n"
                 formatted += f"  Source: {r.get('href', 'No URL')}\n\n"
-            
+
             return formatted
 
         except Exception as e:

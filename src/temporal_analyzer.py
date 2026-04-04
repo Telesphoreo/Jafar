@@ -95,7 +95,7 @@ class TrendTimeline:
         lines = []
 
         if self.is_new:
-            lines.append(f"New trend: First appearance in database")
+            lines.append("New trend: First appearance in database")
         elif self.is_continuing:
             lines.append(f"Developing story: Day {self.consecutive_days} of consecutive trending")
             lines.append(f"Velocity: {self.trend_velocity}")
