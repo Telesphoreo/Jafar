@@ -2253,7 +2253,7 @@ wheels = [
 [[package]]
 name = "twscrape"
 version = "0.18.0"
-source = { git = "https://github.com/Telesphoreo/twscrape.git#705740b549288d9aa6131b2992afdc3c168b79f7" }
+source = { git = "https://github.com/Telesphoreo/twscrape.git#56c0cb68e5fd8f01d463272b6d59758133a869f8" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "beautifulsoup4" },
