@@ -11,21 +11,21 @@ requires-python = ">=3.13"
 dependencies = [
     "twscrape",
     "en-core-web-lg @ https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl",
-    "spacy>=3.8.11",
-    "google-genai>=1.67.0",
+    "spacy>=3.8.14",
+    "google-genai>=1.70.0",
     "python-dotenv>=1.2.2",
     "pyyaml>=6.0.3",
-    "aiohttp>=3.13.3",
-    "sqlalchemy[asyncio]>=2.0.48",
+    "aiohttp>=3.13.5",
+    "sqlalchemy[asyncio]>=2.0.49",
     "asyncpg>=0.31.0",
     "yfinance>=1.2.0",
-    "ddgs>=9.11.3",
+    "ddgs>=9.12.1",
     "python-dateutil>=2.9.0.post0",
     "scikit-learn>=1.8.0",
     "flask>=3.1.3",
     "psycopg2-binary>=2.9.11",
-    "gunicorn>=25.1.0",
-    "httpx[socks]",
+    "gunicorn>=25.3.0",
+    "httpx[socks]>=0.28.1",
 ]
 
 [project.scripts]
@@ -39,7 +39,7 @@ dev = [
     "pylint>=4.0.5",
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
-    "pytest-cov>=7.0.0",
+    "pytest-cov>=7.1.0",
     "pytest-mock>=3.15.1",
     "pytest-timeout>=2.4.0",
 ]
