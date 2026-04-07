@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 
 from src.database import get_session
 from src.models import Digest, TrendHistory
@@ -98,13 +99,21 @@ class DigestHistory:
 
             if trend_details:
                 for term, details in trend_details.items():
-                    trend_entry = TrendHistory(
+                    mentions = details.get("mentions", 0)
+                    engagement = details.get("engagement", 0)
+                    stmt = insert(TrendHistory).values(
                         trend_term=term.lower(),
                         date=date.today(),
-                        mentions=details.get("mentions", 0),
-                        engagement=details.get("engagement", 0),
+                        mentions=mentions,
+                        engagement=engagement,
+                    ).on_conflict_do_update(
+                        index_elements=["trend_term", "date"],
+                        set_={
+                            "mentions": mentions,
+                            "engagement": engagement,
+                        },
                     )
-                    session.add(trend_entry)
+                    await session.execute(stmt)
 
         logger.info(f"Stored digest #{digest.id} with {len(trends)} trends")
         return digest.id
