@@ -67,7 +67,6 @@ def parse_cookies_file(filepath: str) -> str:
         else:
             cookies = data
 
-    # Convert to cookie string format
     cookie_string = "; ".join(f"{k}={v}" for k, v in cookies.items())
     return cookie_string
 
@@ -83,11 +82,9 @@ async def add_account_with_cookies(
     print(f"Reading cookies from: {cookies_file}")
     cookie_string = parse_cookies_file(cookies_file)
 
-    # Show which cookies were found
     cookie_names = [c.split("=")[0] for c in cookie_string.split("; ")]
     print(f"Found {len(cookie_names)} cookies")
 
-    # Check for required cookies
     required = ["auth_token", "ct0"]
     missing = [r for r in required if r not in cookie_names]
     if missing:
@@ -100,17 +97,14 @@ async def add_account_with_cookies(
     if proxy:
         print(f"Proxy: {proxy[:40]}...")
 
-    # Initialize the API
     api = API(db_path)
 
-    # Delete existing accounts with same username or placeholder
     print(f"\nRemoving any existing accounts...")
     try:
         await api.pool.delete_accounts(["twitter_user", username])
     except Exception:
         pass  # Ignore if accounts don't exist
 
-    # Add account with cookies and proxy
     print(f"Adding account '{username}' with cookies...")
 
     await api.pool.add_account(
@@ -124,7 +118,6 @@ async def add_account_with_cookies(
 
     print("\nAccount added! Checking status...")
 
-    # Show account status
     accounts = await api.pool.accounts_info()
     for acc in accounts:
         if acc["username"] == username:
@@ -150,12 +143,10 @@ async def main():
         print(f"Error: File not found: {cookies_file}")
         sys.exit(1)
 
-    # Load proxies from config
     proxies = load_proxies()
     proxy = None
 
     if proxies:
-        # Count existing accounts to determine proxy assignment
         api = API("accounts.db")
         try:
             accounts = await api.pool.accounts_info()
@@ -164,10 +155,8 @@ async def main():
             # If this is a new account, assign next proxy in rotation
             # If re-adding existing account, find its original position
             if username in existing_usernames:
-                # Re-adding: maintain position based on original account order
                 account_position = sorted(existing_usernames).index(username)
             else:
-                # New account: assign based on total account count
                 account_position = len(accounts)
         except Exception:
             account_position = 0

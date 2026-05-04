@@ -133,15 +133,20 @@ class PgVectorStore(VectorStore):
 
         results = []
         for row in rows:
-            record = MemoryRecord(  # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
+            meta = row["metadata_json"] or {}
+            record = MemoryRecord(
                 id=row["id"],
                 date=row["date"],
-                content=row["content"],
-                summary=row["summary"] or "",
                 trends=row["trends"] or [],
+                trend_categories=meta.get("trend_categories", []),
                 signal_strength=row["signal_strength"] or "none",
+                sentiment=meta.get("sentiment", "neutral"),
+                top_engagement=meta.get("top_engagement", 0.0),
+                themes=meta.get("themes", []),
+                summary=row["summary"] or "",
+                full_digest=row["content"] or "",
                 notable=row["notable"],
-                metadata=row["metadata_json"],
+                tweet_count=meta.get("tweet_count", 0),
             )
             similarity = float(row["similarity"])
             results.append(SearchResult(

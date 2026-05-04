@@ -139,9 +139,8 @@ class SignalJudgment(Base):
 class PipelineRun(Base):
     """Stores pipeline run state for checkpointing and concurrency control.
 
-    Replaces the file-based checkpoint system. Each row represents one
-    pipeline execution, keyed by date (YYYYMMDD). Advisory locks in
-    PostgreSQL prevent concurrent runs.
+    Each row represents one pipeline execution, keyed by date (YYYYMMDD).
+    Advisory locks in PostgreSQL prevent concurrent runs.
     """
 
     __tablename__ = "pipeline_runs"

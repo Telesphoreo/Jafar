@@ -5,7 +5,6 @@ pseudo-labeled ground truth for evaluating and improving the ML bot
 detection model.
 """
 
-import asyncio
 import json
 import logging
 from typing import Any
@@ -193,9 +192,6 @@ class BotJudge:
             }
 
         # Validate and normalize the result
-        # Support both old "bot_probability" and new "garbage_probability" keys
-        if "bot_probability" in result and "garbage_probability" not in result:
-            result["garbage_probability"] = result.pop("bot_probability")
         result.setdefault("garbage_probability", 0.5)
         result.setdefault("confidence", 0.0)
         result.setdefault("classification", "uncertain")
@@ -220,149 +216,4 @@ class BotJudge:
             "classification": result["classification"],
         }
 
-    async def judge_batch(
-        self,
-        accounts: list[dict[str, Any]],
-        max_concurrent: int = 5,
-    ) -> list[dict[str, Any]]:
-        """Judge multiple accounts with concurrency control.
 
-        Args:
-            accounts: List of dicts, each with 'username' and 'tweets' keys.
-                Optionally includes 'ml_features'.
-            max_concurrent: Maximum concurrent LLM calls.
-
-        Returns:
-            List of judgment dicts.
-        """
-        semaphore = asyncio.Semaphore(max_concurrent)
-
-        async def _judge_with_semaphore(account: dict) -> dict[str, Any]:
-            async with semaphore:
-                return await self.judge_account(
-                    username=account["username"],
-                    tweets=account["tweets"],
-                    ml_features=account.get("ml_features"),
-                )
-
-        tasks = [_judge_with_semaphore(account) for account in accounts]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        judgments = []
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                username = accounts[i]["username"]
-                logger.error("Failed to judge @%s: %s", username, result)
-                judgments.append(
-                    {
-                        "username": username,
-                        "garbage_probability": 0.5,
-                        "confidence": 0.0,
-                        "reasoning": f"Error during judgment: {result}",
-                        "signals": [],
-                        "classification": "uncertain",
-                    }
-                )
-            else:
-                judgments.append(result)
-
-        return judgments
-
-    async def evaluate_ml_model(
-        self,
-        ml_scores: list[dict[str, Any]],
-        sample_size: int = 50,
-    ) -> dict[str, Any]:
-        """Compare ML bot scores against LLM judgments to compute evaluation metrics.
-
-        Takes ML model outputs, samples accounts, judges them with the LLM,
-        and computes agreement metrics.
-
-        Args:
-            ml_scores: List of dicts from BotScorer.score_all_accounts(),
-                each with 'username', 'garbage_score', and 'features' keys.
-                Must also include a 'tweets' key with tweet data for LLM judgment.
-            sample_size: Number of accounts to sample for evaluation.
-
-        Returns:
-            Dict with agreement_rate, precision, recall, f1_score,
-            confusion_matrix, and disagreements.
-        """
-        # Sample accounts (take all if fewer than sample_size)
-        import random
-
-        sample = random.sample(ml_scores, min(sample_size, len(ml_scores)))
-
-        # Build batch for LLM judgment
-        accounts_for_judgment = [
-            {
-                "username": s["username"],
-                "tweets": s["tweets"],
-                "ml_features": s.get("features"),
-            }
-            for s in sample
-        ]
-
-        llm_judgments = await self.judge_batch(accounts_for_judgment)
-
-        # Build lookup for LLM results
-        llm_by_user = {j["username"]: j for j in llm_judgments}
-
-        # Compute confusion matrix
-        tp = fp = tn = fn = 0
-        disagreements = []
-
-        for s in sample:
-            username = s["username"]
-            ml_is_bot = s["garbage_score"] > GARBAGE_THRESHOLD
-            llm_result = llm_by_user.get(username, {})
-            llm_is_bot = llm_result.get("garbage_probability", 0.5) > GARBAGE_THRESHOLD
-
-            if ml_is_bot and llm_is_bot:
-                tp += 1
-            elif ml_is_bot and not llm_is_bot:
-                fp += 1
-                disagreements.append(
-                    {
-                        "username": username,
-                        "ml_garbage_score": s["garbage_score"],
-                        "llm_garbage_probability": llm_result.get("garbage_probability"),
-                        "llm_classification": llm_result.get("classification"),
-                        "llm_reasoning": llm_result.get("reasoning"),
-                        "type": "false_positive",
-                    }
-                )
-            elif not ml_is_bot and llm_is_bot:
-                fn += 1
-                disagreements.append(
-                    {
-                        "username": username,
-                        "ml_garbage_score": s["garbage_score"],
-                        "llm_garbage_probability": llm_result.get("garbage_probability"),
-                        "llm_classification": llm_result.get("classification"),
-                        "llm_reasoning": llm_result.get("reasoning"),
-                        "type": "false_negative",
-                    }
-                )
-            else:
-                tn += 1
-
-        total = tp + fp + tn + fn
-        agreement_rate = (tp + tn) / total if total > 0 else 0.0
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        f1_score = (
-            2 * precision * recall / (precision + recall)
-            if (precision + recall) > 0
-            else 0.0
-        )
-
-        return {
-            "total_evaluated": total,
-            "agreement_rate": agreement_rate,
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1_score,
-            "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
-            "disagreements": disagreements,
-        }

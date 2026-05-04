@@ -205,29 +205,6 @@ class BotScorer:
             accounts.setdefault(row.username, []).append(td)
         return accounts
 
-    async def _fetch_account_tweets(self, username: str) -> list[TweetData]:
-        """Load tweets for a single username."""
-        session = await get_session()
-        async with session:
-            result = await session.execute(
-                select(Tweet).where(Tweet.username == username)
-            )
-            rows = result.scalars().all()
-
-        return [
-            TweetData(
-                content=row.content,
-                created_at=row.created_at,
-                likes=row.likes,
-                retweets=row.retweets,
-                replies=row.replies,
-                views=row.views,
-                hashtags=row.hashtags,
-                source_query=row.source_query,
-            )
-            for row in rows
-        ]
-
     def _raw_score_to_garbage_score(self, decision_score: float) -> float:
         """Convert IsolationForest decision_function output to a 0-1 bot score.
 
@@ -252,7 +229,6 @@ class BotScorer:
         """
         accounts = await self._fetch_tweets_by_username()
 
-        # Filter to accounts with enough tweets
         eligible = {
             user: tweets
             for user, tweets in accounts.items()
@@ -267,7 +243,6 @@ class BotScorer:
             logger.warning(msg)
             return {"trained": False, "reason": msg, "accounts": len(eligible)}
 
-        # Build feature matrix
         usernames = list(eligible.keys())
         feature_matrix = np.array(
             [
@@ -279,10 +254,8 @@ class BotScorer:
             ]
         )
 
-        # Scale
         X_scaled = self.scaler.fit_transform(feature_matrix)
 
-        # Train
         self.model = IsolationForest(
             contamination=0.1,
             random_state=42,
@@ -290,8 +263,6 @@ class BotScorer:
         )
         self.model.fit(X_scaled)
 
-        # Summary stats
-        _scores = self.model.decision_function(X_scaled)
         anomaly_labels = self.model.predict(X_scaled)
         n_anomalies = int((anomaly_labels == -1).sum())
 
@@ -307,35 +278,6 @@ class BotScorer:
             "accounts_eligible": len(eligible),
             "accounts_anomalous": n_anomalies,
             "min_tweets_per_account": min_tweets_per_account,
-        }
-
-    async def score_account(self, username: str) -> Optional[dict]:
-        """Score a single account.
-
-        Returns None if the model is not trained or there are too few tweets.
-        """
-        if self.model is None:
-            logger.warning("Model not trained — call train() first.")
-            return None
-
-        tweets = await self._fetch_account_tweets(username)
-        if not tweets:
-            return None
-
-        features = self.feature_extractor.extract_features(tweets)
-        feature_vector = np.array(
-            [[features[f] for f in self.feature_names]]
-        )
-        X_scaled = self.scaler.transform(feature_vector)
-
-        decision = float(self.model.decision_function(X_scaled)[0])
-        prediction = int(self.model.predict(X_scaled)[0])
-
-        return {
-            "username": username,
-            "garbage_score": self._raw_score_to_garbage_score(decision),
-            "anomaly": prediction == -1,
-            "features": features,
         }
 
     async def score_all_accounts(

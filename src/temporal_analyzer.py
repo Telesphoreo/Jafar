@@ -117,7 +117,7 @@ class TemporalTrendAnalyzer:
     """
     Analyzes trend timelines to detect developing stories and recurring themes.
 
-    Uses digest_history.db to track when trends appeared and identify patterns.
+    Uses the injected DigestHistory to query past appearances.
     """
 
     def __init__(

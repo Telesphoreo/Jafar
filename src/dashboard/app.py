@@ -55,19 +55,16 @@ def create_app() -> Flask:
     app = Flask(__name__, template_folder="templates")
     app.secret_key = os.environ.get("FLASK_SECRET_KEY", "jafar-dev-key-change-me")
 
-    # Load .env if python-dotenv is available
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
 
-    # Sync SQLAlchemy engine
     engine = create_engine(get_db_url(), pool_pre_ping=True)
     Base.metadata.create_all(engine)
     SessionLocal = sessionmaker(engine)
 
-    # Track ML analysis state
     _ml_status = {
         "running": False,
         "task": None,        # "scoring" or "judging"
@@ -79,7 +76,6 @@ def create_app() -> Flask:
     def get_session() -> Session:
         return SessionLocal()
 
-    # Display name mappings
     CLUSTER_DISPLAY = {
         "high_signal": "high signal",
         "news_aggregator": "news aggregator",
@@ -129,10 +125,6 @@ def create_app() -> Flask:
             return f"{n / 1_000:.1f}k"
         return f"{n:.0f}"
 
-    # ------------------------------------------------------------------
-    # Overview
-    # ------------------------------------------------------------------
-
     @app.route("/")
     def overview():
         with get_session() as s:
@@ -158,7 +150,6 @@ def create_app() -> Flask:
                 .where(AccountScore.is_anomaly.is_(True))
             ).scalar_one()
 
-            # Last scored time
             last_scored_row = s.execute(
                 select(AccountScore.scored_at)
                 .order_by(AccountScore.scored_at.desc())
@@ -169,14 +160,12 @@ def create_app() -> Flask:
                 if last_scored_row else None
             )
 
-            # Recent runs
             recent_runs = s.execute(
                 select(PipelineRun)
                 .order_by(PipelineRun.run_id.desc())
                 .limit(10)
             ).scalars().all()
 
-            # Top accounts by tweet count
             top_q = (
                 select(
                     Tweet.username,
@@ -207,14 +196,12 @@ def create_app() -> Flask:
                 for r in top_rows
             ]
 
-            label_counts = {}
             lc_rows = s.execute(
                 select(HumanLabel.label, func.count())
                 .group_by(HumanLabel.label)
             ).all()
             label_counts = {r[0]: r[1] for r in lc_rows}
 
-            # Judge stats
             total_judged = s.execute(
                 select(func.count(func.distinct(SignalJudgment.username)))
             ).scalar_one()
@@ -239,10 +226,6 @@ def create_app() -> Flask:
             total_blocked=total_blocked,
             total_unjudged=total_unjudged,
         )
-
-    # ------------------------------------------------------------------
-    # ML analysis (run bot detection + signal scoring)
-    # ------------------------------------------------------------------
 
     @app.route("/api/ml-status")
     def ml_status():
@@ -282,7 +265,6 @@ def create_app() -> Flask:
 
                 from src.ml import BotScorer, AccountScorer
 
-                # 1. Bot detection
                 _ml_status["progress"] = "training anomaly detector..."
                 bot_scorer = BotScorer()
                 training_stats = await bot_scorer.train(min_tweets_per_account=5)
@@ -303,7 +285,6 @@ def create_app() -> Flask:
                     logger.info("ML scoring stopped by user")
                     return
 
-                # 2. Signal scoring
                 _ml_status["progress"] = "computing signal scores..."
                 account_scorer = AccountScorer()
                 all_accounts = await account_scorer.analyze(min_tweets_per_account=3)
@@ -312,7 +293,6 @@ def create_app() -> Flask:
                     logger.info("ML scoring stopped by user")
                     return
 
-                # 3. Persist to account_scores table
                 _ml_status["progress"] = f"saving {len(all_accounts)} scores to db..."
                 now = datetime.now()
                 with get_session() as s:
@@ -367,10 +347,6 @@ def create_app() -> Flask:
         flash("scoring started in the background.", "info")
         return redirect(url_for("overview"))
 
-    # ------------------------------------------------------------------
-    # LLM Judge (run Gemini bot evaluation on scored accounts)
-    # ------------------------------------------------------------------
-
     @app.route("/api/run-judge", methods=["POST"])
     def run_judge():
         if _ml_status["running"]:
@@ -405,15 +381,12 @@ def create_app() -> Flask:
 
                 judge = BotJudge(api_key=api_key, model=model)
 
-                # Find accounts to judge: scored but not yet judged
                 session = await async_get_session()
                 try:
-                    # Get already-judged usernames
                     judged_q = asel(SJ.username).distinct()
                     judged_rows = (await session.execute(judged_q)).scalars().all()
                     judged_set = set(judged_rows)
 
-                    # Get scored accounts, prioritize anomalies
                     scored_q = (
                         asel(AS)
                         .order_by(AS.is_anomaly.desc(), AS.garbage_score.desc())
@@ -422,8 +395,7 @@ def create_app() -> Flask:
                 finally:
                     await session.close()
 
-                # Filter to unjudged, cap at 30 per run (API cost control)
-                to_judge = [s for s in scored if s.username not in judged_set]
+                to_judge = [s for s in scored if s.username not in judged_set][:30]
 
                 if not to_judge:
                     logger.info("No unjudged accounts to evaluate")
@@ -444,7 +416,6 @@ def create_app() -> Flask:
                         logger.info(f"LLM judge stopped by user after {judged_count}/{total_to_judge}")
                         break
 
-                    # Fetch tweets for this account
                     session = await async_get_session()
                     try:
                         tweet_rows = (await session.execute(
@@ -529,11 +500,9 @@ def create_app() -> Flask:
                         f"(conf: {judgment['confidence']:.2f})"
                     )
 
-                    # Auto-actions for high-confidence judgments
                     if judgment["confidence"] >= 0.8:
                         with get_session() as s:
                             if judgment["classification"] in ("garbage", "likely_garbage"):
-                                # Auto-block garbage
                                 exists = s.execute(
                                     select(BlockedAccount)
                                     .where(BlockedAccount.username == acct.username)
@@ -547,7 +516,6 @@ def create_app() -> Flask:
                                     logger.info(f"    Auto-blocked @{acct.username}")
 
                             if judgment["classification"] in ("signal", "likely_signal"):
-                                # Auto-label as signal
                                 existing_label = s.execute(
                                     select(HumanLabel)
                                     .where(HumanLabel.username == acct.username)
@@ -591,10 +559,6 @@ def create_app() -> Flask:
 
         flash("llm judge started in the background. evaluating unjudged accounts.", "info")
         return redirect(url_for("overview"))
-
-    # ------------------------------------------------------------------
-    # Apply pending auto-actions from existing judgments
-    # ------------------------------------------------------------------
 
     def _apply_pending_actions(session_factory):
         """Apply auto-block/auto-label to all high-confidence judgments."""
@@ -642,10 +606,6 @@ def create_app() -> Flask:
         flash(f"{blocked} accounts blocked, {labeled} accounts labeled as signal.", "success")
         return redirect(url_for("overview"))
 
-    # ------------------------------------------------------------------
-    # Accounts list
-    # ------------------------------------------------------------------
-
     @app.route("/accounts")
     def accounts():
         page = request.args.get("page", 1, type=int)
@@ -661,7 +621,6 @@ def create_app() -> Flask:
             sort = "tweet_count"
 
         with get_session() as s:
-            # Aggregate tweet stats per account, left-joined with scores and labels
             acct_stats = (
                 select(
                     Tweet.username,
@@ -691,7 +650,6 @@ def create_app() -> Flask:
                 .outerjoin(HumanLabel, acct_stats.c.username == HumanLabel.username)
             )
 
-            # Filter
             if filter_ == "unlabeled":
                 q = q.where(HumanLabel.label.is_(None))
             elif filter_ == "garbage":
@@ -703,7 +661,6 @@ def create_app() -> Flask:
             elif filter_ == "suspects":
                 q = q.where(AccountScore.is_anomaly.is_(True))
 
-            # Sort
             sort_map = {
                 "tweet_count": acct_stats.c.tweet_count,
                 "avg_likes": acct_stats.c.avg_likes,
@@ -752,10 +709,6 @@ def create_app() -> Flask:
             order=order,
             filter=filter_,
         )
-
-    # ------------------------------------------------------------------
-    # Account detail
-    # ------------------------------------------------------------------
 
     @app.route("/account/<username>")
     def account_detail(username):
@@ -822,10 +775,6 @@ def create_app() -> Flask:
             is_blocked=is_blocked,
         )
 
-    # ------------------------------------------------------------------
-    # HITL review queue
-    # ------------------------------------------------------------------
-
     @app.route("/review")
     def review():
         page = request.args.get("page", 1, type=int)
@@ -836,7 +785,6 @@ def create_app() -> Flask:
             blocked_sq = select(BlockedAccount.username).subquery()
             labeled_sq = select(HumanLabel.username).subquery()
 
-            # Aggregate tweet stats
             acct_stats = (
                 select(
                     Tweet.username,
@@ -848,7 +796,6 @@ def create_app() -> Flask:
                 .subquery()
             )
 
-            # Base query: judged accounts with their scores
             q = (
                 select(
                     acct_stats.c.username,
@@ -868,7 +815,6 @@ def create_app() -> Flask:
             )
 
             if filter_ == "needs_review":
-                # Judged but not blocked and not labeled — the actual backlog
                 # Also include "unsure" accounts that have new tweets since labeling
                 from sqlalchemy import or_
                 unsure_with_new_tweets = select(
@@ -904,7 +850,6 @@ def create_app() -> Flask:
                 select(func.count()).select_from(q.subquery())
             ).scalar_one()
 
-            # Counts for tabs
             needs_review_q = (
                 select(func.count(func.distinct(SignalJudgment.username)))
                 .where(
@@ -963,10 +908,6 @@ def create_app() -> Flask:
             counts=counts,
         )
 
-    # ------------------------------------------------------------------
-    # Pipeline runs
-    # ------------------------------------------------------------------
-
     @app.route("/runs")
     def runs():
         with get_session() as s:
@@ -976,17 +917,12 @@ def create_app() -> Flask:
 
         return render_template("runs.html", runs=all_runs)
 
-    # ------------------------------------------------------------------
-    # Search
-    # ------------------------------------------------------------------
-
     @app.route("/search")
     def search():
         q = request.args.get("q", "").strip().lstrip("@")
         if not q:
             return redirect(url_for("accounts"))
 
-        # Exact match — go straight to account page
         with get_session() as s:
             exact = s.execute(
                 select(Tweet.username)
@@ -997,7 +933,6 @@ def create_app() -> Flask:
             if exact:
                 return redirect(url_for("account_detail", username=exact))
 
-            # Partial match — find accounts containing the query
             matches = s.execute(
                 select(Tweet.username, func.count().label("tweet_count"))
                 .where(Tweet.username.ilike(f"%{q}%"))
@@ -1010,10 +945,6 @@ def create_app() -> Flask:
             return redirect(url_for("account_detail", username=matches[0].username))
 
         return render_template("search.html", query=q, results=matches)
-
-    # ------------------------------------------------------------------
-    # HITL labeling
-    # ------------------------------------------------------------------
 
     @app.route("/api/label", methods=["POST"])
     def label_account():
@@ -1046,10 +977,6 @@ def create_app() -> Flask:
 
         flash(f"@{username} labeled as {label}.", "success")
         return redirect(redirect_url)
-
-    # ------------------------------------------------------------------
-    # Watch / Block account management
-    # ------------------------------------------------------------------
 
     @app.route("/api/watch", methods=["POST"])
     def watch_account():

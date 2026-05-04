@@ -342,45 +342,6 @@ Proceed with analysis based on current data only.
 
         return "\n".join(lines)
 
-    async def get_recent_context(self, days: int = 7) -> str:
-        """
-        Get recent memories for baseline context.
-
-        This provides continuity - what has the system been tracking?
-        """
-        self._ensure_initialized()
-
-        recent = await self.vector_store.get_recent(days=days)
-        count = await self.vector_store.count()
-
-        if not recent:
-            return f"""
-## Memory Status
-Total memories stored: {count}
-Recent memories (last {days} days): 0
-
-The system is still building its memory. After several days of operation,
-it will be able to provide historical context and identify parallels.
-"""
-
-        lines = [
-            "## Memory Status",
-            f"Total memories stored: {count}",
-            f"Recent memories (last {days} days): {len(recent)}",
-            "",
-            "### Recent Days:",
-        ]
-
-        for memory in recent[:5]:
-            notable = " [NOTABLE]" if memory.notable else ""
-            lines.append(
-                f"- {memory.date.strftime('%Y-%m-%d')}: "
-                f"Signal={memory.signal_strength.upper()}{notable} - "
-                f"{', '.join(memory.trends[:3])}"
-            )
-
-        return "\n".join(lines)
-
     async def close(self) -> None:
         """Clean up resources."""
         await self.vector_store.close()

@@ -274,7 +274,6 @@ class AccountScorer:
         else:
             normalized_scores = np.array([0.5] * len(raw_scores))
 
-        # Optional KMeans clustering (k=4) for account type labeling
         feature_names = list(all_features[0].keys())
         feature_matrix = np.array(
             [[f[name] for name in feature_names] for f in all_features]
@@ -289,7 +288,6 @@ class AccountScorer:
                 self.model = KMeans(n_clusters=4, random_state=42, n_init=10)
                 clusters = self.model.fit_predict(scaled_features)
 
-                # Order clusters by median signal score and assign labels
                 cluster_median_scores = {}
                 for c in range(4):
                     mask = clusters == c
@@ -337,68 +335,3 @@ class AccountScorer:
         )
 
         return results
-
-    async def get_top_accounts(
-        self, n: int = 20, min_tweets: int = 3
-    ) -> list[dict]:
-        """Get the top N highest-signal accounts.
-
-        Args:
-            n: Number of top accounts to return.
-            min_tweets: Minimum tweets required per account.
-
-        Returns:
-            Top N accounts sorted by signal_score descending.
-        """
-        results = await self.analyze(min_tweets_per_account=min_tweets)
-        return results[:n]
-
-    async def get_account_profile(self, username: str) -> Optional[dict]:
-        """Get detailed signal profile for a single account.
-
-        Args:
-            username: Twitter username to profile.
-
-        Returns:
-            Dict with signal score, features, and cluster info, or None if
-            the account has no stored tweets.
-        """
-        session = await get_session()
-        async with session:
-            # Get global counts
-            total_trends_result = await session.execute(
-                select(func.count(func.distinct(Tweet.source_query)))
-            )
-            total_trends = total_trends_result.scalar() or 1
-
-            total_runs_result = await session.execute(
-                select(func.count(func.distinct(Tweet.pipeline_run)))
-            )
-            total_runs = total_runs_result.scalar() or 1
-
-            # Get tweets for this account
-            result = await session.execute(
-                select(Tweet).where(Tweet.username == username)
-            )
-            tweets = result.scalars().all()
-
-        if not tweets:
-            return None
-
-        features = self.feature_extractor.extract_features(
-            tweets,
-            total_trends=total_trends,
-            total_runs=total_runs,
-        )
-
-        # Compute raw score using weights
-        raw_score = 0.0
-        for feature_name, weight in SCORE_WEIGHTS.items():
-            raw_score += weight * features.get(feature_name, 0.0)
-
-        return {
-            "username": username,
-            "signal_score_raw": raw_score,
-            "features": features,
-            "tweet_count": len(tweets),
-        }

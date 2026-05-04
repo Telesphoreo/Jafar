@@ -17,7 +17,6 @@ class LLMResponse:
     model: str
     usage: dict[str, int] | None = None
     tool_calls: list[Any] | None = None
-    raw_response: Any = None
     raw_content: Any = None  # For Google: preserves Content object with thought_signature
 
     @property

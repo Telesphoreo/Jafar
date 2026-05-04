@@ -249,52 +249,6 @@ class TwitterScraper:
             self._api = API(self.db_path)
         return self._api
 
-    async def add_account(
-        self,
-        username: str,
-        password: str,
-        email: str,
-        email_password: str,
-    ) -> bool:
-        """
-        Programmatically add a Twitter account to the pool.
-
-        Note: It's generally recommended to add accounts via CLI instead:
-            1. Create accounts.txt: username:password:email:email_password
-            2. twscrape add_accounts accounts.txt username:password:email:email_password
-
-        Args:
-            username: Twitter username.
-            password: Twitter password.
-            email: Email associated with the account.
-            email_password: Email password for verification.
-
-        Returns:
-            True if account was added successfully.
-        """
-        try:
-            api = await self._get_api()
-            await api.pool.add_account(username, password, email, email_password)
-            logger.info(f"Added account: {username}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to add account {username}: {e}")
-            return False
-
-    async def login_all(self) -> None:
-        """
-        Login all accounts in the pool.
-
-        This is equivalent to running `twscrape login_accounts` from CLI.
-        """
-        try:
-            api = await self._get_api()
-            await api.pool.login_all()
-            logger.info("All accounts logged in")
-        except Exception as e:
-            logger.error(f"Failed to login accounts: {e}")
-            raise
-
     async def fix_locks(self) -> None:
         """
         Reset account locks in the database.
@@ -445,5 +399,4 @@ class TwitterScraper:
 
     async def close(self) -> None:
         """Clean up resources."""
-        # twscrape doesn't require explicit cleanup, but keeping for interface
         logger.debug("Scraper resources cleaned up")

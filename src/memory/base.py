@@ -98,8 +98,6 @@ class SearchResult:
 class VectorStore(ABC):
     """
     Abstract interface for vector storage backends.
-
-    Implementations: ChromaDB (local), VectorChord (production)
     """
 
     @abstractmethod

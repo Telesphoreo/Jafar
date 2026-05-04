@@ -41,7 +41,7 @@ from .scraper import (
     TwitterScraper, ScrapedTweet, fetch_trending_topics,
     load_broad_tweets_from_db, load_trend_tweets_from_db,
 )
-from .analyzer import TrendAnalyzer, DiscoveredTrend
+from .analyzer import StatisticalTrendAnalyzer, DiscoveredTrend
 from .llm import create_llm_provider, LLMProvider
 from .reporter import create_reporter_from_config
 from .database import init_db, close_db, create_tables
@@ -278,7 +278,6 @@ def format_tweets_for_llm(trend_tweets: dict[str, list[ScrapedTweet]]) -> str:
         parts.append(f"({len(tweets)} tweets)\n")
 
         for i, tweet in enumerate(tweets, 1):
-            # Skip retweets for cleaner analysis
             if tweet.is_retweet:
                 continue
 
@@ -470,9 +469,7 @@ checking their portfolio for no reason."""
 
             # Handle tool calls
             if response.tool_calls:
-                # Add tool calls to messages (OpenAI requires this if we want to reply with tool outputs)
-                if hasattr(response, 'tool_calls') and response.tool_calls:
-                    messages[-1]["tool_calls"] = response.tool_calls
+                messages[-1]["tool_calls"] = response.tool_calls
 
                 for tool_call in response.tool_calls:
                     # Parse function call
@@ -540,7 +537,6 @@ checking their portfolio for no reason."""
                 continue
 
             # If no tool calls and no submit_report, the LLM gave a text response
-            # This is a fallback - ideally the LLM should always use submit_report
             content = response.content
             logger.warning("LLM returned text instead of calling submit_report - using fallback parsing")
 
@@ -574,7 +570,7 @@ checking their portfolio for no reason."""
             logger.error(f"LLM agent loop failed: {e}")
             raise
 
-    # If loop exhausted without final answer (should be rare)
+    # Loop exhausted without final answer.
     return "Analysis incomplete due to step limit.", "low", False, total_tokens, None
 
 
@@ -766,120 +762,6 @@ async def _get_bot_usernames() -> set[str]:
         await session.close()
 
 
-async def run_ml_analysis(config, diagnostics, run_id: str) -> dict:  # pylint: disable=redefined-outer-name
-    """Run ML analysis on stored tweets. Returns ML insights for the report."""
-    from .ml import BotScorer, AccountScorer
-
-    logger.info("=" * 60)
-    logger.info("STEP: ML ANALYSIS")
-    logger.info("=" * 60)
-
-    ml_results = {
-        "bot_suspects": [],
-        "top_accounts": [],
-        "ml_evaluation": None,
-    }
-
-    bot_scores = []
-    suspects = []
-
-    try:
-        # 1. Bot Detection
-        bot_scorer = BotScorer()
-        training_stats = await bot_scorer.train(min_tweets_per_account=5)
-        logger.info(f"Bot detection trained on {training_stats.get('accounts_eligible', 0)} accounts")
-
-        if bot_scorer.model is not None:
-            bot_scores = await bot_scorer.score_all_accounts(min_tweets=5)
-            # Get top suspects (score > 0.7)
-            suspects = [s for s in bot_scores if s["bot_score"] > 0.7]
-            ml_results["bot_suspects"] = suspects[:10]  # Top 10
-            logger.info(f"Found {len(suspects)} suspected bot accounts")
-            diagnostics.bot_suspects_found = len(suspects)
-
-        # 2. Account Signal Scoring
-        account_scorer = AccountScorer()
-        all_account_results = await account_scorer.analyze(min_tweets_per_account=3)
-        ml_results["top_accounts"] = all_account_results[:20]
-        ml_results["total_accounts_analyzed"] = len(all_account_results)
-
-        # Also include cluster distribution
-        from collections import Counter
-        cluster_counts = Counter(a.get("cluster_label", "unclustered") for a in all_account_results)
-        ml_results["cluster_distribution"] = dict(cluster_counts)
-
-        top_accounts = ml_results["top_accounts"]
-        logger.info(f"Scored {len(all_account_results)} accounts for signal quality")
-        diagnostics.accounts_scored = len(top_accounts)
-
-        # Fetch sample tweets for top signal accounts
-        for account in top_accounts[:10]:
-            tweets = await _get_account_tweets(account["username"], limit=5)
-            account["sample_tweets"] = tweets
-
-        # 3. LLM Bot Judging (on top suspects only to save API calls)
-        if suspects:
-            from .ml.llm_judge import BotJudge
-
-            judge = BotJudge(
-                api_key=config.google.api_key,
-                model=config.google.model,
-            )
-
-            # Judge top 10 suspects — fetch tweets from DB for each
-            judgments = []
-            for suspect in suspects[:10]:
-                tweets = await _get_account_tweets(suspect["username"], limit=20)
-                judgment = await judge.judge_account(
-                    username=suspect["username"],
-                    tweets=tweets,
-                    ml_features=suspect.get("features"),
-                )
-                judgments.append(judgment)
-
-            ml_results["bot_judgments"] = judgments
-
-            # Evaluate ML model against LLM judgments if we have enough data
-            if len(bot_scores) >= 10:
-                # Attach tweets to bot_scores for the evaluator
-                scores_with_tweets = []
-                for s in bot_scores:
-                    tweets = await _get_account_tweets(s["username"], limit=20)
-                    scores_with_tweets.append({**s, "tweets": tweets})
-
-                evaluation = await judge.evaluate_ml_model(
-                    scores_with_tweets, sample_size=min(20, len(scores_with_tweets))
-                )
-                ml_results["ml_evaluation"] = evaluation
-                logger.info(
-                    f"ML evaluation - Agreement: {evaluation.get('agreement_rate', 0):.1%}, "
-                    f"F1: {evaluation.get('f1_score', 0):.2f}"
-                )
-                diagnostics.ml_agreement_rate = evaluation.get("agreement_rate", 0)
-
-        # Attach sample tweets to bot suspects for the ML email
-        for suspect in ml_results["bot_suspects"]:
-            tweets = await _get_account_tweets(suspect["username"], limit=5)
-            suspect["sample_tweets"] = tweets
-
-        # 4. Total tweets analyzed
-        from .database import get_session
-        from .models import Tweet
-        from sqlalchemy import func, select
-
-        session = await get_session()
-        try:
-            result = await session.execute(select(func.count()).select_from(Tweet))  # pylint: disable=not-callable
-            ml_results["total_tweets_analyzed"] = result.scalar_one()
-        finally:
-            await session.close()
-
-    except Exception as e:
-        logger.warning(f"ML analysis encountered an error: {e}", exc_info=True)
-
-    return ml_results
-
-
 async def run_pipeline() -> bool:  # pylint: disable=redefined-outer-name,too-many-return-statements
     """
     Run the full sentiment analysis pipeline with checkpointing.
@@ -946,7 +828,7 @@ async def run_pipeline() -> bool:  # pylint: disable=redefined-outer-name,too-ma
     # Automatically reset locks to prevent "stuck" accounts from previous interrupted runs
     await scraper.fix_locks()
 
-    analyzer = TrendAnalyzer(model_name=config.app.spacy_model)
+    analyzer = StatisticalTrendAnalyzer(model_name=config.app.spacy_model)
     history = DigestHistory()
 
     # Check if Twitter accounts are available before starting
@@ -1321,8 +1203,6 @@ async def run_pipeline() -> bool:  # pylint: disable=redefined-outer-name,too-ma
         suppressed_trends = temporal_analyzer.get_suppressed_trends(timelines)
         if suppressed_trends:
             logger.info(f"Suppressing {len(suppressed_trends)} stale trends: {suppressed_trends}")
-            if twitter_mentions is None:
-                twitter_mentions = []
             for term in suppressed_trends:
                 if term in trend_tweets:
                     twitter_mentions.append(
@@ -1477,13 +1357,10 @@ async def run_pipeline() -> bool:  # pylint: disable=redefined-outer-name,too-ma
         if config.smtp.admin.enabled:
             logger.info("\n[STEP 11/11] ADMIN DIAGNOSTICS: Checking if alert needed...")
 
-            # Finalize diagnostics
             final_diagnostics = diagnostics.finalize()
 
-            # Check if admin should be alerted
             should_alert, alert_reason = should_send_admin_alert(final_diagnostics)
 
-            # Send admin email if alert needed or if send_on_success is enabled
             if should_alert or config.smtp.admin.send_on_success:
                 admin_recipients = config.smtp.admin.recipients if config.smtp.admin.recipients else config.smtp.email_to
 
@@ -1509,7 +1386,6 @@ async def run_pipeline() -> bool:  # pylint: disable=redefined-outer-name,too-ma
         logger.info("Pipeline completed successfully!")
         logger.info("=" * 60)
 
-        # Print results
         def safe_print(text: str) -> None:
             try:
                 print(text)

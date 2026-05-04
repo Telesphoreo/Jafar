@@ -27,7 +27,6 @@ MAX_DELAY = 60.0  # seconds
 def _is_retryable_error(error: Exception) -> bool:
     """Check if an error is transient and worth retrying."""
     error_str = str(error).lower()
-    # Check for common transient error patterns
     retryable_patterns = [
         "503",
         "overloaded",
@@ -364,7 +363,6 @@ class GoogleProvider(LLMProvider):
                 model=self._model,
                 usage=usage,
                 tool_calls=tool_calls,
-                raw_response=response,
                 raw_content=raw_content,  # Preserve the Content object with thought_signature
             )
 

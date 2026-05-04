@@ -145,7 +145,6 @@ NOISE_TERMS = {
 
 # Compile patterns for faster matching
 CASHTAG_PATTERN = re.compile(r'\$([A-Za-z]{1,5})\b')
-HASHTAG_PATTERN = re.compile(r'#(\w+)')
 URL_PATTERN = re.compile(r'https?://\S+')
 MENTION_PATTERN = re.compile(r'@\w+')
 
@@ -693,45 +692,3 @@ class StatisticalTrendAnalyzer:
             apply_quality_filter=True,
         )
         return [t.term for t in qualified]
-
-    def get_detailed_analysis(self, tweets: list[ScrapedTweet], top_n: int = 15) -> str:
-        """Get detailed breakdown of all discovered signals."""
-        cashtags = self._extract_cashtags(tweets)
-        hashtags = self._extract_hashtags(tweets)
-        ngrams = self._extract_ngrams(tweets)
-
-        lines = ["=== STATISTICAL TREND DISCOVERY REPORT ===\n"]
-        lines.append(f"Analyzed {len(tweets)} tweets\n")
-
-        lines.append("\n[CASHTAGS] - Highest signal for market moves:")
-        sorted_cashtags = sorted(cashtags.values(), key=lambda x: x.composite_score, reverse=True)
-        for trend in sorted_cashtags[:top_n]:
-            lines.append(
-                f"  {trend.term}: {trend.mention_count} mentions, "
-                f"{trend.unique_authors} authors, "
-                f"engagement={trend.total_engagement:.0f}"
-            )
-
-        lines.append("\n[HASHTAGS] - Topic clustering:")
-        sorted_hashtags = sorted(hashtags.values(), key=lambda x: x.composite_score, reverse=True)
-        for trend in sorted_hashtags[:top_n]:
-            lines.append(
-                f"  {trend.term}: {trend.mention_count} mentions, "
-                f"{trend.unique_authors} authors, "
-                f"engagement={trend.total_engagement:.0f}"
-            )
-
-        lines.append("\n[DISCOVERED TERMS] - Statistically significant phrases:")
-        sorted_ngrams = sorted(ngrams.values(), key=lambda x: x.composite_score, reverse=True)
-        for trend in sorted_ngrams[:top_n]:
-            lines.append(
-                f"  {trend.term}: {trend.mention_count} mentions, "
-                f"{trend.unique_authors} authors, "
-                f"engagement={trend.total_engagement:.0f}"
-            )
-
-        return "\n".join(lines)
-
-
-# Keep backward compatibility alias
-TrendAnalyzer = StatisticalTrendAnalyzer

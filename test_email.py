@@ -167,7 +167,6 @@ def test_connection(host: str, port: int, method: str, username: str, password: 
 def main():
     logger.info("=== Jafar SMTP Diagnostic Tool ===")
 
-    # 1. Validate Basic Config
     if not config.smtp.username or not config.smtp.password:
         logger.error("Missing SMTP credentials in .env")
         sys.exit(1)
@@ -176,7 +175,6 @@ def main():
     logger.info(f"Current Config: {config.smtp.host}:{config.smtp.port} ({current_protocol})")
     logger.info(f"User: {config.smtp.username}")
 
-    # 2. Test Current Configuration
     logger.info("\n--- Step 1: Testing Configured Settings ---")
     if test_connection(
         config.smtp.host,
@@ -215,7 +213,6 @@ def main():
             logger.error("Connection worked but sending failed.")
             sys.exit(1)
 
-    # 3. Diagnostics if failure
     logger.info("\n--- Step 2: Diagnosing Alternatives ---")
     logger.warning("Current configuration failed. Probing common alternatives...")
 

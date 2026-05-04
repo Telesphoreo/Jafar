@@ -28,7 +28,6 @@ def _load_yaml_config() -> dict:
     return {}
 
 
-# Load YAML config once at module import
 _yaml_config = _load_yaml_config()
 
 

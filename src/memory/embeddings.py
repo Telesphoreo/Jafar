@@ -28,10 +28,6 @@ class EmbeddingService(ABC):
     async def embed(self, text: str, task_type: str = "SEMANTIC_SIMILARITY") -> list[float]:
         """Generate embedding for a single text."""
 
-    @abstractmethod
-    async def embed_batch(self, texts: list[str], task_type: str = "SEMANTIC_SIMILARITY") -> list[list[float]]:
-        """Generate embeddings for multiple texts."""
-
 
 class GeminiEmbeddingService(EmbeddingService):
     """
@@ -88,21 +84,3 @@ class GeminiEmbeddingService(EmbeddingService):
             },
         )
         return result.embeddings[0].values
-
-    async def embed_batch(self, texts: list[str], task_type: str = "SEMANTIC_SIMILARITY") -> list[list[float]]:
-        """Generate embeddings for multiple texts efficiently."""
-        if not texts:
-            return []
-
-        if task_type not in self.VALID_TASK_TYPES:
-            task_type = "SEMANTIC_SIMILARITY"
-
-        result = self._client.models.embed_content(
-            model=self.model,
-            contents=texts,
-            config={
-                "task_type": task_type,
-                "output_dimensionality": self._dimension,
-            },
-        )
-        return [e.values for e in result.embeddings]

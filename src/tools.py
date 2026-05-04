@@ -264,14 +264,6 @@ class ToolRegistry:
                 if not symbols:
                     return "No symbols provided."
 
-                # Convert names to symbols (the fact checker helper does this)
-                # But fact_checker.extract_symbols_from_trends expects a list of trends
-                # We can reuse it or adding a simple mapper
-                # For robust usage, let's treat inputs as potential trends/names
-
-                # Important: Include common symbols ONLY if explicitly requested or if list is empty?
-                # No, we want to solve the pollution. So strictly fetch what is asked.
-
                 extracted_symbols = self.fact_checker.extract_symbols_from_trends(symbols)
                 if not extracted_symbols:
                     # Try to interpret the input strings directly as symbols if extraction failed
@@ -286,12 +278,12 @@ class ToolRegistry:
             elif tool_name == "search_historical_parallels" and self.memory:
                 query = arguments.get("query", "")
                 parallels = await self.memory.find_parallels(
-                    trends=[query], # simplified usage
+                    trends=[query],
                     themes=[],
                     sentiment="unknown",
                     signal_strength="unknown",
                     limit=3,
-                    min_similarity=0.7 # stricter threshold for search
+                    min_similarity=0.7
                 )
                 if not parallels:
                     return "No significant historical parallels found."
@@ -301,7 +293,6 @@ class ToolRegistry:
                 trend = arguments.get("trend")
                 if trend in self.trend_timelines:
                     timeline = self.trend_timelines[trend]
-                    # Format a single timeline
                     timelines_dict = {trend: timeline}
                     return self.temporal_analyzer.format_context_for_llm(timelines_dict)
                 return f"No timeline data found for trend: {trend}"
@@ -413,7 +404,6 @@ class ToolRegistry:
         async with aiohttp.ClientSession() as session:
             for city in cities[:5]:  # Limit to 5 cities
                 try:
-                    # Step 1: Geocode city name to coordinates
                     geo_url = "https://geocoding-api.open-meteo.com/v1/search"
                     async with session.get(geo_url, params={"name": city, "count": 1}) as resp:
                         if resp.status != 200:
@@ -429,7 +419,6 @@ class ToolRegistry:
                     lat, lon = location["latitude"], location["longitude"]
                     display_name = f"{location.get('name', city)}, {location.get('admin1', '')}, {location.get('country', '')}"
 
-                    # Step 2: Get weather forecast
                     weather_url = "https://api.open-meteo.com/v1/forecast"
                     weather_params = {
                         "latitude": lat,
