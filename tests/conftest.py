@@ -95,7 +95,7 @@ def sample_config_yaml(tmp_path) -> Path:
     config_path = tmp_path / "config.yaml"
     config_content = """
 llm:
-  google_model: gemini-2.0-flash
+  google_model: gemini-3.1-flash-lite
   embedding_model: gemini-embedding-2-preview
   embedding_dimensions: 3072
 

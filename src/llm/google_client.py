@@ -44,13 +44,13 @@ def _is_retryable_error(error: Exception) -> bool:
 class GoogleProvider(LLMProvider):
     """Google Generative AI provider implementation."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.1-flash-lite"):
         """
         Initialize the Google Generative AI provider.
 
         Args:
             api_key: Google API key.
-            model: Model to use (default: gemini-2.0-flash).
+            model: Model to use (default: gemini-3.1-flash-lite).
         """
         self._api_key = api_key
         self._model = model

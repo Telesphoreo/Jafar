@@ -14,7 +14,7 @@ logger = logging.getLogger("jafar.llm.factory")
 
 def create_llm_provider(
     google_api_key: str = "",
-    google_model: str = "gemini-2.0-flash",
+    google_model: str = "gemini-3.1-flash-lite",
 ) -> LLMProvider:
     """
     Create the Gemini LLM provider.

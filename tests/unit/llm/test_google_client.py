@@ -21,17 +21,17 @@ class TestGoogleProvider:
         with patch("google.genai.Client"):
             from src.llm.google_client import GoogleProvider
 
-            provider = GoogleProvider(api_key="test-key", model="gemini-2.0-flash")
+            provider = GoogleProvider(api_key="test-key", model="gemini-3.1-flash-lite")
 
             assert provider._api_key == "test-key"
-            assert provider._model == "gemini-2.0-flash"
+            assert provider._model == "gemini-3.1-flash-lite"
             assert provider._client is not None
 
     def test_init_no_key(self):
         """Test provider initialization without API key."""
         from src.llm.google_client import GoogleProvider
 
-        provider = GoogleProvider(api_key="", model="gemini-2.0-flash")
+        provider = GoogleProvider(api_key="", model="gemini-3.1-flash-lite")
 
         assert provider._client is None
         assert provider.is_configured() is False
@@ -49,8 +49,8 @@ class TestGoogleProvider:
         with patch("google.genai.Client"):
             from src.llm.google_client import GoogleProvider
 
-            provider = GoogleProvider(api_key="test-key", model="gemini-2.0-flash")
-            assert provider.model_name == "gemini-2.0-flash"
+            provider = GoogleProvider(api_key="test-key", model="gemini-3.1-flash-lite")
+            assert provider.model_name == "gemini-3.1-flash-lite"
 
     def test_is_configured_true(self):
         """Test is_configured returns True with valid key."""
@@ -82,7 +82,7 @@ class TestGoogleProvider:
 
         assert isinstance(response, LLMResponse)
         assert "test response" in response.content.lower()
-        assert response.model == "gemini-2.0-flash"
+        assert response.model == "gemini-3.1-flash-lite"
 
     @pytest.mark.asyncio
     async def test_generate_with_messages(self, mock_google_genai):

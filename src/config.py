@@ -71,7 +71,7 @@ class GoogleConfig:
     # Secret from .env
     api_key: str = field(default_factory=lambda: os.getenv("GOOGLE_API_KEY", ""))
     # LLM model
-    model: str = field(default_factory=lambda: _get_yaml("llm", "google_model", "gemini-2.0-flash"))
+    model: str = field(default_factory=lambda: _get_yaml("llm", "google_model", "gemini-3.1-flash-lite"))
     # Embedding model
     embedding_model: str = field(
         default_factory=lambda: _get_yaml("llm", "embedding_model", "gemini-embedding-2-preview")

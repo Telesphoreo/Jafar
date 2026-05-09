@@ -59,7 +59,7 @@ class BotJudge:
     Creates pseudo-labels that serve as ground truth for ML model evaluation.
     """
 
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash"):
+    def __init__(self, api_key: str, model: str = "gemini-3.1-flash-lite"):
         """Initialize the Gemini client.
 
         Args:
